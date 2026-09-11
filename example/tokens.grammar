@@ -1,0 +1,14 @@
+// Exercises every token kind from grammar.txt.
+string_lit = "hello";
+
+regexp_lit = '[a-z]+';
+
+grouped = ( "a" "b" );
+
+repeated = { "a" };
+
+optional = [ "b" ];
+
+member = foo.bar;
+
+external = __name__;

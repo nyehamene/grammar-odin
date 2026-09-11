@@ -1,0 +1,4 @@
+// Two rules with the same name. This is a semantic error that the checker
+// should report.
+dup = "a";
+dup = "b";

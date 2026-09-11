@@ -1,0 +1,3 @@
+f = @import("../foo");
+
+ident = f.foo baz;
