@@ -1,0 +1,31 @@
+Source = { declaration };
+
+declaration       = binding | Rule ;
+binding           = ident "=" "@import" "(" string ")" ";";
+Rule              = ident "=" production ";";
+
+production  = sequence | alternative;
+alternative = sequence { "|" production };
+sequence    = basic { basic };
+basic       = group
+            | repetition
+            | optional
+            | term
+            ;
+
+// basic, terminal, non_terminal and term should not
+// appear in the syntax tree.
+group          = "(" production ")";
+repetition     = "{" production "}";
+optional       = "[" production "]";
+term           = terminal | non_teminal;
+non_terminal   = ident | member_access;
+terminal       = string | regexp ;
+
+// member_access is left-associative
+member_access    = ident "." ident { "." ident };
+
+string = '[^"\n]*';
+ident  = /[a-zA-Z_][a-zA-Z0-9_]*/;
+regexp = '\'[^\']*\'';
+external_value = '__[a-zA-Z_][a-zA-Z0-9]*__';

@@ -1,0 +1,10 @@
+Usage: grammar lsp
+
+Starts a language server for the grammar language.
+
+Argument:
+-h, --help          Print this message.
+    --log           Log file path. If not specified, no file logging.
+    --log-format    Log format: json or text (default: json when --log is specified)
+    --log-level     Log level: debug, info, warn, error (default: debug)
+    --pretty        Pretty-print JSON output (default: false)

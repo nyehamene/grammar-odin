@@ -1,0 +1,17 @@
+Usage: grammar check ARGUMENT [ OPTION ]
+
+Checks for syntax or validation errors in input files.
+
+Argument:
+PATH          Path to check
+    --stdin   Check code from stdin.
+-h, --help    Print this message.
+
+OPTION:
+-f --file     Path argument is a file
+-p --package  Path argument is a directory
+
+Option defaults to -p (--package) if no option is given.
+
+If PATH is a directory, all the grammar files inside it is checked.
+If any error is found, the program exits with a non-zero exit code.

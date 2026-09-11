@@ -1,0 +1,7 @@
+# [editor]
+# trim_trailing_whiespace = true
+
+[editor.whitespace.render]
+space = "none"
+tab = "none"
+newline = "all"

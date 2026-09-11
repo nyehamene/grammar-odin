@@ -1,0 +1,10 @@
+Usage: grammar fmt ARGUMENT
+
+Formats input files inplace. Any syntax error is printed to
+the console and the input file is left unchanged.
+
+Argument:
+PATH                PATH is a file, Format code inplace,
+    --stdout PATH   Print formatted output to stdout. Do not modify input file.
+    --stdin         Format code from stdin, output to stdout.
+-h, --help          Print this message.

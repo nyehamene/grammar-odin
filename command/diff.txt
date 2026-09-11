@@ -1,0 +1,9 @@
+Usage: grammar diff ARGUMENT PATH1 PATH2
+
+Compare input files and print their differences.
+Both paths most be files (not directories).
+
+Argument:
+-h, --help     Print this message.
+-t, --tokens   Print differences in tokens.
+-a, --ast      Print differences in ast nodes.

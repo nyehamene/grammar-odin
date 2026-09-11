@@ -1,0 +1,12 @@
+Usage: grammar print ARGUMENT PATH
+
+Pretty print AST nodes or token information to the console.
+Argument:
+-t, --token   Print the tokens produce by the tokenizer.
+-a, --ast     Print the nodes produced by the parser.
+-h, --help    Print this message.
+PATH          Path to a file or directory.
+
+If PATH is a directory, print every file inside it. If an error
+is found, print the tokens/ast and highlight the errors.
+
