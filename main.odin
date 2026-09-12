@@ -8,6 +8,7 @@ import "log"
 
 import "cmd/check"
 import "cmd/help"
+import "cmd/print"
 import "cmd/version"
 
 main :: proc() {
@@ -59,7 +60,9 @@ run :: proc(args: []string, stdin: io.Reader, stdout, stderr: io.Writer) -> int 
 		io.write_string(stdout, fmt.tprintf("Formatting %s...\n", path))
 	case "check":
 		return check.run(rest, stdin, stdout, stderr)
-	case "print", "diff", "lsp":
+	case "print":
+		return print.run(rest, stdin, stdout, stderr)
+	case "diff", "lsp":
 		io.write_string(stdout, "TBD\n")
 	case "version":
 		version.run(stdout)

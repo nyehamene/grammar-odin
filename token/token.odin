@@ -1,5 +1,8 @@
 package token
 
+import "core:io"
+import "core:strings"
+
 // Kind enumerates the token kinds produced by the tokenizer.
 Kind :: enum {
 	Illegal,
@@ -84,6 +87,28 @@ lexeme :: proc(tok: Token, src: string) -> string {
 	high := min(tok.end, len(src))
 	if high < low do return ""
 	return src[low:high]
+}
+
+// write_lexeme writes lex to writer, escaping whitespace characters so the
+// lexeme stays on a single line.
+write_lexeme :: proc(writer: io.Writer, lex: string) {
+	if !strings.contains_any(lex, "\n\r\t") {
+		io.write_string(writer, lex)
+		return
+	}
+	for ch in lex {
+		switch ch {
+		case '\n':
+			io.write_string(writer, "\\n")
+		case '\r':
+			io.write_string(writer, "\\r")
+		case '\t':
+			io.write_string(writer, "\\t")
+		case:
+			buf := [1]u8{u8(ch)}
+			io.write_string(writer, string(buf[:]))
+		}
+	}
 }
 
 Position :: struct {

@@ -179,7 +179,11 @@ is_valid_path :: proc(path: string) -> bool {
 	if err != nil do return false
 	if cleaned == "" || cleaned == "." do return false
 
-	for component in strings.split(cleaned, filepath.SEPARATOR_STRING) {
+	defer delete(cleaned)
+	parts := strings.split(cleaned, filepath.SEPARATOR_STRING)
+	defer delete(parts)
+
+	for component in parts {
 		if component == ".." do return false
 	}
 	return true
