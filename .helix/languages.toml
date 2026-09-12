@@ -9,7 +9,7 @@ formatter = { command = "grammar" , args = ["fmt", "--stdin"] }
 language-servers = [ "grammar" ]
 
 [language-server.grammar]
-command = "grammar"
+command = "./grammar"
 args = ["lsp"]
 config = { provideFormatter = true }
 # environment = { "ENV1" = "value1", "ENV2" = "value2" }
