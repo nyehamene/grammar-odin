@@ -7,6 +7,7 @@ import "core:strings"
 
 import "log"
 
+import "cmd/help"
 import "cmd/version"
 
 main :: proc() {
@@ -21,10 +22,22 @@ run :: proc(args: []string) -> int {
 		return 1
 	}
 
+	if args[0] == "--help" || args[0] == "-h" {
+		help.run()
+		return 0
+	}
+
 	command := args[0]
 	rest := args[1:]
 
+	if text := help.text_for(command); text != "" && has_help_flag(rest) {
+		fmt.print(text)
+		return 0
+	}
+
 	switch command {
+	case "help":
+		help.run()
 	case "fmt", "check":
 		if len(rest) == 0 {
 			fmt.eprintf("error: '%s' requires a PATH argument\n", command)
@@ -41,7 +54,7 @@ run :: proc(args: []string) -> int {
 		} else {
 			fmt.printf("Validating %s...\n", path)
 		}
-	case "print", "diff", "lsp", "help":
+	case "print", "diff", "lsp":
 		fmt.println("TBD")
 	case "version":
 		version.run()
@@ -51,6 +64,16 @@ run :: proc(args: []string) -> int {
 	}
 
 	return 0
+}
+
+// has_help_flag reports whether args contains a help flag.
+has_help_flag :: proc(args: []string) -> bool {
+	for arg in args {
+		if arg == "--help" || arg == "-h" {
+			return true
+		}
+	}
+	return false
 }
 
 // is_valid_path reports whether path is a relative path that stays within the
