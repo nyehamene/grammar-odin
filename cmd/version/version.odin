@@ -1,6 +1,6 @@
 package version
 
-import "core:fmt"
+import "core:io"
 
 VERSION :: "0.1.0"
 
@@ -9,7 +9,8 @@ version :: proc() -> string {
 	return VERSION
 }
 
-// run prints the version to stdout.
-run :: proc() {
-	fmt.println(version())
+// run writes the version to the given writer.
+run :: proc(writer: io.Writer) {
+	io.write_string(writer, version())
+	io.write_byte(writer, '\n')
 }

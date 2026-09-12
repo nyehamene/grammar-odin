@@ -1,6 +1,6 @@
 package help
 
-import "core:fmt"
+import "core:io"
 
 // Help texts are embedded from command/*.txt so the CLI output stays
 // byte-identical to the canonical help files.
@@ -30,7 +30,7 @@ text_for :: proc(command: string) -> string {
 	}
 }
 
-// run prints the top-level help message.
-run :: proc() {
-	fmt.print(GRAMMAR)
+// run writes the top-level help message to the given writer.
+run :: proc(writer: io.Writer) {
+	io.write_string(writer, GRAMMAR)
 }

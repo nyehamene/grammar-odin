@@ -1,6 +1,7 @@
 package main
 
 import "core:fmt"
+import "core:io"
 import "core:os"
 import "core:path/filepath"
 import "core:strings"
@@ -12,18 +13,20 @@ import "cmd/version"
 
 main :: proc() {
 	context.logger = log.Setup()
-	os.exit(run(os.args[1:]))
+	os.exit(run(os.args[1:], os.to_stream(os.stdout), os.to_stream(os.stderr)))
 }
 
-// run dispatches the CLI command and returns the process exit code.
-run :: proc(args: []string) -> int {
+// run dispatches the CLI command and returns the process exit code. Output and
+// diagnostics are written to the provided writers so callers can capture them.
+// A separate writer for the language server wire protocol will be added later.
+run :: proc(args: []string, stdout, stderr: io.Writer) -> int {
 	if len(args) == 0 {
-		fmt.eprintln("error: missing command. Run 'grammar help' for usage.")
+		io.write_string(stderr, "error: missing command. Run 'grammar help' for usage.\n")
 		return 1
 	}
 
 	if args[0] == "--help" || args[0] == "-h" {
-		help.run()
+		help.run(stdout)
 		return 0
 	}
 
@@ -31,35 +34,41 @@ run :: proc(args: []string) -> int {
 	rest := args[1:]
 
 	if text := help.text_for(command); text != "" && has_help_flag(rest) {
-		fmt.print(text)
+		io.write_string(stdout, text)
 		return 0
 	}
 
 	switch command {
 	case "help":
-		help.run()
+		help.run(stdout)
 	case "fmt", "check":
 		if len(rest) == 0 {
-			fmt.eprintf("error: '%s' requires a PATH argument\n", command)
+			err := fmt.tprintf("error: '%s' requires a PATH argument\n", command)
+			io.write_string(stderr, err)
 			return 1
 		}
 		path := rest[0]
 		if !is_valid_path(path) {
-			fmt.eprintf("error: invalid path '%s': must be a relative path inside the current working directory\n", path)
+			err := fmt.tprintf(
+				"error: invalid path '%s': must be a relative path inside the current working directory\n",
+				path,
+			)
+			io.write_string(stderr, err)
 			return 1
 		}
 		log.infof("command %s on path %s", command, path)
 		if command == "fmt" {
-			fmt.printf("Formatting %s...\n", path)
+			io.write_string(stdout, fmt.tprintf("Formatting %s...\n", path))
 		} else {
-			fmt.printf("Validating %s...\n", path)
+			io.write_string(stdout, fmt.tprintf("Validating %s...\n", path))
 		}
 	case "print", "diff", "lsp":
-		fmt.println("TBD")
+		io.write_string(stdout, "TBD\n")
 	case "version":
-		version.run()
+		version.run(stdout)
 	case:
-		fmt.eprintf("error: unknown command '%s'. Run 'grammar help' for usage.\n", command)
+		err := fmt.tprintf("error: unknown command '%s'. Run 'grammar help' for usage.\n", command)
+		io.write_string(stderr, err)
 		return 1
 	}
 

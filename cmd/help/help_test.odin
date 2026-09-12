@@ -1,7 +1,19 @@
 package help
 
+import "core:bytes"
 import "core:strings"
 import "core:testing"
+
+@(test)
+test_run_writes_to_writer :: proc(t: ^testing.T) {
+	buf: bytes.Buffer
+	bytes.buffer_init(&buf, {})
+	defer bytes.buffer_destroy(&buf)
+
+	run(bytes.buffer_to_stream(&buf))
+
+	testing.expect(t, bytes.buffer_to_string(&buf) == GRAMMAR, "run should write the main help text")
+}
 
 @(test)
 test_grammar_help_text :: proc(t: ^testing.T) {
