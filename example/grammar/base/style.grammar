@@ -1,0 +1,32 @@
+core = @import("core.grammar");
+
+// css
+Rule       = "style" "(" [ params ] [ "," ] ")" block;
+params     = param { "," param };
+param      = core.ident ( param_type | param_init ) [ core.Tag ];
+param_type = ":" core.type;
+param_init = ( param_type | ":" ) "=" core.expr;
+
+block       = "{" stmts "}";
+stmts       = stmt { stmt };
+stmt        = decl ";"
+            | core.if ";"
+            | core.cond ";"
+            | property_style ";"
+            ;
+decl        = property | nested_rule;
+property    = ident ":" value [ "!important" ];
+
+property_style = "self" "." core.member block;
+
+// style value
+value      = list { list };
+list       = slash_list { slash_list };
+slash_list = comma_list { "/" comma_list };
+comma_list = term { "," term };
+term       = calc | core.term;
+calc       = "calc" "(" list ")";
+
+// Comment
+comment = "/*" /.*/ "*/";
+sep     = core.Separator;

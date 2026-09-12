@@ -1,0 +1,9 @@
+core = @import("base/core.grammar");
+decl = @import("base/decl.grammar");
+
+Source = { Decl core.separator };
+Decl   = decl.Api
+       | decl.Doc
+       | decl.Var
+       | decl.require
+       ;

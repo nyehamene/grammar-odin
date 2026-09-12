@@ -1,0 +1,5 @@
+core = @import("base/core.grammar");
+decl = @import("base/decl.grammar");
+
+Source = { Decl core.separator };
+Decl   = decl.include;
