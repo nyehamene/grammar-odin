@@ -7,6 +7,7 @@ import "core:os"
 import "core:path/filepath"
 import "core:strings"
 
+import "../../ast"
 import "../../token"
 
 Mode :: enum {
@@ -144,14 +145,24 @@ read_all :: proc(r: io.Reader, allocator := context.allocator) -> (data: []byte,
 	return data, true
 }
 
-// check_source scans src and reports any lexical errors. It returns true if an
-// error was found.
+// check_source scans and parses src, reporting any lexical and syntax errors.
+// It returns true if an error was found.
 check_source :: proc(src: string, name: string, stderr: io.Writer) -> bool {
-	_, errors := token.scan(src)
-	defer delete(errors)
+	tokens, lex_errors := token.scan(src)
+	defer delete(tokens)
+	defer delete(lex_errors)
+
+	file, parse_errors := ast.parse_file(src, tokens[:])
+	defer ast.destroy_file(&file)
+	defer delete(parse_errors)
 
 	failed := false
-	for e in errors {
+	for e in lex_errors {
+		pos := token.position_at(src, e.offset)
+		io.write_string(stderr, fmt.tprintf("%s:%d:%d: %s\n", name, pos.line, pos.column, e.message))
+		failed = true
+	}
+	for e in parse_errors {
 		pos := token.position_at(src, e.offset)
 		io.write_string(stderr, fmt.tprintf("%s:%d:%d: %s\n", name, pos.line, pos.column, e.message))
 		failed = true
