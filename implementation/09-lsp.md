@@ -18,7 +18,7 @@ The language server protocol implementation code and API should be placed in 'se
     - [ ] **Types**: Add `DefinitionParams` and `Location` types to `server/types.odin`.
     - [ ] **Definition Logic**: Create a function that, given an `ast.Ident` node, finds its declaration (either in the current file or an imported one via the `CompilationUnit`).
     - [ ] **Handler**: Implement `handleDefinition` in `server/definition.odin` to use the AST position logic and the new definition logic.
-    - [ ] **Dispatcher**: Wire up the `textDocument/definition` method in `server.odin`.
+    - [ ] **Dispatcher**: Wire up `textDocument/definition` in `server.odin`.
     - [ ] **Test**: Add an integration test for "Go to Definition." (See `server/definition_test.odin`)
 
 - [ ] **3. `textDocument/references` (Find All References)**
@@ -70,10 +70,17 @@ The language server protocol implementation code and API should be placed in 'se
     - [ ] **Dispatcher**: Wire up `textDocument/documentHighlight` in `server.odin`.
     - [ ] **Test**: Add an integration test for document highlight. (See `server/document_highlight_test.odin`)
 
-- [ ] **10. `textDocument/documentLink`**
+- [ ] **10. `textDocument/semanticTokens`**
+    - [ ] **Types**: Add `SemanticTokensParams`, `SemanticTokens`, `SemanticTokensPartialResult`, `SemanticTokenTypes`, and `SemanticTokenModifiers` to `server/types.odin`.
+    - [ ] **Lexer/Parser Integration**: Ensure that the lexer and parser can provide sufficient information (e.g., token types, modifiers, ranges) to accurately categorize semantic tokens.
+    - [ ] **Semantic Token Logic**: Implement a visitor or a traversal mechanism over the AST to identify and categorize all relevant tokens (e.g., keywords, identifiers, types, operators) and their modifiers.
+    - [ ] **Handler**: Implement `handleSemanticTokensFull` (and potentially `handleSemanticTokensRange`) in `server/semantic_tokens.odin`. This handler will use the logic to produce the `SemanticTokens` response.
+    - [ ] **Dispatcher**: Wire up `textDocument/semanticTokens/full` (and `textDocument/semanticTokens/range` if implemented) in `server.odin`.
+    - [ ] **Test**: Add an integration test for semantic tokens. (See `server/semantic_tokens_test.odin`)
+
+- [ ] **11. `textDocument/documentLink`**
     - [ ] **Types**: Add `DocumentLinkParams` and `DocumentLink` to `server/types.odin`.
     - [ ] **Handler**: Implement `handleDocumentLink` in `server/documentlink.odin`.
     - [ ] **Logic**: Generate links for `@import` and `@package` directives.
     - [ ] **Dispatcher**: Wire up `textDocument/documentLink` in `server.odin`.
     - [ ] **Test**: Add an integration test for document links. (See `server/document_link_test.odin`)
-
