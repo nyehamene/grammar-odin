@@ -7,6 +7,8 @@ import "core:strings"
 
 import "log"
 
+import "cmd/version"
+
 main :: proc() {
 	context.logger = log.Setup()
 	os.exit(run(os.args[1:]))
@@ -39,10 +41,10 @@ run :: proc(args: []string) -> int {
 		} else {
 			fmt.printf("Validating %s...\n", path)
 		}
-	case "print", "diff", "lsp":
+	case "print", "diff", "lsp", "help":
 		fmt.println("TBD")
-	case "help", "version":
-		fmt.println("TBD")
+	case "version":
+		version.run()
 	case:
 		fmt.eprintf("error: unknown command '%s'. Run 'grammar help' for usage.\n", command)
 		return 1
