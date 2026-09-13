@@ -15,7 +15,18 @@ Server_Info :: struct {
 	version: string,
 }
 
-Server_Capabilities :: struct {}
+Text_Document_Sync_Kind :: enum {
+	Full = 1,
+}
+
+Text_Document_Sync_Options :: struct {
+	open_close: bool `json:"openClose"`,
+	change:     Text_Document_Sync_Kind,
+}
+
+Server_Capabilities :: struct {
+	text_document_sync: Text_Document_Sync_Options `json:"textDocumentSync"`,
+}
 
 Initialize_Result :: struct {
 	capabilities: Server_Capabilities `json:"capabilities"`,
@@ -27,9 +38,6 @@ server_info := Server_Info {
 	name    = "grammar_ls",
 	version = "0.1",
 }
-
-@(rodata)
-capabilities := Server_Capabilities{}
 
 handle_initialize :: proc(srv: ^Server, id: Request_Id, req: json.Object) -> (ok: bool) {
 	params := json_object(req, "params") or_return
@@ -46,19 +54,26 @@ handle_initialize :: proc(srv: ^Server, id: Request_Id, req: json.Object) -> (ok
 		}
 	}
 
+	result := create_initialize_result(srv)
+	resp := write_response(srv.stdout, id, string(result))
+	debug(srv, resp)
+	return true
+}
+
+create_initialize_result :: proc(srv: ^Server) -> string {
 	result: Initialize_Result
 	result.server_info = server_info
-	result.capabilities = capabilities
+	result.capabilities = Server_Capabilities {
+		text_document_sync = Text_Document_Sync_Options{open_close = true, change = .Full},
+	}
 
 	result_str, err := json.marshal(result, allocator = context.temp_allocator)
 	if err != nil {
 		debugf(srv, "failed to marshal initialize_result to json%v", err)
-		return false
+		return ""
 	}
 
-	resp := write_response(srv.stdout, id, string(result_str))
-	debug(srv, resp)
-	return true
+	return string(result_str)
 }
 
 get_client_info :: proc(params: json.Object) -> (c: Client_Info, ok: bool) {

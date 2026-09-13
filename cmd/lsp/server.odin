@@ -25,6 +25,7 @@ Server :: struct {
 }
 
 Document :: struct {
+	lang_id: string,
 	uri:     string,
 	version: int,
 	text:    string,
@@ -70,23 +71,27 @@ handle_message :: proc(srv: ^Server, msg: json.Value) -> bool {
 	id, _ := get_request_id(obj)
 	method, _ := json_string(obj, "method")
 
-	debugf(srv, "id: %s", id)
-
 	switch method {
 	case "initialize":
 		handle_initialize(srv, id, obj)
 
 	case "initialized":
+
 	case "shutdown":
+		srv.shutdown_requested = true
+		write_response(srv.stdout, id, "null")
+
 	case "exit":
+		return false
+
 	case "textDocument/didOpen":
+		handle_did_open(srv, obj)
+
 	case "textDocument/didChange":
 	case "textDocument/documentSymbol":
 	case "textDocument/semanticTokens/full":
 	case "textDocument/diagnostic":
 	case "workspace/symbol":
-	case:
-		panic(method)
 	}
 
 	if srv.test_mode {
@@ -98,12 +103,24 @@ handle_message :: proc(srv: ^Server, msg: json.Value) -> bool {
 }
 
 get_request_id :: proc(obj: json.Object) -> (Request_Id, bool) {
-	if str, ok := json_string(obj, "id"); ok {
+	id, id_ok := obj["id"]
+	if !id_ok {
+		return "", false
+	}
+
+	if str, s_ok := id.(json.String); s_ok {
 		return str, true
 	}
-	if num, ok := json_int(obj, "id"); ok {
-		n := fmt.tprintf("%d", i64(num))
-		return json.String(n), true
+
+	if num, n_ok := id.(json.Integer); n_ok {
+		n := fmt.tprintf("%d", num)
+		return n, true
 	}
+
+	if num, n_ok := id.(json.Float); n_ok {
+		n := fmt.tprintf("%v", num)
+		return n, true
+	}
+
 	return "", false
 }

@@ -8,7 +8,7 @@ import "core:testing"
 @(test)
 test_lsp :: proc(t: ^testing.T) {
 	stdin := create_request_reader(
-		`"1"`,
+		`1`,
 		`"initialize"`,
 		`{"clientInfo":{"name": "test", "version": "0.1"}, "capabilities": {"textDocument": {"semanticTokens": {}}}}`,
 	)
