@@ -23,7 +23,11 @@ run :: proc(
 	defer Frame_destroy(frame)
 
 	for {
+		// Each frame is read with its own freshly initialized headers map:
+		// Frame_destroy frees the arena backing the map, so the map must be
+		// re-created before the next frame is read.
 		Frame_destroy(frame)
+		Frame_init(frame, stdin, logout)
 
 		buf, ok := read_frame(frame)
 		if !ok {
