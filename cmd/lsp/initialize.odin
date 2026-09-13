@@ -30,9 +30,10 @@ Diagnostic_Provider :: struct {
 }
 
 Server_Capabilities :: struct {
-	text_document_sync:  Text_Document_Sync_Options `json:"textDocumentSync"`,
-	position_encoding:   string                     `json:"positionEncoding"`,
-	diagnostic_provider: Diagnostic_Provider        `json:"diagnosticProvider"`,
+	text_document_sync:       Text_Document_Sync_Options `json:"textDocumentSync"`,
+	position_encoding:        string                     `json:"positionEncoding"`,
+	diagnostic_provider:      Diagnostic_Provider        `json:"diagnosticProvider"`,
+	semantic_tokens_provider: Semantic_Tokens_Options    `json:"semanticTokensProvider"`,
 }
 
 Initialize_Result :: struct {
@@ -76,6 +77,21 @@ create_initialize_result :: proc(srv: ^Server) -> string {
 		diagnostic_provider = Diagnostic_Provider{
 			inter_file_dependencies = false,
 			workspace_diagnostics   = false,
+		},
+		semantic_tokens_provider = Semantic_Tokens_Options{
+			legend = Semantic_Tokens_Legend{
+				token_types = []string{
+					"function",
+					"parameter",
+					"namespace",
+					"property",
+					"string",
+					"variable",
+					"operator",
+				},
+				token_modifiers = []string{},
+			},
+			full = true,
 		},
 	}
 

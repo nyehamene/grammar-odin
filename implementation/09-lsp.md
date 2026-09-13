@@ -72,13 +72,13 @@ The language server protocol implementation code and API should be placed in 'se
     - [x] **Dispatcher**: `textDocument/documentHighlight` is wired in `cmd/lsp/server.odin`.
     - [x] **Test**: `test_lsp_document_highlight` in `cmd/lsp/lsp_test.odin`.
 
-- [ ] **10. `textDocument/semanticTokens`**
-    - [ ] **Types**: Add `SemanticTokensParams`, `SemanticTokens`, `SemanticTokensPartialResult`, `SemanticTokenTypes`, and `SemanticTokenModifiers` to `server/types.odin`.
-    - [ ] **Lexer/Parser Integration**: Ensure that the lexer and parser can provide sufficient information (e.g., token types, modifiers, ranges) to accurately categorize semantic tokens.
-    - [ ] **Semantic Token Logic**: Implement a visitor or a traversal mechanism over the AST to identify and categorize all relevant tokens (e.g., keywords, identifiers, types, operators) and their modifiers.
-    - [ ] **Handler**: Implement `handleSemanticTokensFull` (and potentially `handleSemanticTokensRange`) in `server/semantic_tokens.odin`. This handler will use the logic to produce the `SemanticTokens` response.
-    - [ ] **Dispatcher**: Wire up `textDocument/semanticTokens/full` (and `textDocument/semanticTokens/range` if implemented) in `server.odin`.
-    - [ ] **Test**: Add an integration test for semantic tokens. (See `server/semantic_tokens_test.odin`)
+- [x] **10. `textDocument/semanticTokens`** (implemented in `cmd/lsp/semantic_tokens.odin`)
+    - [x] **Types**: `Semantic_Tokens`, `Semantic_Tokens_Legend`, `Semantic_Tokens_Options` added in `cmd/lsp/semantic_tokens.odin`.
+    - [x] **Logic**: Walks the AST to classify identifiers (rules, parameters, bindings, members) and maps literal/operator tokens to legend types.
+    - [x] **Handler**: `handle_semantic_tokens_full` implemented in `cmd/lsp/semantic_tokens.odin`, emitting delta-encoded quintuples.
+    - [x] **Dispatcher**: `textDocument/semanticTokens/full` is wired in `cmd/lsp/server.odin`.
+    - [x] **Capabilities**: `semanticTokensProvider` with the token legend is advertised during initialize.
+    - [x] **Test**: `test_lsp_semantic_tokens` in `cmd/lsp/lsp_test.odin`.
 
 - [ ] **11. `textDocument/documentLink`**
     - [ ] **Types**: Add `DocumentLinkParams` and `DocumentLink` to `server/types.odin`.
