@@ -16,7 +16,10 @@ Parser :: struct {
 // parse_file parses the tokenized source into a File. Syntax diagnostics are
 // appended to errors. If errors is non-empty the returned File may be partial.
 parse_file :: proc(src: string, tokens: []token.Token) -> (file: File, errors: [dynamic]Error) {
-	p := Parser{src = src, tokens = tokens}
+	p := Parser {
+		src    = src,
+		tokens = tokens,
+	}
 
 	for peek(&p).kind != .EOF {
 		if decl, ok := parse_decl(&p); ok {
@@ -85,12 +88,13 @@ parse_binding :: proc(p: ^Parser, name: token.Token) -> (Decl, bool) {
 
 	expect(p, .Semicolon)
 
-	return Binding_Decl{
-		name      = ident_node(name, p.src),
-		path      = path,
-		directive = dir_name,
-		pos       = name.start,
-	}, true
+	return Binding_Decl {
+			name = ident_node(name, p.src),
+			path = path,
+			directive = dir_name,
+			pos = name.start,
+		},
+		true
 }
 
 // parse_rule parses `ident "=" production ";"` where the parameter idents have
@@ -108,11 +112,11 @@ parse_rule :: proc(p: ^Parser, name: token.Token, params: []Ident) -> Decl {
 
 	expect(p, .Semicolon)
 
-	return Rule_Decl{
-		name   = ident_node(name, p.src),
+	return Rule_Decl {
+		name = ident_node(name, p.src),
 		params = clone_idents(params),
-		body   = body,
-		pos    = name.start,
+		body = body,
+		pos = name.start,
 	}
 }
 
@@ -222,7 +226,10 @@ parse_directive :: proc(p: ^Parser) -> Expr {
 // parse_terminal parses a string or regexp literal.
 parse_terminal :: proc(p: ^Parser) -> Expr {
 	t := next(p)
-	node := String_Lit{pos = t.start, value = token.lexeme(t, p.src)}
+	node := String_Lit {
+		pos   = t.start,
+		value = token.lexeme(t, p.src),
+	}
 	if t.kind == .Regexp {
 		return Regex_Lit{pos = t.start, value = node.value}
 	}
@@ -238,7 +245,11 @@ parse_non_terminal :: proc(p: ^Parser) -> Expr {
 	for peek(p).kind == .Dot {
 		next(p)
 		sel := expect(p, .Ident)
-		expr = Member_Expr{object = alloc_expr(expr), member = ident_node(sel, p.src), pos = expr_pos(expr)}
+		expr = Member_Expr {
+			object = alloc_expr(expr),
+			member = ident_node(sel, p.src),
+			pos    = expr_pos(expr),
+		}
 	}
 	return expr
 }
@@ -246,19 +257,23 @@ parse_non_terminal :: proc(p: ^Parser) -> Expr {
 // parse_call parses a rule call with arguments, e.g. `<greet person "Mr">`.
 parse_call :: proc(p: ^Parser) -> Expr {
 	lt := expect(p, .Lt)
-	name := expect(p, .Ident)
+	name := parse_non_terminal(p)
 
 	args := make([dynamic]Expr)
 	for peek(p).kind != .Gt {
 		if peek(p).kind == .EOF {
 			error_at(p, lt.start, "unterminated rule call")
-			return Call_Expr{name = ident_node(name, p.src), args = args, pos = lt.start}
+			break
 		}
 		append(&args, parse_basic(p))
 	}
 	expect(p, .Gt)
 
-	return Call_Expr{name = ident_node(name, p.src), args = args, pos = lt.start}
+	call := new(Call_Expr)
+	call.name = name
+	call.args = args
+	call.pos = lt.start
+	return call
 }
 
 // parse_optional parses `[ production ]`, e.g. `[ a b ]`.
@@ -312,7 +327,11 @@ next :: proc(p: ^Parser) -> token.Token {
 expect :: proc(p: ^Parser, kind: token.Kind) -> token.Token {
 	t := next(p)
 	if t.kind != kind {
-		error_at(p, t.start, fmt.tprintf("expected %s, got %s", token.kind_name(kind), token.kind_name(t.kind)))
+		error_at(
+			p,
+			t.start,
+			fmt.tprintf("expected %s, got %s", token.kind_name(kind), token.kind_name(t.kind)),
+		)
 	}
 	return t
 }

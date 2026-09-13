@@ -78,9 +78,13 @@ test_parse_call :: proc(t: ^testing.T) {
 
 	rule, _ := file.decls[0].(Rule_Decl)
 	term, _ := rule.body[0].(Term_Expr)
-	call, ok := term.x.(Call_Expr)
+	call, ok := term.x.(^Call_Expr)
 	testing.expect(t, ok, "expected Call_Expr")
-	testing.expect(t, call.name.name == "greet", "wrong callee")
+
+	ident, i_ok := call.name.(Ident)
+	testing.expect(t, ok, "expected Call_Expr name bet ident")
+
+	testing.expect(t, ident.name == "greet", "wrong callee")
 	testing.expect(t, len(call.args) == 2, "expected two arguments")
 
 	arg0, _ := call.args[0].(Ident)
@@ -179,7 +183,11 @@ test_parse_missing_semicolon :: proc(t: ^testing.T) {
 	defer destroy_file(&file)
 	defer delete(errors)
 	testing.expect(t, len(errors) >= 1, "expected an error for a missing semicolon")
-	testing.expect(t, strings.contains(errors[0].message, "Semicolon"), "missing semicolon error message")
+	testing.expect(
+		t,
+		strings.contains(errors[0].message, "Semicolon"),
+		"missing semicolon error message",
+	)
 }
 
 @(test)
@@ -227,7 +235,11 @@ test_parse_example_files :: proc(t: ^testing.T) {
 		defer delete(parse_errors)
 
 		if len(parse_errors) > 0 {
-			msg := fmt.tprintf("%s: expected clean parse, got %s", file, error_summary(parse_errors[:]))
+			msg := fmt.tprintf(
+				"%s: expected clean parse, got %s",
+				file,
+				error_summary(parse_errors[:]),
+			)
 			testing.expectf(t, false, "%s", msg)
 		}
 	}
@@ -242,7 +254,13 @@ must_parse :: proc(t: ^testing.T, src: string) -> File {
 
 	file, errors := parse_file(src, tokens[:])
 	defer delete(errors)
-	testing.expectf(t, len(errors) == 0, "unexpected parse errors for %q: %s", src, error_summary(errors[:]))
+	testing.expectf(
+		t,
+		len(errors) == 0,
+		"unexpected parse errors for %q: %s",
+		src,
+		error_summary(errors[:]),
+	)
 	return file
 }
 

@@ -7,23 +7,23 @@ import "../../token"
 
 // Semantic token type indices into the provider legend.
 Sem_Token_Type :: enum int {
-	Function    = 0,
-	Parameter   = 1,
-	Namespace   = 2,
-	Property    = 3,
-	String      = 4,
-	Variable    = 5,
-	Operator    = 6,
+	Function  = 0,
+	Parameter = 1,
+	Namespace = 2,
+	Property  = 3,
+	String    = 4,
+	Variable  = 5,
+	Operator  = 6,
 }
 
 Semantic_Tokens_Legend :: struct {
-	token_types:      []string `json:"tokenTypes"`,
-	token_modifiers:  []string `json:"tokenModifiers"`,
+	token_types:     []string `json:"tokenTypes"`,
+	token_modifiers: []string `json:"tokenModifiers"`,
 }
 
 Semantic_Tokens_Options :: struct {
-	legend: Semantic_Tokens_Legend   `json:"legend"`,
-	full:   bool                     `json:"full"`,
+	legend: Semantic_Tokens_Legend `json:"legend"`,
+	full:   bool `json:"full"`,
 }
 
 Semantic_Tokens :: struct {
@@ -100,11 +100,7 @@ handle_semantic_tokens_full :: proc(srv: ^Server, id: Request_Id, obj: json.Obje
 }
 
 // semantic_token_type picks the legend index for tok, or -1 to skip it.
-semantic_token_type :: proc(
-	tok: token.Token,
-	src: string,
-	types: map[int]Sem_Token_Type,
-) -> int {
+semantic_token_type :: proc(tok: token.Token, src: string, types: map[int]Sem_Token_Type) -> int {
 	#partial switch tok.kind {
 	case .Ident:
 		if t, ok := types[tok.start]; ok {
@@ -163,8 +159,8 @@ classify_expr :: proc(expr: ast.Expr, types: ^map[int]Sem_Token_Type) {
 	case ast.Member_Expr:
 		classify_object(v.object^, types)
 		types^[v.member.pos] = .Property
-	case ast.Call_Expr:
-		types^[v.name.pos] = .Function
+	case ^ast.Call_Expr:
+		classify_expr(v.name, types)
 		for arg in v.args {
 			classify_expr(arg, types)
 		}

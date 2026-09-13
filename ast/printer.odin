@@ -16,7 +16,10 @@ Printer :: struct {
 // as `line:column` (column padded) followed by two-space indentation per depth
 // level. Comments are printed verbatim so newlines and comments are preserved.
 print_file :: proc(writer: io.Writer, src: string, file: ^File) {
-	p := Printer{writer = writer, src = src}
+	p := Printer {
+		writer = writer,
+		src    = src,
+	}
 	io.write_string(writer, "File\n")
 	p.indent += 1
 	for decl in file.decls {
@@ -38,7 +41,15 @@ print_decl :: proc(p: ^Printer, decl: Decl) {
 		}
 		p.indent -= 1
 	case Binding_Decl:
-		print_header(p, v.pos, fmt.tprintf("BindingDecl: %s = @import(\"%s\")", v.name.name, strip_quotes(v.path.value)))
+		print_header(
+			p,
+			v.pos,
+			fmt.tprintf(
+				"BindingDecl: %s = @import(\"%s\")",
+				v.name.name,
+				strip_quotes(v.path.value),
+			),
+		)
 	case Comment_Group:
 		for c in v.list {
 			io.write_string(p.writer, c.text)
@@ -103,8 +114,9 @@ print_expr :: proc(p: ^Printer, expr: Expr) {
 		print_expr(p, v.object^)
 		print_header(p, v.member.pos, fmt.tprintf("Member: %s", v.member.name))
 		p.indent -= 1
-	case Call_Expr:
-		print_header(p, v.pos, fmt.tprintf("CallExpr: %s", v.name.name))
+	case ^Call_Expr:
+		print_header(p, v.pos, "CallExpr: ")
+		print_expr(p, v.name)
 		p.indent += 1
 		for e in v.args {
 			print_expr(p, e)

@@ -5,24 +5,24 @@ import "../../ast"
 // Hit_Kind describes what kind of token sat at the requested offset.
 Hit_Kind :: enum {
 	None,
-	Ident,         // a plain identifier reference in a rule body
-	Call_Name,     // the name of a rule invocation, e.g. `<greet ...>`
-	Param,         // a rule parameter
-	Rule_Name,     // the name of a rule declaration
-	Binding_Name,  // the name of an import binding declaration
+	Ident, // a plain identifier reference in a rule body
+	Call_Name, // the name of a rule invocation, e.g. `<greet ...>`
+	Param, // a rule parameter
+	Rule_Name, // the name of a rule declaration
+	Binding_Name, // the name of an import binding declaration
 	Member_Object, // the receiver of a member access, e.g. the `base` in `base.expr`
-	Member,        // the member of a member access, e.g. the `expr` in `base.expr`
-	Directive,     // a directive name, e.g. `@import`
-	String,        // a string literal
-	Regex,         // a regular expression literal
-	External,      // an external value
+	Member, // the member of a member access, e.g. the `expr` in `base.expr`
+	Directive, // a directive name, e.g. `@import`
+	String, // a string literal
+	Regex, // a regular expression literal
+	External, // an external value
 }
 
 // Hit is the outcome of a source-offset lookup into a parsed file.
 Hit :: struct {
-	kind:         Hit_Kind,
-	ident:        ast.Ident,
-	literal:      string,
+	kind:          Hit_Kind,
+	ident:         ast.Ident,
+	literal:       string,
 	member_object: string, // receiver name when kind == .Member
 }
 
@@ -78,15 +78,20 @@ find_hit_expr :: proc(expr: ast.Expr, offset: int) -> Hit {
 			return h
 		}
 		if hit_ident(v.member, offset) {
-			hit := Hit{kind = .Member, ident = v.member}
+			hit := Hit {
+				kind  = .Member,
+				ident = v.member,
+			}
 			if obj, is_ident := v.object^.(ast.Ident); is_ident {
 				hit.member_object = obj.name
 			}
 			return hit
 		}
-	case ast.Call_Expr:
-		if hit_ident(v.name, offset) {
-			return Hit{kind = .Call_Name, ident = v.name}
+	case ^ast.Call_Expr:
+		h := find_hit_expr(v.name, offset)
+		if h.kind != .None {
+			h.kind = .Call_Name
+			return h
 		}
 		for arg in v.args {
 			if h := find_hit_expr(arg, offset); found(h) {

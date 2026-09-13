@@ -20,7 +20,9 @@ Tokenizer :: struct {
 scan :: proc(src: string) -> (tokens: [dynamic]Token, errors: [dynamic]Error) {
 	tokens = make([dynamic]Token)
 	errors = make([dynamic]Error)
-	t := Tokenizer{src = src}
+	t := Tokenizer {
+		src = src,
+	}
 
 	for t.offset < len(t.src) {
 		ch := t.src[t.offset]
@@ -63,7 +65,10 @@ scan :: proc(src: string) -> (tokens: [dynamic]Token, errors: [dynamic]Error) {
 			append(&tokens, single(&t, .Dot))
 		case:
 			append(&tokens, tok(&t, .Illegal, t.offset, t.offset + 1))
-			append(&errors, Error{offset = t.offset, message = fmt.tprintf("illegal character '%c'", ch)})
+			append(
+				&errors,
+				Error{offset = t.offset, message = fmt.tprintf("illegal character '%c'", ch)},
+			)
 			t.offset += 1
 		}
 	}
@@ -106,6 +111,18 @@ scan_string :: proc(t: ^Tokenizer, errors: ^[dynamic]Error) -> Token {
 	t.offset += 1
 	for t.offset < len(t.src) {
 		ch := t.src[t.offset]
+		if ch == '\\' {
+			next_offset := t.offset + 1
+			if next_offset < len(t.src) {
+				next := t.src[next_offset]
+				switch next {
+				case '"', '\\':
+					// skip
+					t.offset = next_offset + 1
+					continue
+				}
+			}
+		}
 		if ch == '"' {
 			t.offset += 1
 			return tok(t, .String, start, t.offset)
@@ -125,7 +142,20 @@ scan_regexp :: proc(t: ^Tokenizer, errors: ^[dynamic]Error) -> Token {
 	start := t.offset
 	t.offset += 1
 	for t.offset < len(t.src) {
-		if t.src[t.offset] == '\'' {
+		ch := t.src[t.offset]
+		if ch == '\\' {
+			next_offset := t.offset + 1
+			if next_offset < len(t.src) {
+				next := t.src[next_offset]
+				switch next {
+				case '\'', '\\':
+					// skip
+					t.offset = next_offset + 1
+					continue
+				}
+			}
+		}
+		if ch == '\'' {
 			t.offset += 1
 			return tok(t, .Regexp, start, t.offset)
 		}

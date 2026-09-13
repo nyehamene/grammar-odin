@@ -35,7 +35,13 @@ run :: proc(args: []string, stdin: io.Reader, stdout, stderr: io.Writer) -> int 
 		return 1
 	}
 	if !is_valid_path(path) {
-		io.write_string(stderr, fmt.tprintf("error: invalid path '%s': must be a relative path inside the current working directory\n", path))
+		io.write_string(
+			stderr,
+			fmt.tprintf(
+				"error: invalid path '%s': must be a relative path inside the current working directory\n",
+				path,
+			),
+		)
 		return 1
 	}
 
@@ -66,7 +72,13 @@ parse_args :: proc(args: []string) -> (path: string, mode: Mode, use_stdin: bool
 // collect_files returns the grammar files for the given path and mode. In
 // package mode a directory is walked recursively; a file path is returned
 // directly.
-collect_files :: proc(path: string, mode: Mode, allocator := context.allocator) -> (files: [dynamic]string) {
+collect_files :: proc(
+	path: string,
+	mode: Mode,
+	allocator := context.allocator,
+) -> (
+	files: [dynamic]string,
+) {
 	files = make([dynamic]string, allocator)
 	switch mode {
 	case .File:
@@ -146,12 +158,18 @@ check_source :: proc(src: string, name: string, stderr: io.Writer) -> bool {
 	failed := false
 	for e in lex_errors {
 		pos := token.position_at(src, e.offset)
-		io.write_string(stderr, fmt.tprintf("%s:%d:%d: %s\n", name, pos.line, pos.column, e.message))
+		io.write_string(
+			stderr,
+			fmt.tprintf("%s:%d:%d: %s\n", name, pos.line, pos.column, e.message),
+		)
 		failed = true
 	}
 	for e in parse_errors {
 		pos := token.position_at(src, e.offset)
-		io.write_string(stderr, fmt.tprintf("%s:%d:%d: %s\n", name, pos.line, pos.column, e.message))
+		io.write_string(
+			stderr,
+			fmt.tprintf("%s:%d:%d: %s\n", name, pos.line, pos.column, e.message),
+		)
 		failed = true
 	}
 	return failed

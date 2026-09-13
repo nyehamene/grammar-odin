@@ -18,8 +18,8 @@ Symbol_Ref_Kind :: enum {
 Symbol_Ref :: struct {
 	kind:        Symbol_Ref_Kind,
 	name:        string,
-	ns_dir:      string,                 // for .Rule
-	origin_file: ^check.Loaded_File,     // for .Binding
+	ns_dir:      string, // for .Rule
+	origin_file: ^check.Loaded_File, // for .Binding
 }
 
 // handle_references implements textDocument/references. It finds every
@@ -113,7 +113,14 @@ handle_references :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok
 
 // reference_target resolves the symbol under the cursor to a namespace rule or
 // a file-local import binding.
-reference_target :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, hit: Hit) -> (Symbol_Ref, bool) {
+reference_target :: proc(
+	cu: ^check.Compilation_Unit,
+	fi: ^check.Loaded_File,
+	hit: Hit,
+) -> (
+	Symbol_Ref,
+	bool,
+) {
 	#partial switch hit.kind {
 	case .Rule_Name:
 		return Symbol_Ref{kind = .Rule, name = hit.ident.name, ns_dir = fi.namespace_path}, true
@@ -122,7 +129,8 @@ reference_target :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, hi
 			return Symbol_Ref{kind = .Binding, name = hit.ident.name, origin_file = fi}, true
 		}
 		if _, _, ok := rule_ref_at(cu, fi, hit.ident.name); ok {
-			return Symbol_Ref{kind = .Rule, name = hit.ident.name, ns_dir = fi.namespace_path}, true
+			return Symbol_Ref{kind = .Rule, name = hit.ident.name, ns_dir = fi.namespace_path},
+				true
 		}
 	case .Binding_Name, .Member_Object:
 		if _, is_binding := fi.bindings[hit.ident.name]; is_binding {
@@ -198,20 +206,21 @@ rule_ref_in_expr :: proc(
 		if v.name == name {
 			push_reference(out, uris, f, v.pos, v.name)
 		}
+
 	case ast.Term_Expr:
 		rule_ref_in_expr(f, target_ns_dir, name, v.x^, uris, out)
+
 	case ast.Member_Expr:
 		if obj, is_ident := v.object^.(ast.Ident); is_ident {
-			if dir, is_binding := f.bindings[obj.name]; is_binding && dir == target_ns_dir && v.member.name == name {
+			if dir, is_binding := f.bindings[obj.name];
+			   is_binding && dir == target_ns_dir && v.member.name == name {
 				push_reference(out, uris, f, v.member.pos, v.member.name)
 			}
 		} else {
 			rule_ref_in_expr(f, target_ns_dir, name, v.object^, uris, out)
 		}
-	case ast.Call_Expr:
-		if v.name.name == name {
-			push_reference(out, uris, f, v.name.pos, v.name.name)
-		}
+	case ^ast.Call_Expr:
+		rule_ref_in_expr(f, target_ns_dir, name, v.name, uris, out)
 		for arg in v.args {
 			rule_ref_in_expr(f, target_ns_dir, name, arg, uris, out)
 		}
@@ -265,10 +274,8 @@ binding_ref_in_expr :: proc(
 		if v.member.name == name {
 			push_reference(out, uris, f, v.member.pos, v.member.name)
 		}
-	case ast.Call_Expr:
-		if v.name.name == name {
-			push_reference(out, uris, f, v.name.pos, v.name.name)
-		}
+	case ^ast.Call_Expr:
+		binding_ref_in_expr(f, name, v.name, uris, out)
 		for arg in v.args {
 			binding_ref_in_expr(f, name, arg, uris, out)
 		}
@@ -314,11 +321,11 @@ push_reference :: proc(
 	}
 	append(
 		out,
-		Location{
+		Location {
 			uri = strings.clone(uri),
-			range = Range{
+			range = Range {
 				start = position_at_offset(target.src, offset),
-				end   = position_at_offset(target.src, offset + len(name)),
+				end = position_at_offset(target.src, offset + len(name)),
 			},
 		},
 	)

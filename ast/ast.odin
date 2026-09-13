@@ -1,7 +1,5 @@
 package ast
 
-import "../token"
-
 // Expr is any expression that can appear in a production.
 Expr :: union {
 	Ident,
@@ -15,7 +13,7 @@ Expr :: union {
 	Repetition_Expr,
 	Group_Expr,
 	Member_Expr,
-	Call_Expr,
+	^Call_Expr,
 	Directive_Expr,
 }
 
@@ -132,7 +130,7 @@ Member_Expr :: struct {
 
 // Call_Expr is a call to a rule with arguments, e.g. `<greet person "Mr">`.
 Call_Expr :: struct {
-	name: Ident,
+	name: Expr,
 	args: [dynamic]Expr,
 	pos:  int,
 }
@@ -175,7 +173,7 @@ expr_pos :: proc(expr: Expr) -> int {
 		return v.pos
 	case Member_Expr:
 		return v.pos
-	case Call_Expr:
+	case ^Call_Expr:
 		return v.pos
 	case Directive_Expr:
 		return v.pos
@@ -253,7 +251,7 @@ destroy_expr :: proc(expr: Expr) {
 	case Member_Expr:
 		destroy_expr(v.object^)
 		free(v.object)
-	case Call_Expr:
+	case ^Call_Expr:
 		for e in v.args {
 			destroy_expr(e)
 		}

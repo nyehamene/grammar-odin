@@ -13,17 +13,60 @@ import "../../token"
 // Type is the type of a declaration or expression as resolved by the checker.
 Type :: enum {
 	Unknown,
-	String,     // a string literal, e.g. "foo"
-	Regexp,     // a regular expression literal, e.g. '[a-z]+'
-	External,   // an external value, e.g. $name
-	Production, // a rule (a named production)
-	Namespace,  // an imported namespace, bound by @import
+	String, // a string literal, e.g. "foo"
+	Regexp, // a regular expression literal, e.g. '[a-z]+'
+	External, // an external value, e.g. $name
+	Production, // a rule (a named production) without any parameter
+	Proc, // a rule (a named production) with one or more parameter
+	Namespace, // an imported namespace, bound by @import
+}
+
+Operand_Kind :: enum {
+	Invalid,
+	LValue,
+	RValue,
+	Namespace,
+}
+
+Operand :: struct {
+	kind: Operand_Kind,
+	type: Type,
+	pos:  int,
+	name: string,
+}
+
+Operand_invalid :: proc(o: ^Operand, pos: int, name := "") {
+	o.kind = .Invalid
+	o.type = .Unknown
+	o.pos = pos
+	o.name = name
+}
+
+Operand_lvalue :: proc(o: ^Operand, type: Type, pos: int, name := "") {
+	o.kind = .LValue
+	o.type = type
+	o.pos = pos
+	o.name = name
+}
+
+Operand_rvalue :: proc(o: ^Operand, type: Type, pos: int, name := "") {
+	o.kind = .RValue
+	o.type = type
+	o.pos = pos
+	o.name = name
+}
+
+Operand_ns :: proc(o: ^Operand, pos: int, name := "") {
+	o.kind = .Namespace
+	o.type = .Namespace
+	o.pos = pos
+	o.name = name
 }
 
 // Semantic_Error is a single diagnostic reported by the checker.
 Semantic_Error :: struct {
 	path:    string, // display path, owned
-	offset:  int,    // source offset of the diagnostic
+	offset:  int, // source offset of the diagnostic
 	line:    int,
 	col:     int,
 	message: string, // owned
@@ -31,8 +74,10 @@ Semantic_Error :: struct {
 
 // Rule_Ref identifies the first declaration of a rule in a namespace.
 Rule_Ref :: struct {
+	type:   Type,
+	arity:  int,
 	file:   ^Loaded_File, // the file declaring the rule
-	offset: int,          // source offset of the rule name
+	offset: int, // source offset of the rule name
 }
 
 // Namespace is the collection of rules declared in a directory. Every grammar
@@ -49,8 +94,8 @@ Loaded_File :: struct {
 	file:            ast.File,
 	namespace_path:  string, // absolute path of the containing directory, owned
 	bindings:        map[string]string, // binding name -> absolute directory of the imported namespace
-	binding_offsets: map[string]int,    // binding name -> offset of the binding's name
-	broken:          bool,              // file had lexical or syntax errors
+	binding_offsets: map[string]int, // binding name -> offset of the binding's name
+	broken:          bool, // file had lexical or syntax errors
 }
 
 // Compilation_Unit maps loaded files and namespaces and collects diagnostics.
@@ -209,20 +254,38 @@ resolve_imports :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File) {
 			cleaned, _ := filepath.clean(resolved)
 			delete(resolved)
 			if rerr != nil {
-				add_error(cu, fi.display, fi.src, d.path.pos, fmt.tprintf("invalid import path '%s'", import_path))
+				add_error(
+					cu,
+					fi.display,
+					fi.src,
+					d.path.pos,
+					fmt.tprintf("invalid import path '%s'", import_path),
+				)
 				continue
 			}
 
 			if cu.loading_ns[cleaned] {
 				cycle_display := display_of(cu, cleaned)
-				add_error(cu, fi.display, fi.src, d.pos, fmt.tprintf("import cycle detected involving %s", cycle_display))
+				add_error(
+					cu,
+					fi.display,
+					fi.src,
+					d.pos,
+					fmt.tprintf("import cycle detected involving %s", cycle_display),
+				)
 				delete(cycle_display)
 				delete(cleaned)
 				continue
 			}
 
 			if !os.is_directory(cleaned) {
-				add_error(cu, fi.display, fi.src, d.path.pos, fmt.tprintf("namespace \"%s\" does not exist", import_path))
+				add_error(
+					cu,
+					fi.display,
+					fi.src,
+					d.path.pos,
+					fmt.tprintf("namespace \"%s\" does not exist", import_path),
+				)
 				delete(cleaned)
 				continue
 			}
@@ -281,10 +344,27 @@ bind_all :: proc(cu: ^Compilation_Unit) {
 				if other, ok := seen[d.name.name]; ok {
 					add_redeclared(cu, fi, d.name.pos, d.name.name, fi, other)
 				} else if other_ref, exists := ns.rules[d.name.name]; exists {
-					add_redeclared(cu, fi, d.name.pos, d.name.name, other_ref.file, other_ref.offset)
+					add_redeclared(
+						cu,
+						fi,
+						d.name.pos,
+						d.name.name,
+						other_ref.file,
+						other_ref.offset,
+					)
 				} else {
 					seen[d.name.name] = d.name.pos
-					ns.rules[d.name.name] = Rule_Ref{file = fi, offset = d.name.pos}
+					arity := len(d.params)
+					rule := Rule_Ref {
+						file   = fi,
+						offset = d.name.pos,
+						type   = .Production,
+						arity  = arity,
+					}
+					if arity > 0 {
+						rule.type = .Proc
+					}
+					ns.rules[d.name.name] = rule
 				}
 			case ast.Binding_Decl:
 				if other, ok := seen[d.name.name]; ok {
@@ -321,8 +401,8 @@ check_file :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File) {
 
 // check_body checks expr with a rule's parameters in scope.
 check_body :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, params: []ast.Ident, expr: ast.Expr) {
-	if is_param(params, expr) do return
-	check_expr_scoped(cu, fi, params, expr)
+	o: Operand
+	check_expr_scoped(cu, fi, params, expr, &o)
 }
 
 // is_param reports whether expr is one of the given parameters.
@@ -336,70 +416,243 @@ is_param :: proc(params: []ast.Ident, expr: ast.Expr) -> bool {
 }
 
 // check_expr_scoped is check_expr with a parameter list in scope.
-check_expr_scoped :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, params: []ast.Ident, expr: ast.Expr) {
+check_expr_scoped :: proc(
+	cu: ^Compilation_Unit,
+	fi: ^Loaded_File,
+	params: []ast.Ident,
+	expr: ast.Expr,
+	o: ^Operand,
+) {
+
 	switch v in expr {
 	case ast.Ident:
-		if !is_param(params, v) && !is_defined(cu, fi, v.name) {
-			add_error(cu, fi.display, fi.src, v.pos, fmt.tprintf("undefined identifier: %s", v.name))
+		if is_param(params, v) {
+			Operand_rvalue(o, .Production, v.pos, v.name)
+			break
 		}
+		if is_binding(fi, v.name) {
+			Operand_ns(o, v.pos, v.name)
+			break
+		}
+
+		rule, defined := resolve_rule(cu, fi, v.name)
+		if !defined {
+			add_error(
+				cu,
+				fi.display,
+				fi.src,
+				v.pos,
+				fmt.tprintf("undefined identifier: %s", v.name),
+			)
+		}
+		Operand_lvalue(o, rule.type, v.pos, v.name)
+
 	case ast.Term_Expr:
-		check_expr_scoped(cu, fi, params, v.x^)
+		check_expr_scoped(cu, fi, params, v.x^, o)
+		if o.kind == .LValue {
+			break
+		}
+		switch o.type {
+		case .Unknown, .String, .Regexp, .External, .Production:
+		case .Namespace:
+			add_error(
+				cu,
+				fi.display,
+				fi.src,
+				o.pos,
+				fmt.tprintf("namespace cannot be used as an production: %s", o.name),
+			)
+		case .Proc:
+			add_error(
+				cu,
+				fi.display,
+				fi.src,
+				o.pos,
+				fmt.tprintf("proc cannot be used as a production: %s", o.name),
+			)
+		}
+
 	case ast.Member_Expr:
-		check_member(cu, fi, v)
-	case ast.Call_Expr:
-		if !is_param(params, v.name) && !is_defined(cu, fi, v.name.name) {
-			add_error(cu, fi.display, fi.src, v.name.pos, fmt.tprintf("undefined identifier: %s", v.name.name))
+		check_member(cu, fi, v, o)
+
+	case ^ast.Call_Expr:
+		name_op: Operand
+		check_expr_scoped(cu, fi, params, v.name, &name_op)
+		if name_op.kind == .Invalid {
+			Operand_invalid(o, v.pos, name_op.name)
+			break
 		}
+		if name_op.type != .Proc || name_op.kind == .RValue {
+			Operand_invalid(o, v.pos, name_op.name)
+			add_error(
+				cu,
+				fi.display,
+				fi.src,
+				name_op.pos,
+				fmt.tprintf("not callable: '%s'", name_op.name),
+			)
+		}
+
+		Operand_lvalue(o, .Production, v.pos, name_op.name)
+
 		for arg in v.args {
-			check_expr_scoped(cu, fi, params, arg)
+			arg_op: Operand
+			check_expr_scoped(cu, fi, params, arg, &arg_op)
+			if arg_op.kind == .LValue {
+				continue
+			}
+
+			switch arg_op.type {
+			case .Unknown, .String, .Regexp, .Production:
+			case .External:
+				add_error(
+					cu,
+					fi.display,
+					fi.src,
+					arg_op.pos,
+					fmt.tprintf("external cannot be pass as proc argument: %s", arg_op.name),
+				)
+			case .Proc:
+				add_error(
+					cu,
+					fi.display,
+					fi.src,
+					arg_op.pos,
+					fmt.tprintf(
+						"proc cannot be pass as argument to another proc: %s",
+						arg_op.name,
+					),
+				)
+			case .Namespace:
+				add_error(
+					cu,
+					fi.display,
+					fi.src,
+					arg_op.pos,
+					fmt.tprintf("namespace cannot be pass as proc argument: %s", arg_op.name),
+				)
+			}
 		}
+
 	case ast.Sequence_Expr:
-		for e in v.exprs do check_expr_scoped(cu, fi, params, e)
+		check_expr_group(cu, fi, params, v.pos, v.exprs[:], o)
+
 	case ast.Alternative_Expr:
-		for e in v.exprs do check_expr_scoped(cu, fi, params, e)
+		check_expr_group(cu, fi, params, v.pos, v.exprs[:], o)
+
 	case ast.Optional_Expr:
-		for e in v.exprs do check_expr_scoped(cu, fi, params, e)
+		check_expr_group(cu, fi, params, v.pos, v.exprs[:], o)
+
 	case ast.Repetition_Expr:
-		for e in v.exprs do check_expr_scoped(cu, fi, params, e)
+		check_expr_group(cu, fi, params, v.pos, v.exprs[:], o)
+
 	case ast.Group_Expr:
-		for e in v.exprs do check_expr_scoped(cu, fi, params, e)
-	case ast.String_Lit, ast.Regex_Lit, ast.External_Value, ast.Directive_Expr:
+		check_expr_group(cu, fi, params, v.pos, v.exprs[:], o)
+
+	case ast.String_Lit:
+		Operand_lvalue(o, .String, v.pos, v.value)
+
+	case ast.Regex_Lit:
+		Operand_lvalue(o, .Regexp, v.pos, v.value)
+
+	case ast.External_Value:
+		Operand_rvalue(o, .External, v.pos, v.name)
+
+	case ast.Directive_Expr:
+		// Operand_rvalue(o, .Unknown, v.pos, v.name.name)
+		Operand_invalid(o, v.pos, v.name.name)
 	}
 }
 
+check_expr_group :: proc(
+	cu: ^Compilation_Unit,
+	fi: ^Loaded_File,
+	params: []ast.Ident,
+	pos: int,
+	exprs: []ast.Expr,
+	o: ^Operand,
+) {
+	for e in exprs {
+		eop: Operand
+		check_expr_scoped(cu, fi, params, e, &eop)
+	}
+	Operand_lvalue(o, .Production, pos)
+}
+
 // check_expr resolves names in expr and reports undefined references.
-check_expr :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, expr: ast.Expr) {
-	check_expr_scoped(cu, fi, nil, expr)
+check_expr :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, expr: ast.Expr, o: ^Operand) {
+	check_expr_scoped(cu, fi, nil, expr, o)
 }
 
 // check_member validates a member access `receiver.member`: the receiver must
 // be a binding to a namespace and the member must be a rule in that namespace.
-check_member :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, m: ast.Member_Expr) {
-	object, ok := m.object^.(ast.Ident)
-	if !ok {
-		add_error(cu, fi.display, fi.src, m.pos, "expected a namespace on the left of '.'")
+check_member :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, m: ast.Member_Expr, o: ^Operand) {
+	// object, ok := m.object^.(ast.Ident)
+	// if !ok {
+	// 	add_error(cu, fi.display, fi.src, m.pos, "expected a namespace on the left of '.'")
+	// 	return
+	// }
+
+	obj_op: Operand
+	check_expr(cu, fi, m.object^, &obj_op)
+	if obj_op.kind != .Namespace {
+		if obj_op.kind == .Invalid {
+			add_error(cu, fi.display, fi.src, m.pos, "expected a namespace on the left of '.'")
+			return
+		}
+		add_error(
+			cu,
+			fi.display,
+			fi.src,
+			m.member.pos,
+			fmt.tprintf("expected a namespace, but '%s' is not a namespace", obj_op.name),
+		)
 		return
 	}
-	if target_dir, found := fi.bindings[object.name]; found {
+
+	obj_name := obj_op.name
+
+	if target_dir, found := fi.bindings[obj_name]; found {
 		ns := cu.namespaces[target_dir]
 		if ns == nil do return
 		if _, has := ns.rules[m.member.name]; !has {
 			ns_name := filepath.base(target_dir)
-			add_error(cu, fi.display, fi.src, m.member.pos, fmt.tprintf("%s.%s is undefined. namespace %s has no field %s", object.name, m.member.name, ns_name, m.member.name))
+			add_error(
+				cu,
+				fi.display,
+				fi.src,
+				m.member.pos,
+				fmt.tprintf(
+					"%s.%s is undefined. namespace %s has no field %s",
+					obj_name,
+					m.member.name,
+					ns_name,
+					m.member.name,
+				),
+			)
 		}
 		return
 	}
-	if is_defined(cu, fi, object.name) {
-		add_error(cu, fi.display, fi.src, m.member.pos, fmt.tprintf("expected a namespace, but '%s' is not a namespace", object.name))
-		return
+
+}
+
+is_binding :: proc(fi: ^Loaded_File, name: string) -> bool {
+	if _, ok := fi.bindings[name]; ok {
+		return true
 	}
-	add_error(cu, fi.display, fi.src, object.pos, fmt.tprintf("undefined identifier: %s", object.name))
+	return false
+}
+
+resolve_rule :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, name: string) -> (Rule_Ref, bool) {
+	ns := cu.namespaces[fi.namespace_path]
+	if ns == nil do return {}, false
+	rule, ok := ns.rules[name]
+	return rule, ok
 }
 
 // is_defined reports whether name is a rule in the file's namespace or a
 // binding declared in the file.
-is_defined :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, name: string) -> bool {
-	if _, ok := fi.bindings[name]; ok do return true
+is_defined0 :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, name: string) -> bool {
 	ns := cu.namespaces[fi.namespace_path]
 	if ns == nil do return false
 	_, ok := ns.rules[name]
@@ -408,14 +661,27 @@ is_defined :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, name: string) -> boo
 
 // add_redeclared reports that name is declared twice, pointing at the first
 // declaration.
-add_redeclared :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, offset: int, name: string, other_file: ^Loaded_File, other_offset: int) {
+add_redeclared :: proc(
+	cu: ^Compilation_Unit,
+	fi: ^Loaded_File,
+	offset: int,
+	name: string,
+	other_file: ^Loaded_File,
+	other_offset: int,
+) {
 	other_pos := token.position_at(other_file.src, other_offset)
 	add_error(
 		cu,
 		fi.display,
 		fi.src,
 		offset,
-		fmt.tprintf("field %s redeclared in this namespace. (see other declaration at %s:%d:%d)", name, other_file.display, other_pos.line, other_pos.column),
+		fmt.tprintf(
+			"field %s redeclared in this namespace. (see other declaration at %s:%d:%d)",
+			name,
+			other_file.display,
+			other_pos.line,
+			other_pos.column,
+		),
 	)
 }
 
@@ -435,7 +701,13 @@ cmp_errors :: proc(a, b: Semantic_Error) -> int {
 
 // add_error appends a diagnostic located at offset within src. Both the path
 // and the message are cloned onto the heap so the unit can free them.
-add_error :: proc(cu: ^Compilation_Unit, display_path: string, src: string, offset: int, message: string) {
+add_error :: proc(
+	cu: ^Compilation_Unit,
+	display_path: string,
+	src: string,
+	offset: int,
+	message: string,
+) {
 	line, col := 1, 1
 	if src != "" {
 		pos := token.position_at(src, offset)
@@ -443,7 +715,7 @@ add_error :: proc(cu: ^Compilation_Unit, display_path: string, src: string, offs
 	}
 	append(
 		&cu.errors,
-		Semantic_Error{
+		Semantic_Error {
 			path = strings.clone(display_path),
 			offset = offset,
 			line = line,
