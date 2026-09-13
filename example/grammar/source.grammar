@@ -1,0 +1,19 @@
+Source = template
+  | module
+  | workspace
+  ;
+
+template = { decl Sep };
+decl   = Var
+       | Import
+       | Style
+       ;
+
+module = { directive Sep };
+directive   = Api
+       | Doc
+       | Var
+       | Require
+       ;
+
+workspace = { Include Sep };

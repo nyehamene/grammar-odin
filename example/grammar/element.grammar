@@ -1,0 +1,50 @@
+// Element
+Element           = string_element
+                  | text_element
+                  | component_element
+                  | if_element
+                  | cond_element
+                  ;
+string_element    = Quoted_String
+                  | Line_String
+                  ;
+text_element      = "[" "_" Ident "]";
+component_element = "[" component_tag [ Element_Children ] "]";
+component_tag     = Expr;
+
+Element_Children          = Attribute
+                  | Inline_Style
+                  | Element
+                  ;
+
+Inline_Style          = [ field_selector ] "style" [ pseudo_selector_group ] style_block;
+pseudo_selector_group = "(" pseudo_selector { "," pseudo_selector } [ "," ] ")";
+pseudo_selector       = ":" [ ":" ] ( Ident_Dash | Ident );
+
+field_selector = "@" Qual_Ident;
+
+// Attribute
+Attribute           = qualified_attribute_group
+                          | named_attribute_group
+                          | attribute_block
+                          ;
+qualified_attribute_group = attribute_qualifier attribute_block;
+attribute_qualifier       = field_selector [ "::" Ident ];
+named_attribute_group     = Ident attribute_block;
+attribute_block           = "{}" | "{" attributes [ "," ] "}";
+attributes                = attribute { "," attribute };
+attribute                 = attribute_key [ "=" attribute_value ];
+attribute_key             = Ident
+                          | Ident_Dash
+                          | Quoted_String
+                          ;
+attribute_value           = <if_expr Expr>
+                          | <cond_expr Expr>
+                          | Expr
+                          ;
+
+if_expr   expr         = "if" Expr "then" Expr [ <else_expr Expr> ];
+else_expr expr         = "else" ( <if_expr Expr> | Expr );
+cond_expr expr         = "cond" Expr "{" <case_expr Expr> { <case_expr Expr> } [ <case_expr_default Expr> ] "}";
+case_expr expr         = "case" Case_Selector "=" Expr Sep;
+case_expr_default expr = "case" "=" Expr Sep;

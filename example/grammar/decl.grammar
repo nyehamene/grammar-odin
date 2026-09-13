@@ -1,0 +1,43 @@
+Var      = Ident ( var_type | var_init );
+var_init = ( var_type | ":" ) ( ":" | "=" ) expr ";";
+var_type = ":" Type;
+expr     = Enum
+         | Union
+         | Component
+         | Rule
+         | Compound
+         ;
+
+Doc              = Ident ":" ( Quoted_String | Line_String );
+Api              = Ident ":" ( api_public | api_private );
+api_public       = "@public" [ "()" ];
+api_private      = "@private" [ "(" api_private_mode ")" ];
+api_private_mode = '"file"' | '"package"';
+
+Import  = Ident ":" import;
+import  = "@import" "(" Quoted_String ")";
+Require = "@require" "(" Quoted_String ")";
+Include = "@include" "(" Quoted_String ")";
+
+Style = Ident "::" Rule;
+
+// Union
+Union    = "union" "{" variants "}";
+variants = variant { variant };
+variant  = Qual_Ident Sep;
+
+// Enumeration
+Enum         = "enum" "{" [ enum_members ] "}";
+enum_members = enum_member { enum_member };
+enum_member  = Ident [ "=" Primary ] Sep;
+
+// Component
+Component       = "component" [ component_param ] component_body;
+component_param = "(" Ident ":" Type ")";
+component_body  = "{" { Field } [ Element_Children ] "}";
+Field           = field Sep;
+field           = Ident ( field_type | field_init ) [ field_tag ];
+field_init      = ( var_type | ":" ) ( ":" | "=" ) Primary;
+field_type      = var_type;
+field_tag       = Tag;
+

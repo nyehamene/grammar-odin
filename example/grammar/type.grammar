@@ -1,0 +1,11 @@
+// Type
+Type       = Qual_Ident
+           | Slice_Type
+           | Map_Type
+           ;
+Slice_Type = "[" "]" Type;
+Map_Type   = "map" "[" Type "]" Type;
+Qual_Ident = Ident "." Ident
+           | Ident
+           ;
+

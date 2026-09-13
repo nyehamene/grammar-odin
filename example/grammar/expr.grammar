@@ -1,44 +1,44 @@
 // Expression
-Compound   = string_lines
+Compound   = Line_String
            | slice_lit
            | map_lit
            | object_lit
-           | expr
+           | Expr
            ;
-expr       = or;
+Expr       = or;
 or         = and { "or" and };
 and        = eq { "and" eq };
 eq         = comparison { ( "!=" | "==" ) comparison };
-comparison = term { ( ">" | ">=" | "<" | "<=" ) } term;
-term       = factor { ( "-" | "+" ) factor };
+comparison = Term { ( ">" | ">=" | "<" | "<=" ) } Term;
+Term       = factor { ( "-" | "+" ) factor };
 factor     = unary { ( "*" | "/" | "%" ) unary };
-unary      = ( "-" | "." ) primary | member;
-member     = call { "." call };
-call       = primary "(" call_arg ")" | primary;
-primary    = "currentcolor"
+unary      = ( "-" | "." ) Primary | Member;
+Member     = Call { "." Call };
+Call       = Primary "(" call_arg ")" | Primary;
+Primary    = "currentcolor"
            | "nil"
            | "_"
            | bool
-           | string
+           | Quoted_String
            | keyword
            | number
            | size
            | color_hex
-           | ident
-           | ident_dash
+           | Ident
+           | Ident_Dash
            | "(" or ")"
            ;
 bool       = "true" | "false";
-keyword    = "'" ident "'";
+keyword    = "'" Ident "'";
 
 // Slice & Map Literals
-slice_lit     = slice_type "{" [ expr_list [ "," ] ] "}";
-map_lit       = map_type "{" [ map_entries [ "," ] ] "}";
+slice_lit     = Slice_Type "{" [ expr_list [ "," ] ] "}";
+map_lit       = Map_Type "{" [ map_entries [ "," ] ] "}";
 map_entries   = map_entry { "," map_entry };
-map_entry     = expr "=" expr;
-object_lit    = qual_ident "{" { object_fields } "}";
+map_entry     = Expr "=" Expr;
+object_lit    = Qual_Ident "{" { object_fields } "}";
 object_fields = entry;
-expr_list     = expr { "," expr };
+expr_list     = Expr { "," Expr };
 
 // Type
 type       = qual_ident
@@ -47,22 +47,22 @@ type       = qual_ident
            ;
 slice_type = "[" "]" type;
 map_type   = "map" "[" type "]" type;
-qual_ident = ident "." ident
-           | ident
+qual_ident = Ident "." Ident
+           | Ident
            ;
 
 call_arg   = arg_list | entry_list;
-arg_list   = expr { [ "," ] expr };
+arg_list   = Expr { [ "," ] Expr };
 entry_list = entry { [ "," ] entry };
 
 // Identifier
-ident      = /[a-zA-Z_][a-zA-Z0-9_]*/;
-ident_dash = /(--)?[a-zA-Z_-][a-zA-Z0-9_-]*/;
+Ident      = '[a-zA-Z_][a-zA-Z0-9_]*';
+Ident_Dash = '(--)?[a-zA-Z_-][a-zA-Z0-9_-]*';
 
 // Number
-digit_hex  = /[a-fA-F0-9]/;
+digit_hex  = '[a-fA-F0-9]';
 digit_bin  = "0" | "1";
-integer    = /[1-9]/;
+integer    = '[1-9]';
 number_bin = ( "0b" | "0B" ) digit_bin { digit_bin };
 number_hex = ( "0x" | "0X" ) digit_hex { digit_hex };
 number_dec = "0" | integer [ "." ( "0" | integer ) ];
@@ -77,21 +77,19 @@ size      = number unit;
 unit      = "%" | "px" | "ch" | "em" | "rem";
 
 // String & String line
-string          = "\"" { string_content } "\"";
-string_line     = "\\" { string_content };
-string_lines    = string_line { string_line };
+String = Quoted_String | Line_String ;
+Quoted_String   = "\"" { string_content } "\"";
+line_string     = "\\" { string_content };
+Line_String    = line_string { line_string };
 string_content  = escape_char
                 | string_template
-                | /[^\n"]/
+                | '[^\n"]'
                 ;
-string_template = "\\{" expr "}";
-escape_char     = /\\[\\\s"trsfvn]/;
+string_template = "\\{" Expr "}";
+escape_char     = '\\["trsfvn]';
+
+Comment   = '//[^\n]*[\n]?';
 
 // Tag
-Tag   = "`" /.*/ "`";
-entry = ident "=" expr;
-
-// Statement sep & comment
-// Supports automatic semicolon insertion on newline
-Separator = ";";
-Comment   = "//" /[^\n]*[\n]?/;
+Tag   = '.*';
+entry = Ident "=" Expr;

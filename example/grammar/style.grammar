@@ -1,0 +1,25 @@
+// css
+Rule       = "style" "(" [ params ] [ "," ] ")" block;
+params     = param { "," param };
+param      = Ident ( param_type | param_init ) [ Tag ];
+param_type = ":" Type;
+param_init = ( param_type | ":" ) "=" Expr;
+
+block       = <Block stmts>;
+stmts       = stmt { stmt };
+stmt        = decl ";"
+            | if ";"
+            | cond ";"
+            | field_style ";"
+            ;
+decl        = property ;
+property    = Ident ":" value [ "!important" ];
+field_style = "self" "." Member block;
+
+// style value
+value      = list { list };
+list       = slash_list { slash_list };
+slash_list = comma_list { "/" comma_list };
+comma_list = term { "," term };
+term       = calc | Term;
+calc       = "calc" "(" list ")";
