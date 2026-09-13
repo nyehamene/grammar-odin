@@ -113,7 +113,9 @@ handle_message :: proc(srv: ^Server, msg: json.Value) -> bool {
 		handle_document_symbol(srv, id, obj)
 
 	case "textDocument/semanticTokens/full":
+
 	case "workspace/symbol":
+		handle_workspace_symbol(srv, id, obj)
 	}
 
 	return true

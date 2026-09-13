@@ -217,6 +217,39 @@ test_lsp_document_symbol :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(output, `"name":"title"`))
 }
 
+@(test)
+test_lsp_workspace_symbol :: proc(t: ^testing.T) {
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(
+			`textDocument/didOpen`,
+			`{"textDocument":{"uri":"file:///tmp/a.grammar","languageId":"grammar","version":1,"text":"greet = \"hi\";\nside = \"x\";"}}`,
+		),
+		make_notification(
+			`textDocument/didOpen`,
+			`{"textDocument":{"uri":"file:///tmp/b.grammar","languageId":"grammar","version":1,"text":"departure = \"go\";"}}`,
+		),
+		make_request(
+			`2`,
+			`workspace/symbol`,
+			`{"query":"gre"}`,
+		),
+		make_request(`3`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	log.debugf("output:\n%v", output)
+	testing.expect(t, strings.contains(output, `"id": 2`))
+	testing.expect(t, strings.contains(output, `"name":"greet"`))
+	testing.expect(t, strings.contains(output, `"uri":"file:///tmp/a.grammar"`))
+	testing.expect(t, !strings.contains(output, `"name":"side"`))
+	testing.expect(t, !strings.contains(output, `"name":"departure"`))
+}
+
 // make_request builds a single framed JSON-RPC request message.
 make_request :: proc(id, method, params: string) -> string {
 	sb := strings.builder_make(context.temp_allocator)
