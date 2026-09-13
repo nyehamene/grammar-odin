@@ -34,7 +34,7 @@ run :: proc(
 			break
 		}
 
-		debug(srv, string(buf))
+		debugf(srv, "request: %v\n %s", frame.headers, string(buf))
 
 		msg, err := json.parse(buf)
 		if err != nil {

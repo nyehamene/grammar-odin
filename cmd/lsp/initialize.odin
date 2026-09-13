@@ -31,9 +31,9 @@ Diagnostic_Provider :: struct {
 
 Server_Capabilities :: struct {
 	text_document_sync:       Text_Document_Sync_Options `json:"textDocumentSync"`,
-	position_encoding:        string                     `json:"positionEncoding"`,
-	diagnostic_provider:      Diagnostic_Provider        `json:"diagnosticProvider"`,
-	semantic_tokens_provider: Semantic_Tokens_Options    `json:"semanticTokensProvider"`,
+	position_encoding:        string `json:"positionEncoding"`,
+	diagnostic_provider:      Diagnostic_Provider `json:"diagnosticProvider"`,
+	semantic_tokens_provider: Semantic_Tokens_Options `json:"semanticTokensProvider"`,
 }
 
 Initialize_Result :: struct {
@@ -64,7 +64,7 @@ handle_initialize :: proc(srv: ^Server, id: Request_Id, req: json.Object) -> (ok
 
 	result := create_initialize_result(srv)
 	resp := write_response(srv.stdout, id, string(result))
-	debug(srv, resp)
+	debugf(srv, "response: %v", resp)
 	return true
 }
 
@@ -73,14 +73,14 @@ create_initialize_result :: proc(srv: ^Server) -> string {
 	result.server_info = server_info
 	result.capabilities = Server_Capabilities {
 		text_document_sync = Text_Document_Sync_Options{open_close = true, change = .Full},
-		position_encoding  = "utf-8",
-		diagnostic_provider = Diagnostic_Provider{
+		position_encoding = "utf-8",
+		diagnostic_provider = Diagnostic_Provider {
 			inter_file_dependencies = false,
-			workspace_diagnostics   = false,
+			workspace_diagnostics = false,
 		},
-		semantic_tokens_provider = Semantic_Tokens_Options{
-			legend = Semantic_Tokens_Legend{
-				token_types = []string{
+		semantic_tokens_provider = Semantic_Tokens_Options {
+			legend = Semantic_Tokens_Legend {
+				token_types = []string {
 					"function",
 					"parameter",
 					"namespace",

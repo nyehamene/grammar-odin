@@ -83,7 +83,8 @@ handle_message :: proc(srv: ^Server, msg: json.Value) -> bool {
 
 	case "shutdown":
 		srv.shutdown_requested = true
-		write_response(srv.stdout, id, "null")
+		res := write_response(srv.stdout, id, "null")
+		debugf(srv, "response: %s", res)
 
 	case "exit":
 		return false

@@ -464,10 +464,12 @@ make_notification :: proc(method, params: string) -> string {
 }
 
 // create_stream_reader packs multiple framed messages into a single reader.
+// The messages are already framed by make_request/make_notification, so they
+// are concatenated verbatim.
 create_stream_reader :: proc(msgs: ..string) -> io.Reader {
 	sb := strings.builder_make(context.temp_allocator)
 	for m in msgs {
-		write_frame(strings.to_writer(&sb), m)
+		strings.write_string(&sb, m)
 	}
 	r := new(strings.Reader, context.temp_allocator)
 	stdin := strings.to_reader(r, strings.to_string(sb))

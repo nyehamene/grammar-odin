@@ -32,10 +32,14 @@ Frame_destroy :: proc(f: ^Frame) {
 
 read_frame :: proc(frame: ^Frame) -> (buf: []byte, ok: bool) {
 	read_frame_header(frame) or_return
-	length := frame_content_length(frame)
 
-	if length < 0 {
+	length, has_length := frame_content_length(frame)
+	if !has_length {
 		debug(frame, "frame does not contain Content-Length")
+		return nil, false
+	}
+	if length < 0 {
+		debug(frame, "frame has invalid Content-Length")
 		return nil, false
 	}
 
@@ -62,99 +66,92 @@ read_frame :: proc(frame: ^Frame) -> (buf: []byte, ok: bool) {
 		}
 	}
 
+	if offset < length {
+		debugf(frame, "frame truncated: expected %v bytes, got %v", length, offset)
+		return buf, false
+	}
+
 	return buf, true
 }
 
 read_frame_header :: proc(f: ^Frame) -> bool {
-	State :: enum {
-		Header_Key,
-		Header_Value,
-		Seperator,
-	}
-
-	expect :: proc(b, value: byte) -> bool {
-		return b == value
-	}
-
-	buf: [1]byte
-	header_name: string
-	state: State
-
-	separator := 0
-	state = .Header_Key
-
 	alloc := virtual.arena_allocator(&f.arena)
 	sb := strings.builder_make(alloc)
 
-	for separator < 2 {
-		n, err := io.read(f.stdin, buf[:])
+	buf: [1]byte
+	got_header := false
 
-		if n > 0 {
-			b := buf[0]
+	for {
+		strings.builder_reset(&sb)
 
-			switch state {
-			case .Header_Key:
-				if b == '\r' {
-					state = .Seperator
-					continue
+		line_end := false
+		for !line_end {
+			n, err := io.read(f.stdin, buf[:])
+			if n > 0 {
+				if buf[0] == '\n' {
+					line_end = true
+				} else {
+					strings.write_byte(&sb, buf[0])
 				}
-				if b == ':' {
-					continue
-				}
-				if b == ' ' {
-					state = .Header_Value
-					header_name = strings.to_string(sb)
-					header_name = clone_string(&f.arena, header_name)
-					strings.builder_reset(&sb)
-					continue
-				}
-				separator = 0
-				strings.write_byte(&sb, b)
-
-			case .Header_Value:
-				if b == ' ' {
-					continue
-				}
-				if b == '\r' {
-					state = .Seperator
-					header_value := strings.to_string(sb)
-					header_value = clone_string(&f.arena, header_value)
-					f.headers[header_name] = header_value
-					header_name = ""
-					strings.builder_reset(&sb)
-					continue
-				}
-				strings.write_byte(&sb, b)
-
-			case .Seperator:
-				if !expect(b, '\n') {
-					debugf(f, "unexpected char in header separator: %v", b)
-					return false
-				}
-				state = .Header_Key
-				separator += 1
+			}
+			if err != nil {
+				debugf(f, "an error occurred while reading from stream: %v", err)
+				return false
 			}
 		}
-		if err != nil {
-			debugf(f, "an error occurred while reading from stream: %v", err)
-			return false
+
+		line := strings.to_string(sb)
+		if len(line) > 0 && line[len(line) - 1] == '\r' {
+			line = line[:len(line) - 1]
 		}
+
+		if len(line) == 0 {
+			if got_header {
+				break
+			}
+			continue
+		}
+		got_header = true
+
+		colon := strings.index_byte(line, ':')
+		if colon < 0 {
+			debugf(f, "malformed header line: %q", line)
+			continue
+		}
+		name := strings.trim_space(line[:colon])
+		value := strings.trim_space(line[colon + 1:])
+		if name == "" {
+			continue
+		}
+		f.headers[strings.clone(name, alloc)] = strings.clone(value, alloc)
 	}
 
 	return true
 }
 
-frame_content_length :: proc(f: ^Frame) -> int {
+frame_content_length :: proc(f: ^Frame) -> (content_length: int, ok: bool) {
 	assert(f != nil)
-	content_length, ok := f.headers["Content-Length"]
-	if !ok {
-		return 0
+
+	// Header names are case-insensitive per the LSP/HTTP framing rules.
+	value, found := f.headers["Content-Length"]
+	if !found {
+		for name, v in f.headers {
+			if strings.equal_fold(name, "Content-Length") {
+				value = v
+				found = true
+				break
+			}
+		}
 	}
-	length, l_ok := strconv.parse_int(content_length)
+	if !found {
+		return 0, false
+	}
+
+	length, l_ok := strconv.parse_int(value)
 	if !l_ok {
-		return 0
+		return 0, false
 	}
-	return length
+	return length, true
 }
 
 write_request :: proc(w: io.Writer, id: Request_Id, method: string, params: string) -> string {
@@ -200,6 +197,6 @@ write_frame :: proc(w: io.Writer, msg: string) -> string {
 	sb := strings.builder_make(context.temp_allocator)
 	fmt.sbprintf(&sb, "Content-Length: %d\r\n\r\n%s", len(msg), msg)
 	frame := strings.to_string(sb)
-	fmt.wprintln(w, frame)
+	io.write(w, transmute([]u8)frame)
 	return frame
 }
