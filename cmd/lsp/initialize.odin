@@ -29,11 +29,32 @@ Diagnostic_Provider :: struct {
 	workspace_diagnostics:   bool `json:"workspaceDiagnostics"`,
 }
 
+Completion_Options :: struct {}
+
+Document_Link_Options :: struct {}
+
+Rename_Options :: struct {
+	prepare_provider: bool `json:"prepareProvider"`,
+}
+
+Workspace_Options :: struct {}
+
 Server_Capabilities :: struct {
-	text_document_sync:       Text_Document_Sync_Options `json:"textDocumentSync"`,
-	position_encoding:        string `json:"positionEncoding"`,
-	diagnostic_provider:      Diagnostic_Provider `json:"diagnosticProvider"`,
-	semantic_tokens_provider: Semantic_Tokens_Options `json:"semanticTokensProvider"`,
+	text_document_sync:           Text_Document_Sync_Options `json:"textDocumentSync"`,
+	position_encoding:            string `json:"positionEncoding"`,
+	diagnostic_provider:          Diagnostic_Provider `json:"diagnosticProvider"`,
+	semantic_tokens_provider:     Semantic_Tokens_Options `json:"semanticTokensProvider"`,
+	document_symbol_provider:     bool `json:"documentSymbolProvider"`,
+	hover_provider:               bool `json:"hoverProvider"`,
+	definition_provider:          bool `json:"definitionProvider"`,
+	references_provider:          bool `json:"referencesProvider"`,
+	highlight_provider:           bool `json:"documentHighlightProvider"`,
+	document_formatting_provider: bool `json:"documentFormattingProvider"`,
+	completion_provider:          Completion_Options `json:"completionProvider"`,
+	document_link_provider:       Document_Link_Options `json:"documentLinkProvider"`,
+	rename_provider:              Rename_Options `json:"renameProvider"`,
+	workspace_symbol_provider:    bool `json:"workspaceSymbolProvider"`,
+	workspace:                    Workspace_Options `json:"workspace"`,
 }
 
 Initialize_Result :: struct {
@@ -92,6 +113,17 @@ create_initialize_result :: proc(srv: ^Server) -> string {
 			},
 			full = true,
 		},
+		document_symbol_provider = true,
+		hover_provider = true,
+		definition_provider = true,
+		references_provider = true,
+		highlight_provider = true,
+		document_formatting_provider = true,
+		completion_provider = {},
+		document_link_provider = {},
+		rename_provider = {prepare_provider = true},
+		workspace_symbol_provider = true,
+		workspace = {},
 	}
 
 	result_str, err := json.marshal(result, allocator = context.temp_allocator)

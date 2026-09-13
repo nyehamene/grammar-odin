@@ -455,7 +455,7 @@ make_request :: proc(id, method, params: string) -> string {
 // make_notification builds a single framed JSON-RPC notification message.
 make_notification :: proc(method, params: string) -> string {
 	sb := strings.builder_make(context.temp_allocator)
-	write_notification(strings.to_writer(&sb), method, params)
+	write_notification_writer(strings.to_writer(&sb), method, params)
 	return strings.to_string(sb)
 }
 

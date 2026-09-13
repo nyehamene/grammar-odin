@@ -43,7 +43,13 @@ release_diagnostics :: proc(srv: ^Server, uri: string) {
 
 // handle_text_document_diagnostic implements the pull-based
 // textDocument/diagnostic request (LSP 3.17).
-handle_text_document_diagnostic :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok: bool) {
+handle_text_document_diagnostic :: proc(
+	srv: ^Server,
+	id: Request_Id,
+	obj: json.Object,
+) -> (
+	ok: bool,
+) {
 	params := json_object(obj, "params") or_return
 	text_doc := json_object(params, "textDocument") or_return
 	uri := json_string(text_doc, "uri") or_return
@@ -51,7 +57,7 @@ handle_text_document_diagnostic :: proc(srv: ^Server, id: Request_Id, obj: json.
 	diags := diagnostics_for(srv, uri)
 	defer delete(diags)
 
-	result := Pull_Diagnostic_Result{
+	result := Pull_Diagnostic_Result {
 		kind  = "full",
 		items = diags,
 	}
@@ -99,16 +105,19 @@ diagnostics_for :: proc(srv: ^Server, uri: string) -> []Diagnostic {
 		if e.path != target_display {
 			continue
 		}
-		start := Position{line = e.line - 1, character = e.col - 1}
+		start := Position {
+			line      = e.line - 1,
+			character = e.col - 1,
+		}
 		end := start
 		if extent := word_extent(doc.text, e.offset); extent > 0 {
 			end = position_at_offset(doc.text, e.offset + extent)
 		}
-		diags[index] = Diagnostic{
-			range    = Range{start = start, end = end},
+		diags[index] = Diagnostic {
+			range = Range{start = start, end = end},
 			severity = 1, // Error
-			source   = "grammar",
-			message  = clone_string(&srv.arena, e.message),
+			source = "grammar",
+			message = clone_string(&srv.arena, e.message),
 		}
 		index += 1
 	}
@@ -118,7 +127,7 @@ diagnostics_for :: proc(srv: ^Server, uri: string) -> []Diagnostic {
 
 // publish_diagnostics sends the textDocument/publishDiagnostics notification.
 publish_diagnostics :: proc(srv: ^Server, uri: string, diagnostics: []Diagnostic) {
-	params := Publish_Diagnostics_Params{
+	params := Publish_Diagnostics_Params {
 		uri         = uri,
 		diagnostics = diagnostics,
 	}
@@ -129,6 +138,5 @@ publish_diagnostics :: proc(srv: ^Server, uri: string, diagnostics: []Diagnostic
 		return
 	}
 
-	frame := write_notification(srv.stdout, "textDocument/publishDiagnostics", string(buf))
-	debug(srv, frame)
+	write_notification(srv, "textDocument/publishDiagnostics", string(buf))
 }
