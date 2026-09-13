@@ -92,7 +92,7 @@ uri_to_path :: proc(uri: string) -> (path: string, ok: bool) {
 // path_to_uri converts a filesystem path to a file:// URI. The returned
 // string is owned by the caller.
 path_to_uri :: proc(path: string) -> string {
-	sb := strings.builder_make(context.temp_allocator)
+	sb := strings.builder_make(context.allocator)
 	strings.write_string(&sb, "file://")
 	for i in 0 ..< len(path) {
 		b := path[i]

@@ -14,12 +14,12 @@ The language server protocol implementation code and API should be placed in 'se
     - [x] **Dispatcher**: `textDocument/hover` is wired in `cmd/lsp/server.odin`.
     - [x] **Test**: `test_lsp_hover` in `cmd/lsp/lsp_test.odin`.
 
-- [ ] **2. `textDocument/definition` (Go to Definition)**
-    - [ ] **Types**: Add `DefinitionParams` and `Location` types to `server/types.odin`.
-    - [ ] **Definition Logic**: Create a function that, given an `ast.Ident` node, finds its declaration (either in the current file or an imported one via the `CompilationUnit`).
-    - [ ] **Handler**: Implement `handleDefinition` in `server/definition.odin` to use the AST position logic and the new definition logic.
-    - [ ] **Dispatcher**: Wire up `textDocument/definition` in `server.odin`.
-    - [ ] **Test**: Add an integration test for "Go to Definition." (See `server/definition_test.odin`)
+- [x] **2. `textDocument/definition` (Go to Definition)** (implemented in `cmd/lsp/definition.odin`)
+    - [x] **Types**: `Location` added in `cmd/lsp/definition.odin`.
+    - [x] **Definition Logic**: `definition_for` resolves the identified symbol (rule, import binding, or namespace member) to its declaration file and offset using the `CompilationUnit` name/binding tables.
+    - [x] **Handler**: `handleDefinition` uses `find_hit` for the AST position logic.
+    - [x] **Dispatcher**: `textDocument/definition` is wired in `cmd/lsp/server.odin`.
+    - [x] **Test**: `test_lsp_definition` in `cmd/lsp/lsp_test.odin`.
 
 - [ ] **3. `textDocument/references` (Find All References)**
     - [ ] **Types**: Add `ReferenceParams` to `server/types.odin`. The response is a `[]Location`.
