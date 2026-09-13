@@ -57,7 +57,7 @@ handle_completion :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok
 
 	doc, found := srv.documents[uri]
 	if !found {
-		write_response(srv.stdout, id, `{"isIncomplete":false,"items":[]}`)
+		write_response(srv, id, `{"isIncomplete":false,"items":[]}`)
 		return true
 	}
 
@@ -80,7 +80,7 @@ handle_completion :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok
 
 	fi, fi_ok := cu_file_for(srv, &cu, doc.uri)
 	if !fi_ok {
-		write_response(srv.stdout, id, `{"isIncomplete":false,"items":[]}`)
+		write_response(srv, id, `{"isIncomplete":false,"items":[]}`)
 		return true
 	}
 
@@ -137,8 +137,7 @@ handle_completion :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok
 		return false
 	}
 
-	frame := write_response(srv.stdout, id, string(buf))
-	debug(srv, frame)
+	write_response(srv, id, string(buf))
 	return true
 }
 

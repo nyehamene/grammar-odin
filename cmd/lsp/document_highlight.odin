@@ -26,7 +26,7 @@ handle_document_highlight :: proc(srv: ^Server, id: Request_Id, obj: json.Object
 
 	doc, found := srv.documents[uri]
 	if !found {
-		write_response(srv.stdout, id, "[]")
+		write_response(srv, id, "[]")
 		return true
 	}
 
@@ -39,14 +39,14 @@ handle_document_highlight :: proc(srv: ^Server, id: Request_Id, obj: json.Object
 
 	fi, fi_ok := cu_file_for(srv, &cu, doc.uri)
 	if !fi_ok {
-		write_response(srv.stdout, id, "[]")
+		write_response(srv, id, "[]")
 		return true
 	}
 
 	hit := find_hit(&fi.file, offset)
 	target, target_ok := reference_target(&cu, fi, hit)
 	if !target_ok {
-		write_response(srv.stdout, id, "[]")
+		write_response(srv, id, "[]")
 		return true
 	}
 
@@ -85,7 +85,6 @@ handle_document_highlight :: proc(srv: ^Server, id: Request_Id, obj: json.Object
 		return false
 	}
 
-	frame := write_response(srv.stdout, id, string(buf))
-	debug(srv, frame)
+	write_response(srv, id, string(buf))
 	return true
 }

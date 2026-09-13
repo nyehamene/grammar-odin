@@ -233,11 +233,7 @@ test_lsp_workspace_symbol :: proc(t: ^testing.T) {
 			`textDocument/didOpen`,
 			`{"textDocument":{"uri":"file:///tmp/b.grammar","languageId":"grammar","version":1,"text":"departure = \"go\";"}}`,
 		),
-		make_request(
-			`2`,
-			`workspace/symbol`,
-			`{"query":"gre"}`,
-		),
+		make_request(`2`, `workspace/symbol`, `{"query":"gre"}`),
 		make_request(`3`, `shutdown`, `null`),
 	)
 
@@ -479,16 +475,18 @@ create_stream_reader :: proc(msgs: ..string) -> io.Reader {
 // send_request starts the server in test mode over stdin and returns a clone
 // of everything written to its output stream.
 send_request :: proc(stdin: io.Reader) -> string {
-	sb := strings.builder_make(context.temp_allocator)
-	stdout := strings.to_writer(&sb)
-	logout := stdout
-	stderr := stdout
+	sb_log := strings.builder_make(context.temp_allocator)
+	sb_out := strings.builder_make(context.temp_allocator)
+
+	stdout := strings.to_writer(&sb_out)
+	logout := strings.to_writer(&sb_log)
+	stderr := logout
 	test_mode := true
 
 	args := []string{"lsp"}
 	run(args, stdin, logout, stdout, stderr, test_mode)
 
-	return strings.clone(strings.to_string(sb), context.temp_allocator)
+	return strings.clone(strings.to_string(sb_log), context.temp_allocator)
 }
 
 create_request_reader :: proc(id, method, msg: string) -> io.Reader {

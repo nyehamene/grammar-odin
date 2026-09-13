@@ -53,7 +53,7 @@ handle_document_symbol :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -
 
 	doc, found := srv.documents[uri]
 	if !found {
-		write_response(srv.stdout, id, "[]")
+		write_response(srv, id, "[]")
 		return true
 	}
 
@@ -71,8 +71,7 @@ handle_document_symbol :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -
 		return false
 	}
 
-	frame := write_response(srv.stdout, id, string(buf))
-	debug(srv, frame)
+	write_response(srv, id, string(buf))
 	return true
 }
 

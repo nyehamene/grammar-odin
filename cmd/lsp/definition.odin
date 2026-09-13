@@ -24,7 +24,7 @@ handle_definition :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok
 
 	doc, found := srv.documents[uri]
 	if !found {
-		write_response(srv.stdout, id, "null")
+		write_response(srv, id, "null")
 		return true
 	}
 
@@ -33,13 +33,13 @@ handle_definition :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok
 
 	target_abs, abs_ok := uri_to_path(doc.uri)
 	if !abs_ok {
-		write_response(srv.stdout, id, "null")
+		write_response(srv, id, "null")
 		return true
 	}
 	fi, fi_ok := cu.files[target_abs]
 	delete(target_abs)
 	if !fi_ok {
-		write_response(srv.stdout, id, "null")
+		write_response(srv, id, "null")
 		return true
 	}
 
@@ -48,7 +48,7 @@ handle_definition :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok
 
 	loc, loc_ok := definition_for(&cu, fi, hit)
 	if !loc_ok {
-		write_response(srv.stdout, id, "null")
+		write_response(srv, id, "null")
 		return true
 	}
 	defer delete(loc.uri)
@@ -59,8 +59,7 @@ handle_definition :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok
 		return false
 	}
 
-	frame := write_response(srv.stdout, id, string(buf))
-	debug(srv, frame)
+	write_response(srv, id, string(buf))
 	return true
 }
 

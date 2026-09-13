@@ -31,7 +31,7 @@ handle_prepare_rename :: proc(srv: ^Server, id: Request_Id, obj: json.Object) ->
 
 	doc, found := srv.documents[uri]
 	if !found {
-		write_response(srv.stdout, id, "null")
+		write_response(srv, id, "null")
 		return true
 	}
 
@@ -42,13 +42,13 @@ handle_prepare_rename :: proc(srv: ^Server, id: Request_Id, obj: json.Object) ->
 
 	fi, fi_ok := cu_file_for(srv, &cu, doc.uri)
 	if !fi_ok {
-		write_response(srv.stdout, id, "null")
+		write_response(srv, id, "null")
 		return true
 	}
 
 	hit := find_hit(&fi.file, offset)
 	if _, target_ok := reference_target(&cu, fi, hit); !target_ok {
-		write_response(srv.stdout, id, "null")
+		write_response(srv, id, "null")
 		return true
 	}
 
@@ -66,8 +66,7 @@ handle_prepare_rename :: proc(srv: ^Server, id: Request_Id, obj: json.Object) ->
 		return false
 	}
 
-	frame := write_response(srv.stdout, id, string(buf))
-	debug(srv, frame)
+	write_response(srv, id, string(buf))
 	return true
 }
 
@@ -80,7 +79,7 @@ handle_rename :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok: bo
 
 	doc, found := srv.documents[uri]
 	if !found {
-		write_response(srv.stdout, id, `{"changes":{}}`)
+		write_response(srv, id, `{"changes":{}}`)
 		return true
 	}
 
@@ -91,14 +90,14 @@ handle_rename :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok: bo
 
 	fi, fi_ok := cu_file_for(srv, &cu, doc.uri)
 	if !fi_ok {
-		write_response(srv.stdout, id, `{"changes":{}}`)
+		write_response(srv, id, `{"changes":{}}`)
 		return true
 	}
 
 	hit := find_hit(&fi.file, offset)
 	target, target_ok := reference_target(&cu, fi, hit)
 	if !target_ok {
-		write_response(srv.stdout, id, `{"changes":{}}`)
+		write_response(srv, id, `{"changes":{}}`)
 		return true
 	}
 
@@ -151,8 +150,7 @@ handle_rename :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok: bo
 		return false
 	}
 
-	frame := write_response(srv.stdout, id, string(buf))
-	debug(srv, frame)
+	write_response(srv, id, string(buf))
 	return true
 }
 

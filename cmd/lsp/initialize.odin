@@ -63,8 +63,7 @@ handle_initialize :: proc(srv: ^Server, id: Request_Id, req: json.Object) -> (ok
 	}
 
 	result := create_initialize_result(srv)
-	resp := write_response(srv.stdout, id, string(result))
-	debugf(srv, "response: %v", resp)
+	write_response(srv, id, string(result))
 	return true
 }
 

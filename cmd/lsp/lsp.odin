@@ -34,7 +34,7 @@ run :: proc(
 			break
 		}
 
-		debugf(srv, "request: %v\n %s", frame.headers, string(buf))
+		debugf(srv, "\033[35mrequest\033[0m: %v\n %s", frame.headers, string(buf))
 
 		msg, err := json.parse(buf)
 		if err != nil {

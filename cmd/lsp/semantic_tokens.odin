@@ -40,7 +40,7 @@ handle_semantic_tokens_full :: proc(srv: ^Server, id: Request_Id, obj: json.Obje
 
 	doc, found := srv.documents[uri]
 	if !found {
-		write_response(srv.stdout, id, `{"data":[]}`)
+		write_response(srv, id, `{"data":[]}`)
 		return true
 	}
 
@@ -95,8 +95,7 @@ handle_semantic_tokens_full :: proc(srv: ^Server, id: Request_Id, obj: json.Obje
 		return false
 	}
 
-	frame := write_response(srv.stdout, id, string(buf))
-	debug(srv, frame)
+	write_response(srv, id, string(buf))
 	return true
 }
 

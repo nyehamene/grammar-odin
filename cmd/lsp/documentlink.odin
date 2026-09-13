@@ -21,7 +21,7 @@ handle_document_link :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> 
 	uri := json_string(text_doc, "uri") or_return
 
 	if _, found := srv.documents[uri]; !found {
-		write_response(srv.stdout, id, "[]")
+		write_response(srv, id, "[]")
 		return true
 	}
 
@@ -30,13 +30,13 @@ handle_document_link :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> 
 
 	file_abs, abs_ok := uri_to_path(uri)
 	if !abs_ok {
-		write_response(srv.stdout, id, "[]")
+		write_response(srv, id, "[]")
 		return true
 	}
 	fi, fi_ok := cu.files[file_abs]
 	delete(file_abs)
 	if !fi_ok {
-		write_response(srv.stdout, id, "[]")
+		write_response(srv, id, "[]")
 		return true
 	}
 
@@ -76,8 +76,7 @@ handle_document_link :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> 
 		return false
 	}
 
-	frame := write_response(srv.stdout, id, string(buf))
-	debug(srv, frame)
+	write_response(srv, id, string(buf))
 	return true
 }
 

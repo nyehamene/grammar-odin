@@ -71,8 +71,7 @@ handle_workspace_symbol :: proc(srv: ^Server, id: Request_Id, obj: json.Object) 
 		return false
 	}
 
-	frame := write_response(srv.stdout, id, string(buf))
-	debug(srv, frame)
+	write_response(srv, id, string(buf))
 	return true
 }
 

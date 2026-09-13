@@ -181,7 +181,7 @@ write_notification :: proc(w: io.Writer, method: string, params: string) -> stri
 	return write_frame(w, msg)
 }
 
-write_response :: proc(w: io.Writer, id: Request_Id, result: string) -> string {
+write_response :: proc(srv: ^Server, id: Request_Id, result: string) {
 	sb := strings.builder_make(context.temp_allocator)
 	strings.write_string(&sb, `{"jsonrpc": "2.0", "id": `)
 	strings.write_string(&sb, id)
@@ -190,7 +190,8 @@ write_response :: proc(w: io.Writer, id: Request_Id, result: string) -> string {
 	strings.write_string(&sb, "}")
 
 	msg := strings.to_string(sb)
-	return write_frame(w, msg)
+	frame := write_frame(srv.stdout, msg)
+	debugf(srv, "\033[35mresponse\033[0m: %s", frame)
 }
 
 write_frame :: proc(w: io.Writer, msg: string) -> string {

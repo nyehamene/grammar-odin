@@ -61,8 +61,7 @@ handle_text_document_diagnostic :: proc(srv: ^Server, id: Request_Id, obj: json.
 		return false
 	}
 
-	frame := write_response(srv.stdout, id, string(buf))
-	debug(srv, frame)
+	write_response(srv, id, string(buf))
 	return true
 }
 
