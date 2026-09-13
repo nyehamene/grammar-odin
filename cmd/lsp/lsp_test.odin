@@ -123,7 +123,7 @@ test_lsp_hover :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(output, `"id": 2`))
 	testing.expect(t, strings.contains(output, "rule `greeting`"))
 	testing.expect(t, strings.contains(output, "declared at"))
-	testing.expect(t, strings.contains(output, ":1:1"))
+	testing.expect(t, strings.contains(output, "1:1"))
 	testing.expect(t, strings.contains(output, `"id": 3`))
 	testing.expect(t, strings.contains(output, "string literal"))
 }

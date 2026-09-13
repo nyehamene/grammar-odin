@@ -108,7 +108,8 @@ symbol_hover :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, name: 
 		return fmt.tprintf("rule `%s`\ndeclared at %s", name, location_string(file, off))
 	}
 	if r, is_local := fi.local_rules[name]; is_local {
-		return fmt.tprintf("rule `%s`\ndeclared at %s", name, location_string(fi, r.offset))
+		pos := token.position_at(fi.src, r.offset)
+		return fmt.tprintf("rule `%s`\ndeclared at %d:%d", name, pos.line, pos.column)
 	}
 	if _, is_binding := fi.bindings[name]; is_binding {
 		return binding_hover(cu, fi, name)

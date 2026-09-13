@@ -36,13 +36,22 @@ find_hit :: proc(file: ^ast.File, offset: int) -> Hit {
 			if hit_ident(d.name, offset) {
 				return Hit{kind = .Rule_Name, ident = d.name}
 			}
+
+			params := make(map[string]bool, len(d.params))
+			defer delete(params)
+
 			for p in d.params {
 				if hit_ident(p, offset) {
 					return Hit{kind = .Param, ident = p, decl = id}
 				}
+				params[p.name] = true
 			}
 			for e in d.body {
 				if h := find_hit_expr(e, offset); found(h) {
+					if h.ident.name in params {
+						h.kind = .Param
+						h.decl = id
+					}
 					return h
 				}
 			}
