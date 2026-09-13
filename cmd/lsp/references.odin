@@ -105,7 +105,9 @@ handle_references :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok
 			}
 
 		case .Param:
+			debugf(srv, "\033[35mparam try\033[0m %s %d", target.name, target.decl)
 			if f == target.origin_file {
+				debugf(srv, "\033[35mparam enter\033[0m %s %d", target.name, target.decl)
 				collect_param_refs(f, target.decl, target.name, include_declaration, uris, &refs)
 			}
 		}
@@ -135,6 +137,9 @@ reference_target :: proc(
 ) {
 	#partial switch hit.kind {
 	case .Rule_Name:
+		if _, ok := fi.local_rules[hit.ident.name]; ok {
+			return Symbol_Ref{kind = .Local_Rule, name = hit.ident.name, origin_file = fi}, true
+		}
 		return Symbol_Ref{kind = .Rule, name = hit.ident.name, ns_dir = fi.namespace_path}, true
 	case .Ident, .Call_Name:
 		if _, is_binding := fi.bindings[hit.ident.name]; is_binding {
@@ -225,6 +230,9 @@ collect_param_refs :: proc(
 	decl := f.file.decls[index]
 	#partial switch d in decl {
 	case ast.Rule_Decl:
+		for p in d.params {
+			rule_ref_in_expr(f, "", name, p, uris, out, true)
+		}
 		for e in d.body {
 			rule_ref_in_expr(f, "", name, e, uris, out, true)
 		}
@@ -238,7 +246,7 @@ rule_ref_in_expr :: proc(
 	expr: ast.Expr,
 	uris: map[^check.Loaded_File]string,
 	out: ^[dynamic]Location,
-	local := false,
+	local: bool,
 ) {
 	#partial switch v in expr {
 	case ast.Ident:
@@ -247,7 +255,7 @@ rule_ref_in_expr :: proc(
 		}
 
 	case ast.Term_Expr:
-		rule_ref_in_expr(f, target_ns_dir, name, v.x^, uris, out)
+		rule_ref_in_expr(f, target_ns_dir, name, v.x^, uris, out, local)
 
 	case ast.Member_Expr:
 		if local do break
@@ -258,36 +266,36 @@ rule_ref_in_expr :: proc(
 				push_reference(out, uris, f, v.member.pos, v.member.name)
 			}
 		} else {
-			rule_ref_in_expr(f, target_ns_dir, name, v.object^, uris, out)
+			rule_ref_in_expr(f, target_ns_dir, name, v.object^, uris, out, local)
 		}
 	case ^ast.Call_Expr:
-		rule_ref_in_expr(f, target_ns_dir, name, v.name, uris, out)
+		rule_ref_in_expr(f, target_ns_dir, name, v.name, uris, out, local)
 		for arg in v.args {
-			rule_ref_in_expr(f, target_ns_dir, name, arg, uris, out)
+			rule_ref_in_expr(f, target_ns_dir, name, arg, uris, out, local)
 		}
 	case ast.Sequence_Expr:
 		for e in v.exprs {
-			rule_ref_in_expr(f, target_ns_dir, name, e, uris, out)
+			rule_ref_in_expr(f, target_ns_dir, name, e, uris, out, local)
 		}
 	case ast.Alternative_Expr:
 		for e in v.exprs {
-			rule_ref_in_expr(f, target_ns_dir, name, e, uris, out)
+			rule_ref_in_expr(f, target_ns_dir, name, e, uris, out, local)
 		}
 	case ast.Optional_Expr:
 		for e in v.exprs {
-			rule_ref_in_expr(f, target_ns_dir, name, e, uris, out)
+			rule_ref_in_expr(f, target_ns_dir, name, e, uris, out, local)
 		}
 	case ast.Repetition_Expr:
 		for e in v.exprs {
-			rule_ref_in_expr(f, target_ns_dir, name, e, uris, out)
+			rule_ref_in_expr(f, target_ns_dir, name, e, uris, out, local)
 		}
 	case ast.Group_Expr:
 		for e in v.exprs {
-			rule_ref_in_expr(f, target_ns_dir, name, e, uris, out)
+			rule_ref_in_expr(f, target_ns_dir, name, e, uris, out, local)
 		}
 	case ast.Directive_Expr:
 		for arg in v.args {
-			rule_ref_in_expr(f, target_ns_dir, name, arg, uris, out)
+			rule_ref_in_expr(f, target_ns_dir, name, arg, uris, out, local)
 		}
 	case ast.String_Lit, ast.Regex_Lit, ast.External_Value:
 	}
