@@ -35,12 +35,13 @@ The language server protocol implementation code and API should be placed in 'se
     - [x] **Dispatcher**: `textDocument/documentSymbol` is wired in `cmd/lsp/server.odin`.
     - [x] **Test**: `test_lsp_document_symbol` in `cmd/lsp/lsp_test.odin`.
 
-- [ ] **5. `workspace/symbol`**
-    - [ ] **Types**: Add `WorkspaceSymbolParams` and `SymbolInformation` to `server/types.odin`.
-    - [ ] **Handler**: Implement `handleWorkspaceSymbol` in `server/workspace_symbol.odin`.
-    - [ ] **Logic**: Iterate through all files in the `CompilationUnit`, find symbols matching the query, and return them as a list of `SymbolInformation`.
-    - [ ] **Dispatcher**: Wire up `workspace/symbol` in `server.odin`.
-    - [ ] **Test**: Add an integration test for workspace symbols. (See `server/workspace_symbol_test.odin`)
+- [x] **5. `workspace/symbol`** (implemented in `cmd/lsp/workspace_symbol.odin`)
+    - [x] **Types**: `Symbol_Information` added in `cmd/lsp/workspace_symbol.odin`.
+    - [x] **Handler**: `handle_workspace_symbol` implemented in `cmd/lsp/workspace_symbol.odin`.
+    - [x] **Logic**: Iterates all files in the compilation unit, matches symbol names against the query, and returns `SymbolInformation` results sorted by name and location.
+    - [x] **Dispatcher**: `workspace/symbol` is wired in `cmd/lsp/server.odin`.
+    - [x] **Test**: `test_lsp_workspace_symbol` in `cmd/lsp/lsp_test.odin`.
+    - [x] **Fix**: Intermittent parallel-test segfault fixed in `cmd/lsp/lsp.odin` (re-init frame headers map before each frame read).
 
 - [ ] **6. `textDocument/rename`**
     - [ ] **Types**: Add `RenameParams` and `WorkspaceEdit` to `server/types.odin`.
