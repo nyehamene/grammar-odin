@@ -15,9 +15,10 @@ Mode :: enum {
 	Package,
 }
 
-// run implements `grammar check`. It scans the tokens of the target file (or
-// all .grammar files in a directory) and reports lexical errors. It returns 0
-// when every checked file scans cleanly, and non-zero otherwise.
+// run implements `grammar check`. It loads the target file (or all .grammar
+// files in a directory) into a compilation unit and reports lexical, syntax
+// and semantic errors. It returns 0 when everything is well-formed, and
+// non-zero otherwise.
 run :: proc(args: []string, stdin: io.Reader, stdout, stderr: io.Writer) -> int {
 	path, mode, use_stdin, ok := parse_args(args)
 	if !ok {
@@ -38,27 +39,7 @@ run :: proc(args: []string, stdin: io.Reader, stdout, stderr: io.Writer) -> int 
 		return 1
 	}
 
-	files := collect_files(path, mode)
-	defer cleanup(files)
-
-	failed := false
-	for file in files {
-		data, err := os.read_entire_file(file, context.allocator)
-		if err != nil {
-			io.write_string(stderr, fmt.tprintf("error: could not read '%s'\n", file))
-			failed = true
-			continue
-		}
-		if check_source(string(data), file, stderr) {
-			failed = true
-		}
-		delete(data)
-	}
-
-	if failed {
-		return 1
-	}
-	return 0
+	return check(path, mode, stderr)
 }
 
 // parse_args extracts the path argument, mode flag and --stdin flag.
@@ -82,8 +63,8 @@ parse_args :: proc(args: []string) -> (path: string, mode: Mode, use_stdin: bool
 	return path, mode, use_stdin, true
 }
 
-// collect_files returns the grammar files to check for the given path and mode.
-// In package mode a directory is walked recursively; a file path is checked
+// collect_files returns the grammar files for the given path and mode. In
+// package mode a directory is walked recursively; a file path is returned
 // directly.
 collect_files :: proc(path: string, mode: Mode, allocator := context.allocator) -> (files: [dynamic]string) {
 	files = make([dynamic]string, allocator)
@@ -104,6 +85,12 @@ collect_files :: proc(path: string, mode: Mode, allocator := context.allocator) 
 		}
 	}
 	return
+}
+
+// cleanup frees the strings in files and the array itself.
+cleanup :: proc(files: [dynamic]string) {
+	for f in files do delete(f)
+	delete(files)
 }
 
 // check_reader scans a single source reader and reports errors on stderr.
@@ -187,9 +174,4 @@ is_valid_path :: proc(path: string) -> bool {
 		if component == ".." do return false
 	}
 	return true
-}
-
-cleanup :: proc(files: [dynamic]string) {
-	for f in files do delete(f)
-	delete(files)
 }
