@@ -51,19 +51,19 @@ The language server protocol implementation code and API should be placed in 'se
     - [x] **Test**: `test_lsp_rename` in `cmd/lsp/lsp_test.odin`.
     - [x] **Fix**: The frame use-after-free fix moved into `Frame_destroy` (recreates the headers map after freeing the arena).
 
-- [ ] **7. `textDocument/completion`**
-    - [ ] **Types**: Add `CompletionParams`, `CompletionItem`, `CompletionList` to `server/types.odin`.
-    - [ ] **Handler**: Implement `handleCompletion` in `server/completion.odin`.
-    - [ ] **Logic**: Provide completions for rule names, binding references, package members, and import paths.
-    - [ ] **Dispatcher**: Wire up `textDocument/completion` in `server.odin`.
-    - [ ] **Test**: Add an integration test for completion. (See `server/completion_test.odin`)
+- [x] **7. `textDocument/completion`** (implemented in `cmd/lsp/completion.odin`)
+    - [x] **Types**: `Completion_Item`, `Completion_Item_Kind`, `Completion_List` added in `cmd/lsp/completion.odin`.
+    - [x] **Handler**: `handle_completion` implemented in `cmd/lsp/completion.odin`.
+    - [x] **Logic**: `completion_prefix` extracts the identifier being typed (and an optional `binding.` receiver); suggestions are the shared namespace rules, file-local imports, and the members of an imported namespace.
+    - [x] **Dispatcher**: `textDocument/completion` is wired in `cmd/lsp/server.odin`.
+    - [x] **Test**: `test_lsp_completion` and `test_lsp_completion_member` in `cmd/lsp/lsp_test.odin`.
 
-- [ ] **8. `textDocument/diagnostic` (Pull Diagnostics)**
-    - [ ] **Types**: Add diagnostic-related types to `server/types.odin`.
-    - [ ] **Handler**: Implement `handleTextDocumentDiagnostic` in `server/diagnostics.odin`.
-    - [ ] **Logic**: Call the checker and return diagnostics.
-    - [ ] **Dispatcher**: Wire up `textDocument/diagnostic` in `server.odin`.
-    - [ ] **Test**: Add an integration test for pull diagnostics. (See `server/diagnostics_test.odin`)
+- [x] **8. `textDocument/diagnostic` (Pull Diagnostics)** (implemented in `cmd/lsp/diagnostic.odin`)
+    - [x] **Types**: `Diagnostic`, `Publish_Diagnostics_Params`, `Pull_Diagnostic_Result` in `cmd/lsp/diagnostic.odin`.
+    - [x] **Handler**: `handle_text_document_diagnostic` implemented in `cmd/lsp/diagnostic.odin`.
+    - [x] **Logic**: Runs the checker over the open documents through `index_documents` and returns the diagnostics.
+    - [x] **Dispatcher**: `textDocument/diagnostic` is wired in `cmd/lsp/server.odin`.
+    - [x] **Test**: `test_lsp_pull_diagnostic` and `test_lsp_did_open_publishes_diagnostics` in `cmd/lsp/lsp_test.odin`.
 
 - [ ] **9. `textDocument/documentHighlight`**
     - [ ] **Types**: Add `DocumentHighlightParams` and `DocumentHighlight` to `server/types.odin`.

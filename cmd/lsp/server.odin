@@ -100,6 +100,9 @@ handle_message :: proc(srv: ^Server, msg: json.Value) -> bool {
 	case "textDocument/hover":
 		handle_hover(srv, id, obj)
 
+	case "textDocument/completion":
+		handle_completion(srv, id, obj)
+
 	case "textDocument/definition":
 		handle_definition(srv, id, obj)
 

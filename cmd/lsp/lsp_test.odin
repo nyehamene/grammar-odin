@@ -296,6 +296,68 @@ test_lsp_rename :: proc(t: ^testing.T) {
 	testing.expect(t, rename_edits_ok)
 }
 
+@(test)
+test_lsp_completion :: proc(t: ^testing.T) {
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(
+			`textDocument/didOpen`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar","languageId":"grammar","version":1,"text":"expr = \"a\";\nterm = \"b\";\npartial = te"}}`,
+		),
+		// Complete `te` at line 2, character 11 -> rule `term`.
+		make_request(
+			`2`,
+			`textDocument/completion`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar"},"position":{"line":2,"character":11}}`,
+		),
+		make_request(`3`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	log.debugf("output:\n%v", output)
+	testing.expect(t, strings.contains(output, `"id": 2`))
+	testing.expect(t, strings.contains(output, `"label":"term"`))
+	testing.expect(t, strings.contains(output, `"kind":3`))
+	testing.expect(t, strings.contains(output, `"isIncomplete":false`))
+	testing.expect(t, !strings.contains(output, `"label":"expr"`))
+}
+
+@(test)
+test_lsp_completion_member :: proc(t: ^testing.T) {
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(
+			`textDocument/didOpen`,
+			`{"textDocument":{"uri":"file:///tmp/a.grammar","languageId":"grammar","version":1,"text":"ns = @import(\"./base\");\nexpr = ns.b;"}}`,
+		),
+		make_notification(
+			`textDocument/didOpen`,
+			`{"textDocument":{"uri":"file:///tmp/base.grammar","languageId":"grammar","version":1,"text":"bye = \"x\";"}}`,
+		),
+		// Complete `ns.b` (line 1, character 12) -> member `bye` of ./base.
+		make_request(
+			`2`,
+			`textDocument/completion`,
+			`{"textDocument":{"uri":"file:///tmp/a.grammar"},"position":{"line":1,"character":12}}`,
+		),
+		make_request(`3`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	log.debugf("output:\n%v", output)
+	testing.expect(t, strings.contains(output, `"id": 2`))
+	testing.expect(t, strings.contains(output, `"label":"bye"`))
+	testing.expect(t, strings.contains(output, `"kind":3`))
+}
+
 // make_request builds a single framed JSON-RPC request message.
 make_request :: proc(id, method, params: string) -> string {
 	sb := strings.builder_make(context.temp_allocator)
