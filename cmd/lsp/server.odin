@@ -3,6 +3,7 @@ package lsp
 import "core:encoding/json"
 import "core:fmt"
 import "core:io"
+import "core:mem"
 import "core:mem/virtual"
 import "core:strings"
 
@@ -39,6 +40,9 @@ Server_init :: proc(
 	loc := #caller_location,
 ) {
 	assert(srv != nil, loc = loc)
+	if err := virtual.arena_init_growing(&srv.arena, 1 * mem.Megabyte); err != nil {
+		panic("failed to initialize server arena")
+	}
 	srv.documents = make(map[string]^Document)
 	srv.root_paths = make([dynamic]string)
 	srv.logout = logout
@@ -88,15 +92,17 @@ handle_message :: proc(srv: ^Server, msg: json.Value) -> bool {
 		handle_did_open(srv, obj)
 
 	case "textDocument/didChange":
+		handle_did_change(srv, obj)
+
+	case "textDocument/didClose":
+		handle_did_close(srv, obj)
+
+	case "textDocument/diagnostic":
+		handle_text_document_diagnostic(srv, id, obj)
+
 	case "textDocument/documentSymbol":
 	case "textDocument/semanticTokens/full":
-	case "textDocument/diagnostic":
 	case "workspace/symbol":
-	}
-
-	if srv.test_mode {
-		srv.shutdown_requested = true
-		return false
 	}
 
 	return true

@@ -9,29 +9,126 @@ import "core:testing"
 test_lsp :: proc(t: ^testing.T) {
 	stdin := create_request_reader(
 		`1`,
-		`"initialize"`,
+		`initialize`,
 		`{"clientInfo":{"name": "test", "version": "0.1"}, "capabilities": {"textDocument": {"semanticTokens": {}}}}`,
 	)
-	exit_code := send_request(stdin)
-	testing.expect(t, exit_code == 0)
+	output := send_request(stdin)
+	testing.expect(
+		t,
+		strings.contains(output, "client 'test' version 0.1 supports semantic tokens"),
+	)
 }
 
-send_request :: proc(stdin: io.Reader) -> int {
+@(test)
+test_lsp_did_open_publishes_diagnostics :: proc(t: ^testing.T) {
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(
+			`textDocument/didOpen`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar","languageId":"grammar","version":1,"text":"a = b;"}}`,
+		),
+		make_request(`2`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	log.debugf("output:\n%v", output)
+	testing.expect(t, strings.contains(output, `"method":"textDocument/publishDiagnostics"`))
+	testing.expect(t, strings.contains(output, "undefined identifier: b"))
+}
+
+@(test)
+test_lsp_pull_diagnostic :: proc(t: ^testing.T) {
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(
+			`textDocument/didOpen`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar","languageId":"grammar","version":1,"text":"a = b;"}}`,
+		),
+		make_request(
+			`2`,
+			`textDocument/diagnostic`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar"}}`,
+		),
+		make_request(`3`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	log.debugf("output:\n%v", output)
+	testing.expect(t, strings.contains(output, `"kind":"full"`))
+	testing.expect(t, strings.contains(output, "undefined identifier: b"))
+}
+
+@(test)
+test_lsp_did_change_updates_diagnostics :: proc(t: ^testing.T) {
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(
+			`textDocument/didOpen`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar","languageId":"grammar","version":1,"text":"a = b;"}}`,
+		),
+		make_notification(
+			`textDocument/didChange`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar","version":2},"contentChanges":[{"text":"a = \"ok\";"}]}`,
+		),
+		make_request(`2`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	log.debugf("output:\n%v", output)
+	testing.expect(t, strings.contains(output, "undefined identifier: b"))
+	testing.expect(t, strings.contains(output, `"diagnostics":[]`))
+}
+
+// make_request builds a single framed JSON-RPC request message.
+make_request :: proc(id, method, params: string) -> string {
+	sb := strings.builder_make(context.temp_allocator)
+	write_request(strings.to_writer(&sb), id, method, params)
+	return strings.to_string(sb)
+}
+
+// make_notification builds a single framed JSON-RPC notification message.
+make_notification :: proc(method, params: string) -> string {
+	sb := strings.builder_make(context.temp_allocator)
+	write_notification(strings.to_writer(&sb), method, params)
+	return strings.to_string(sb)
+}
+
+// create_stream_reader packs multiple framed messages into a single reader.
+create_stream_reader :: proc(msgs: ..string) -> io.Reader {
+	sb := strings.builder_make(context.temp_allocator)
+	for m in msgs {
+		write_frame(strings.to_writer(&sb), m)
+	}
+	r := new(strings.Reader, context.temp_allocator)
+	stdin := strings.to_reader(r, strings.to_string(sb))
+	return stdin
+}
+
+// run_and_capture starts the server in test mode over stdin and returns a
+// clone of everything written to its output stream.
+send_request :: proc(stdin: io.Reader) -> string {
 	sb := strings.builder_make(context.temp_allocator)
 	stdout := strings.to_writer(&sb)
-	stderr := stdout
 	logout := stdout
+	stderr := stdout
 	test_mode := true
 
 	args := []string{"lsp"}
-	exit_code := run(args, stdin, logout, stdout, stderr, test_mode)
+	run(args, stdin, logout, stdout, stderr, test_mode)
 
-	if strings.builder_len(sb) > 0 {
-		output := strings.to_string(sb)
-		log.debugf("\n%v\n", output)
-	}
-
-	return exit_code
+	return strings.clone(strings.to_string(sb), context.temp_allocator)
 }
 
 create_request_reader :: proc(id, method, msg: string) -> io.Reader {

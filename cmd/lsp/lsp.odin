@@ -28,6 +28,7 @@ run :: proc(
 		buf, ok := read_frame(frame)
 		if !ok {
 			debugf(srv, "failed to read frame")
+			exit_code = 0 if srv.test_mode || srv.shutdown_requested else 1
 			break
 		}
 

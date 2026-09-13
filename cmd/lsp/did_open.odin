@@ -1,6 +1,7 @@
 package lsp
 
 import "core:encoding/json"
+import "core:mem/virtual"
 
 handle_did_open :: proc(srv: ^Server, obj: json.Object) -> (ok: bool) {
 	params := json_object(obj, "params") or_return
@@ -11,10 +12,18 @@ handle_did_open :: proc(srv: ^Server, obj: json.Object) -> (ok: bool) {
 	version := json_int(text_doc, "version") or_return
 	lang_id := json_string(text_doc, "languageId") or_return
 
-	if prev, ok := srv.documents[uri]; ok {
+	if prev, exists := srv.documents[uri]; exists {
 		prev.version = int(version)
-		prev.lang_id = lang_id
-		prev.text = text
+		prev.lang_id = clone_string(&srv.arena, lang_id)
+		prev.text = clone_string(&srv.arena, text)
+	} else {
+		alloc := virtual.arena_allocator(&srv.arena)
+		doc := new(Document, alloc)
+		doc.uri = clone_string(&srv.arena, uri)
+		doc.lang_id = clone_string(&srv.arena, lang_id)
+		doc.version = int(version)
+		doc.text = clone_string(&srv.arena, text)
+		srv.documents[doc.uri] = doc
 	}
 
 	public_diagnostics(srv, uri)

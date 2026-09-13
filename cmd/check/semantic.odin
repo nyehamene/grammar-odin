@@ -23,6 +23,7 @@ Type :: enum {
 // Semantic_Error is a single diagnostic reported by the checker.
 Semantic_Error :: struct {
 	path:    string, // display path, owned
+	offset:  int,    // source offset of the diagnostic
 	line:    int,
 	col:     int,
 	message: string, // owned
@@ -444,6 +445,7 @@ add_error :: proc(cu: ^Compilation_Unit, display_path: string, src: string, offs
 		&cu.errors,
 		Semantic_Error{
 			path = strings.clone(display_path),
+			offset = offset,
 			line = line,
 			col = col,
 			message = strings.clone(message),

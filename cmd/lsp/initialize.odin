@@ -24,8 +24,15 @@ Text_Document_Sync_Options :: struct {
 	change:     Text_Document_Sync_Kind,
 }
 
+Diagnostic_Provider :: struct {
+	inter_file_dependencies: bool `json:"interFileDependencies"`,
+	workspace_diagnostics:   bool `json:"workspaceDiagnostics"`,
+}
+
 Server_Capabilities :: struct {
-	text_document_sync: Text_Document_Sync_Options `json:"textDocumentSync"`,
+	text_document_sync:  Text_Document_Sync_Options `json:"textDocumentSync"`,
+	position_encoding:   string                     `json:"positionEncoding"`,
+	diagnostic_provider: Diagnostic_Provider        `json:"diagnosticProvider"`,
 }
 
 Initialize_Result :: struct {
@@ -65,6 +72,11 @@ create_initialize_result :: proc(srv: ^Server) -> string {
 	result.server_info = server_info
 	result.capabilities = Server_Capabilities {
 		text_document_sync = Text_Document_Sync_Options{open_close = true, change = .Full},
+		position_encoding  = "utf-8",
+		diagnostic_provider = Diagnostic_Provider{
+			inter_file_dependencies = false,
+			workspace_diagnostics   = false,
+		},
 	}
 
 	result_str, err := json.marshal(result, allocator = context.temp_allocator)

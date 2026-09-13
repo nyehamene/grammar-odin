@@ -159,9 +159,22 @@ write_request :: proc(w: io.Writer, id: Request_Id, method: string, params: stri
 	sb := strings.builder_make(context.temp_allocator)
 	strings.write_string(&sb, `{"jsonrpc":"2.0","id":`)
 	strings.write_string(&sb, id)
-	strings.write_string(&sb, `,"method":`)
+	strings.write_string(&sb, `,"method":"`)
 	strings.write_string(&sb, method)
-	strings.write_string(&sb, `,"params":`)
+	strings.write_string(&sb, `","params":`)
+	strings.write_string(&sb, params)
+	strings.write_string(&sb, `}`)
+
+	msg := strings.to_string(sb)
+	return write_frame(w, msg)
+}
+
+// write_notification writes a JSON-RPC notification with the given params.
+write_notification :: proc(w: io.Writer, method: string, params: string) -> string {
+	sb := strings.builder_make(context.temp_allocator)
+	strings.write_string(&sb, `{"jsonrpc":"2.0","method":"`)
+	strings.write_string(&sb, method)
+	strings.write_string(&sb, `","params":`)
 	strings.write_string(&sb, params)
 	strings.write_string(&sb, `}`)
 

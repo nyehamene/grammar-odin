@@ -26,9 +26,11 @@ json_int :: proc(obj: json.Object, key: string) -> (json.Integer, bool) {
 	if !found {
 		return 0, false
 	}
-	i, s_ok := v.(json.Integer)
-	if !s_ok {
-		return 0, false
+	#partial switch q in v {
+	case json.Integer:
+		return q, true
+	case json.Float:
+		return json.Integer(q), true
 	}
-	return i, true
+	return 0, false
 }
