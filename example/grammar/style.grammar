@@ -8,8 +8,8 @@ param_init = ( param_type | ":" ) "=" Expr;
 block       = <Block stmts>;
 stmts       = stmt { stmt };
 stmt        = decl ";"
-            | if ";"
-            | cond ";"
+            | if_stmt ";"
+            | cond_stmt ";"
             | field_style ";"
             ;
 decl        = property ;
@@ -23,3 +23,8 @@ slash_list = comma_list { "/" comma_list };
 comma_list = term { "," term };
 term       = calc | Term;
 calc       = "calc" "(" list ")";
+
+if_stmt = <If expr stmt>;
+cond_stmt = <Cond expr stmt>;
+Style_Block = block;
+expr = Expr;

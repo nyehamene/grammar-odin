@@ -2,8 +2,7 @@
 Element           = string_element
                   | text_element
                   | component_element
-                  | if_element
-                  | cond_element
+                  | stmt
                   ;
 string_element    = Quoted_String
                   | Line_String
@@ -17,7 +16,7 @@ Element_Children          = Attribute
                   | Element
                   ;
 
-Inline_Style          = [ field_selector ] "style" [ pseudo_selector_group ] style_block;
+Inline_Style          = [ field_selector ] "style" [ pseudo_selector_group ] Style_Block;
 pseudo_selector_group = "(" pseudo_selector { "," pseudo_selector } [ "," ] ")";
 pseudo_selector       = ":" [ ":" ] ( Ident_Dash | Ident );
 
@@ -48,3 +47,12 @@ else_expr expr         = "else" ( <if_expr Expr> | Expr );
 cond_expr expr         = "cond" Expr "{" <case_expr Expr> { <case_expr Expr> } [ <case_expr_default Expr> ] "}";
 case_expr expr         = "case" Case_Selector "=" Expr Sep;
 case_expr_default expr = "case" "=" Expr Sep;
+
+stmt = if_stmt
+     | cond_stmt
+     | foreach_stmt
+     ;
+if_stmt = <If expr Element>;
+cond_stmt = <Cond expr Element>;
+foreach_stmt = <Foreach expr Element>;
+expr = Expr;
