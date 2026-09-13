@@ -3,6 +3,7 @@ package lsp
 import "core:encoding/json"
 import "core:strings"
 
+import "../../ast"
 import "../check"
 
 // Location is an LSP location: a document URI and a range within it.
@@ -106,6 +107,18 @@ definition_for :: proc(
 			target = file
 			target_offset = off
 			name_len = len(hit.ident.name)
+		}
+	case .Param:
+		if hit.decl >= len(fi.file.decls) do break
+		decl := fi.file.decls[hit.decl]
+		d := decl.(ast.Rule_Decl) or_break
+		loop: for p in d.params {
+			if p.name == hit.ident.name {
+				target = fi
+				target_offset = p.pos
+				name_len = len(hit.ident.name)
+				break loop
+			}
 		}
 	}
 
