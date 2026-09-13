@@ -156,6 +156,36 @@ test_lsp_definition :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(output, `"line":1,"character":0`))
 }
 
+@(test)
+test_lsp_references :: proc(t: ^testing.T) {
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(
+			`textDocument/didOpen`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar","languageId":"grammar","version":1,"text":"expr = term | term;\nterm = \"a\";"}}`,
+		),
+		// Find references on the first `term` (line 0, character 8); the
+		// declaration and both usages come back with includeDeclaration.
+		make_request(
+			`2`,
+			`textDocument/references`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar"},"position":{"line":0,"character":8},"context":{"includeDeclaration":true}}`,
+		),
+		make_request(`3`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	log.debugf("output:\n%v", output)
+	testing.expect(t, strings.contains(output, `"id": 2`))
+	testing.expect(t, strings.contains(output, `"line":1,"character":0`))
+	testing.expect(t, strings.contains(output, `"line":0,"character":7`))
+	testing.expect(t, strings.contains(output, `"line":0,"character":14`))
+}
+
 // make_request builds a single framed JSON-RPC request message.
 make_request :: proc(id, method, params: string) -> string {
 	sb := strings.builder_make(context.temp_allocator)

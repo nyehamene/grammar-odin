@@ -103,6 +103,9 @@ handle_message :: proc(srv: ^Server, msg: json.Value) -> bool {
 	case "textDocument/definition":
 		handle_definition(srv, id, obj)
 
+	case "textDocument/references":
+		handle_references(srv, id, obj)
+
 	case "textDocument/diagnostic":
 		handle_text_document_diagnostic(srv, id, obj)
 

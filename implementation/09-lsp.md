@@ -21,12 +21,12 @@ The language server protocol implementation code and API should be placed in 'se
     - [x] **Dispatcher**: `textDocument/definition` is wired in `cmd/lsp/server.odin`.
     - [x] **Test**: `test_lsp_definition` in `cmd/lsp/lsp_test.odin`.
 
-- [ ] **3. `textDocument/references` (Find All References)**
-    - [ ] **Types**: Add `ReferenceParams` to `server/types.odin`. The response is a `[]Location`.
-    - [ ] **Reference Finding Logic**: Create a function that first finds a symbol's declaration, then traverses the AST of all documents in the `CompilationUnit` to find all usages.
-    - [ ] **Handler**: Implement `handleReferences` in `server/references.odin`.
-    - [ ] **Dispatcher**: Wire up `textDocument/references` in `server.odin`.
-    - [ ] **Test**: Add an integration test for "Find All References." (See `server/references_test.odin`)
+- [x] **3. `textDocument/references` (Find All References)** (implemented in `cmd/lsp/references.odin`)
+    - [x] **Types**: The response is a list of `Location`.
+    - [x] **Reference Finding Logic**: `reference_target` resolves the symbol to a namespace rule or file-local binding; `collect_rule_refs`/`collect_binding_refs` walk every open document's AST to find all usages (declaration, terms, calls, member accesses).
+    - [x] **Handler**: `handleReferences` honors `context.includeDeclaration` and returns sorted, deduplicated locations.
+    - [x] **Dispatcher**: `textDocument/references` is wired in `cmd/lsp/server.odin`.
+    - [x] **Test**: `test_lsp_references` in `cmd/lsp/lsp_test.odin`.
 
 - [ ] **4. `textDocument/documentSymbol`**
     - [ ] **Types**: Add `DocumentSymbolParams`, `DocumentSymbol`, and `SymbolKind` to `server/types.odin`.

@@ -21,6 +21,18 @@ json_string :: proc(obj: json.Object, key: string) -> (json.String, bool) {
 	return s, true
 }
 
+json_bool :: proc(obj: json.Object, key: string) -> (json.Boolean, bool) {
+	v, found := obj[key]
+	if !found {
+		return false, false
+	}
+	b, b_ok := v.(json.Boolean)
+	if !b_ok {
+		return false, false
+	}
+	return b, true
+}
+
 json_int :: proc(obj: json.Object, key: string) -> (json.Integer, bool) {
 	v, found := obj[key]
 	if !found {
