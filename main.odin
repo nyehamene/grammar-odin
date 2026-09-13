@@ -7,6 +7,7 @@ import "core:os"
 import "log"
 
 import "cmd/check"
+import fmtcmd "cmd/fmt"
 import "cmd/help"
 import "cmd/lsp"
 import "cmd/print"
@@ -50,22 +51,7 @@ run :: proc(args: []string, stdin: io.Reader, stdout, stderr: io.Writer) -> int 
 		help.run(stdout)
 
 	case "fmt":
-		if len(rest) == 0 {
-			err := fmt.tprintf("error: '%s' requires a PATH argument\n", command)
-			io.write_string(stderr, err)
-			return 1
-		}
-		path := rest[0]
-		if !check.is_valid_path(path) {
-			err := fmt.tprintf(
-				"error: invalid path '%s': must be a relative path inside the current working directory\n",
-				path,
-			)
-			io.write_string(stderr, err)
-			return 1
-		}
-		log.infof("command %s on path %s", command, path)
-		io.write_string(stdout, fmt.tprintf("Formatting %s...\n", path))
+		return fmtcmd.run(rest, stdin, stdout, stderr)
 
 	case "check":
 		return check.run(rest, stdin, stdout, stderr)

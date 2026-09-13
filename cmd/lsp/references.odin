@@ -22,7 +22,7 @@ Symbol_Ref :: struct {
 	name:        string,
 	ns_dir:      string, // for .Rule
 	origin_file: ^check.Loaded_File, // for .Binding
-	decl:        int, // for .Paran
+	decl:        int, // for .Param
 }
 
 // handle_references implements textDocument/references. It finds every
@@ -105,9 +105,7 @@ handle_references :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok
 			}
 
 		case .Param:
-			debugf(srv, "\033[35mparam try\033[0m %s %d", target.name, target.decl)
 			if f == target.origin_file {
-				debugf(srv, "\033[35mparam enter\033[0m %s %d", target.name, target.decl)
 				collect_param_refs(f, target.decl, target.name, include_declaration, uris, &refs)
 			}
 		}

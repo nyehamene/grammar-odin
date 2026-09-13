@@ -256,6 +256,7 @@ destroy_expr :: proc(expr: Expr) {
 			destroy_expr(e)
 		}
 		delete(v.args)
+		free(v)
 	case Directive_Expr:
 		for e in v.args {
 			destroy_expr(e)

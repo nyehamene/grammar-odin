@@ -5,9 +5,9 @@ the file containing the error is not modified, and
 the program reports the errors and exit with a non-zero
 exit code after formatting all the input files.
 
-- Implement `grammar fmt PATH`.
-- Add tests using the rules described below.
-- Implement `grammar fmt --stdin`.
+- [x] Implement `grammar fmt PATH`.
+- [x] Add tests using the rules described below.
+- [x] Implement `grammar fmt --stdin`.
 
 ## Formating rules
 
