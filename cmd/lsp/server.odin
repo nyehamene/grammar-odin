@@ -109,6 +109,9 @@ handle_message :: proc(srv: ^Server, msg: json.Value) -> bool {
 	case "textDocument/references":
 		handle_references(srv, id, obj)
 
+	case "textDocument/documentHighlight":
+		handle_document_highlight(srv, id, obj)
+
 	case "textDocument/prepareRename":
 		handle_prepare_rename(srv, id, obj)
 

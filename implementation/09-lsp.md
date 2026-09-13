@@ -65,12 +65,12 @@ The language server protocol implementation code and API should be placed in 'se
     - [x] **Dispatcher**: `textDocument/diagnostic` is wired in `cmd/lsp/server.odin`.
     - [x] **Test**: `test_lsp_pull_diagnostic` and `test_lsp_did_open_publishes_diagnostics` in `cmd/lsp/lsp_test.odin`.
 
-- [ ] **9. `textDocument/documentHighlight`**
-    - [ ] **Types**: Add `DocumentHighlightParams` and `DocumentHighlight` to `server/types.odin`.
-    - [ ] **Handler**: Implement `handleDocumentHighlight` in `server/document_highlight.odin`.
-    - [ ] **Logic**: Find all references to the symbol at the cursor position.
-    - [ ] **Dispatcher**: Wire up `textDocument/documentHighlight` in `server.odin`.
-    - [ ] **Test**: Add an integration test for document highlight. (See `server/document_highlight_test.odin`)
+- [x] **9. `textDocument/documentHighlight`** (implemented in `cmd/lsp/document_highlight.odin`)
+    - [x] **Types**: `Document_Highlight` and `Document_Highlight_Kind` added in `cmd/lsp/document_highlight.odin`.
+    - [x] **Handler**: `handle_document_highlight` implemented in `cmd/lsp/document_highlight.odin`.
+    - [x] **Logic**: Reuses `reference_target` and the `collect_*_refs` walkers for the cursor's document.
+    - [x] **Dispatcher**: `textDocument/documentHighlight` is wired in `cmd/lsp/server.odin`.
+    - [x] **Test**: `test_lsp_document_highlight` in `cmd/lsp/lsp_test.odin`.
 
 - [ ] **10. `textDocument/semanticTokens`**
     - [ ] **Types**: Add `SemanticTokensParams`, `SemanticTokens`, `SemanticTokensPartialResult`, `SemanticTokenTypes`, and `SemanticTokenModifiers` to `server/types.odin`.
