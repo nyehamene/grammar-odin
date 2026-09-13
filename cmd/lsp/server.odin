@@ -129,6 +129,9 @@ handle_message :: proc(srv: ^Server, msg: json.Value) -> bool {
 
 	case "workspace/symbol":
 		handle_workspace_symbol(srv, id, obj)
+
+	case "textDocument/documentLink":
+		handle_document_link(srv, id, obj)
 	}
 
 	return true

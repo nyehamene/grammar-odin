@@ -80,9 +80,9 @@ The language server protocol implementation code and API should be placed in 'se
     - [x] **Capabilities**: `semanticTokensProvider` with the token legend is advertised during initialize.
     - [x] **Test**: `test_lsp_semantic_tokens` in `cmd/lsp/lsp_test.odin`.
 
-- [ ] **11. `textDocument/documentLink`**
-    - [ ] **Types**: Add `DocumentLinkParams` and `DocumentLink` to `server/types.odin`.
-    - [ ] **Handler**: Implement `handleDocumentLink` in `server/documentlink.odin`.
-    - [ ] **Logic**: Generate links for `@import` and `@package` directives.
-    - [ ] **Dispatcher**: Wire up `textDocument/documentLink` in `server.odin`.
-    - [ ] **Test**: Add an integration test for document links. (See `server/document_link_test.odin`)
+- [x] **11. `textDocument/documentLink`** (implemented in `cmd/lsp/documentlink.odin`)
+    - [x] **Types**: `DocumentLink` with `range` and `target` in `cmd/lsp/documentlink.odin`.
+    - [x] **Handler**: `handle_document_link` in `cmd/lsp/documentlink.odin`.
+    - [x] **Logic**: Generate links for `@import` bindings, resolving the relative path against the importing file's directory (mirroring `check`'s `.grammar` extension fallback).
+    - [x] **Dispatcher**: Wire up `textDocument/documentLink` in `server.odin`.
+    - [x] **Test**: `test_lsp_document_link` in `cmd/lsp/lsp_test.odin`.

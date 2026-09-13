@@ -417,6 +417,38 @@ test_lsp_semantic_tokens :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(output, `,0,1,3,4,0,0,0,1,6,0]`))
 }
 
+@(test)
+test_lsp_document_link :: proc(t: ^testing.T) {
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(
+			`textDocument/didOpen`,
+			`{"textDocument":{"uri":"file:///tmp/a.grammar","languageId":"grammar","version":1,"text":"ns = @import(\"./base\");\ngreet = \"hi\";"}}`,
+		),
+		make_notification(
+			`textDocument/didOpen`,
+			`{"textDocument":{"uri":"file:///tmp/base.grammar","languageId":"grammar","version":1,"text":"bye = \"x\";"}}`,
+		),
+		make_request(
+			`2`,
+			`textDocument/documentLink`,
+			`{"textDocument":{"uri":"file:///tmp/a.grammar"}}`,
+		),
+		make_request(`3`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	log.debugf("output:\n%v", output)
+	testing.expect(t, strings.contains(output, `"id": 2`))
+	testing.expect(t, strings.contains(output, `"target":"file:///tmp/base.grammar"`))
+	testing.expect(t, strings.contains(output, `"start":{"line":0,"character":13}`))
+	testing.expect(t, strings.contains(output, `"end":{"line":0,"character":21}`))
+}
+
 // make_request builds a single framed JSON-RPC request message.
 make_request :: proc(id, method, params: string) -> string {
 	sb := strings.builder_make(context.temp_allocator)
