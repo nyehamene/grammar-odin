@@ -75,15 +75,8 @@ diagnostics_for :: proc(srv: ^Server, uri: string) -> []Diagnostic {
 		return make([]Diagnostic, 0)
 	}
 
-	cu := check.new_compilation_unit()
+	cu := index_documents(srv)
 	defer check.destroy_compilation_unit(&cu)
-
-	for _, d in srv.documents {
-		abs := uri_to_path(d.uri) or_continue
-		display := check.display_of(&cu, abs)
-		check.load_source(&cu, abs, display, d.text)
-	}
-	check.run_checks(&cu)
 
 	target_abs, abs_ok := uri_to_path(doc.uri)
 	if !abs_ok {

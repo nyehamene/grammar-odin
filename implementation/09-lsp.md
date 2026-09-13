@@ -6,13 +6,13 @@ The language server protocol implementation code and API should be placed in 'se
 
 ## Implementation Plan
 
-- [ ] **1. `textDocument/hover`**
-    - [ ] **Types**: Add `HoverParams` and `Hover` response types to `server/types.odin`.
-    - [ ] **AST Position Logic**: Create a new helper function to find the `ast.Node` at a specific character offset. This will likely involve a new AST visitor.
-    - [ ] **Handler**: Implement `handleHover` in `server/hover.odin`, which will use the position logic to find the node under the cursor.
-    - [ ] **Type Formatting**: Use the `checker.typeOf` method to get the type of the identified node and format it into a user-friendly string.
-    - [ ] **Dispatcher**: Wire up the `textDocument/hover` method in `server.odin`'s request handler.
-    - [ ] **Test**: Add an integration test for the hover feature. (See `server/hover_test.odin`)
+- [x] **1. `textDocument/hover`** (implemented in `cmd/lsp/hover.odin`)
+    - [x] **Types**: `Hover`, `Marked_String`, and position parsing in `cmd/lsp/hover.odin`.
+    - [x] **AST Position Logic**: `find_hit`/`find_hit_expr` in `cmd/lsp/find.odin` find the most specific token under an offset.
+    - [x] **Handler**: `handleHover` uses the position logic to identify the node under the cursor.
+    - [x] **Type Formatting**: The handler describes literals, directives, parameters, and resolves rule names, import bindings, and namespace members to their declaration locations.
+    - [x] **Dispatcher**: `textDocument/hover` is wired in `cmd/lsp/server.odin`.
+    - [x] **Test**: `test_lsp_hover` in `cmd/lsp/lsp_test.odin`.
 
 - [ ] **2. `textDocument/definition` (Go to Definition)**
     - [ ] **Types**: Add `DefinitionParams` and `Location` types to `server/types.odin`.

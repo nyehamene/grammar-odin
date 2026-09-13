@@ -97,6 +97,9 @@ handle_message :: proc(srv: ^Server, msg: json.Value) -> bool {
 	case "textDocument/didClose":
 		handle_did_close(srv, obj)
 
+	case "textDocument/hover":
+		handle_hover(srv, id, obj)
+
 	case "textDocument/diagnostic":
 		handle_text_document_diagnostic(srv, id, obj)
 

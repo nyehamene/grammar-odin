@@ -91,6 +91,43 @@ test_lsp_did_change_updates_diagnostics :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(output, `"diagnostics":[]`))
 }
 
+@(test)
+test_lsp_hover :: proc(t: ^testing.T) {
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(
+			`textDocument/didOpen`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar","languageId":"grammar","version":1,"text":"greeting = \"hi\";"}}`,
+		),
+		// Hover over the rule name `greeting` at line 0, character 0.
+		make_request(
+			`2`,
+			`textDocument/hover`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar"},"position":{"line":0,"character":0}}`,
+		),
+		// Hover over the 'h' inside the string literal.
+		make_request(
+			`3`,
+			`textDocument/hover`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar"},"position":{"line":0,"character":13}}`,
+		),
+		make_request(`4`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	log.debugf("output:\n%v", output)
+	testing.expect(t, strings.contains(output, `"id": 2`))
+	testing.expect(t, strings.contains(output, "rule `greeting`"))
+	testing.expect(t, strings.contains(output, "declared at"))
+	testing.expect(t, strings.contains(output, ":1:1"))
+	testing.expect(t, strings.contains(output, `"id": 3`))
+	testing.expect(t, strings.contains(output, "string literal"))
+}
+
 // make_request builds a single framed JSON-RPC request message.
 make_request :: proc(id, method, params: string) -> string {
 	sb := strings.builder_make(context.temp_allocator)
@@ -116,8 +153,8 @@ create_stream_reader :: proc(msgs: ..string) -> io.Reader {
 	return stdin
 }
 
-// run_and_capture starts the server in test mode over stdin and returns a
-// clone of everything written to its output stream.
+// send_request starts the server in test mode over stdin and returns a clone
+// of everything written to its output stream.
 send_request :: proc(stdin: io.Reader) -> string {
 	sb := strings.builder_make(context.temp_allocator)
 	stdout := strings.to_writer(&sb)
