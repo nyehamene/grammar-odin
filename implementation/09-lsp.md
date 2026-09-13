@@ -28,12 +28,12 @@ The language server protocol implementation code and API should be placed in 'se
     - [x] **Dispatcher**: `textDocument/references` is wired in `cmd/lsp/server.odin`.
     - [x] **Test**: `test_lsp_references` in `cmd/lsp/lsp_test.odin`.
 
-- [ ] **4. `textDocument/documentSymbol`**
-    - [ ] **Types**: Add `DocumentSymbolParams`, `DocumentSymbol`, and `SymbolKind` to `server/types.odin`.
-    - [ ] **Handler**: Implement `handleDocumentSymbol` in `server/documentsymbol.odin`.
-    - [ ] **Logic**: Traverse the top-level declarations of a document's AST to build a list of symbols.
-    - [ ] **Dispatcher**: Wire up `textDocument/documentSymbol` in `server.odin`.
-    - [ ] **Test**: Add an integration test for document symbols. (See `server/document_symbol_test.odin`)
+- [x] **4. `textDocument/documentSymbol`** (implemented in `cmd/lsp/documentsymbol.odin`)
+    - [x] **Types**: `Document_Symbol` and `Symbol_Kind` added in `cmd/lsp/documentsymbol.odin`.
+    - [x] **Handler**: `handleDocumentSymbol` returns the documents' rules, import bindings, and rule parameters as a symbol hierarchy.
+    - [x] **Logic**: Walks the top-level declarations of a document's AST.
+    - [x] **Dispatcher**: `textDocument/documentSymbol` is wired in `cmd/lsp/server.odin`.
+    - [x] **Test**: `test_lsp_document_symbol` in `cmd/lsp/lsp_test.odin`.
 
 - [ ] **5. `workspace/symbol`**
     - [ ] **Types**: Add `WorkspaceSymbolParams` and `SymbolInformation` to `server/types.odin`.

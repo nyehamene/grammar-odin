@@ -110,6 +110,8 @@ handle_message :: proc(srv: ^Server, msg: json.Value) -> bool {
 		handle_text_document_diagnostic(srv, id, obj)
 
 	case "textDocument/documentSymbol":
+		handle_document_symbol(srv, id, obj)
+
 	case "textDocument/semanticTokens/full":
 	case "workspace/symbol":
 	}
