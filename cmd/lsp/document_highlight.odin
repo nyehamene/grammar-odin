@@ -71,12 +71,19 @@ handle_document_highlight :: proc(srv: ^Server, id: Request_Id, obj: json.Object
 		collect_rule_refs(fi, target.ns_dir, target.name, true, uris, &refs)
 	case .Binding:
 		collect_binding_refs(fi, target.name, true, uris, &refs)
+	case .Local_Rule:
+		collect_rule_refs(fi, target.ns_dir, target.name, true, uris, &refs, true)
+	case .Param:
+		collect_param_refs(fi, target.decl, target.name, true, uris, &refs)
 	}
 
 	highlights := make([dynamic]Document_Highlight, len(refs))
 	defer delete(highlights)
 	for loc, i in refs {
-		highlights[i] = Document_Highlight{range = loc.range, kind = .Text}
+		highlights[i] = Document_Highlight {
+			range = loc.range,
+			kind  = .Text,
+		}
 	}
 
 	buf, err := json.marshal(highlights, allocator = context.temp_allocator)

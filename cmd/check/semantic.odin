@@ -74,10 +74,11 @@ Semantic_Error :: struct {
 
 // Rule_Ref identifies the first declaration of a rule in a namespace.
 Rule_Ref :: struct {
-	type:   Type,
-	arity:  int,
-	file:   ^Loaded_File, // the file declaring the rule
-	offset: int, // source offset of the rule name
+	type:       Type,
+	arity:      int,
+	file:       ^Loaded_File, // the file declaring the rule
+	offset:     int, // source offset of the rule name
+	decl_index: int,
 }
 
 // Namespace is the collection of rules declared in a directory. Every grammar
@@ -94,6 +95,7 @@ Loaded_File :: struct {
 	file:            ast.File,
 	namespace_path:  string, // absolute path of the containing directory, owned
 	bindings:        map[string]string, // binding name -> absolute directory of the imported namespace
+	local_rules:     map[string]Rule_Ref,
 	binding_offsets: map[string]int, // binding name -> offset of the binding's name
 	broken:          bool, // file had lexical or syntax errors
 }
@@ -131,6 +133,7 @@ destroy_compilation_unit :: proc(cu: ^Compilation_Unit) {
 			delete(dir)
 		}
 		delete(f.bindings)
+		delete(f.local_rules)
 		delete(f.binding_offsets)
 		free(f)
 	}
@@ -223,6 +226,7 @@ load :: proc(cu: ^Compilation_Unit, path: string) -> ^Loaded_File {
 	fi.file = file
 	fi.namespace_path = strings.clone(filepath.dir(abs))
 	fi.bindings = make(map[string]string)
+	fi.local_rules = make(map[string]Rule_Ref)
 	fi.binding_offsets = make(map[string]int)
 
 	for e in lex_errors {
@@ -354,6 +358,7 @@ bind_all :: proc(cu: ^Compilation_Unit) {
 					)
 				} else {
 					seen[d.name.name] = d.name.pos
+
 					arity := len(d.params)
 					rule := Rule_Ref {
 						file   = fi,
@@ -364,7 +369,12 @@ bind_all :: proc(cu: ^Compilation_Unit) {
 					if arity > 0 {
 						rule.type = .Proc
 					}
-					ns.rules[d.name.name] = rule
+
+					if is_local_rule(d.name.name) {
+						fi.local_rules[d.name.name] = rule
+					} else {
+						ns.rules[d.name.name] = rule
+					}
 				}
 			case ast.Binding_Decl:
 				if other, ok := seen[d.name.name]; ok {
@@ -587,12 +597,6 @@ check_expr :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, expr: ast.Expr, o: ^
 // check_member validates a member access `receiver.member`: the receiver must
 // be a binding to a namespace and the member must be a rule in that namespace.
 check_member :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, m: ast.Member_Expr, o: ^Operand) {
-	// object, ok := m.object^.(ast.Ident)
-	// if !ok {
-	// 	add_error(cu, fi.display, fi.src, m.pos, "expected a namespace on the left of '.'")
-	// 	return
-	// }
-
 	obj_op: Operand
 	check_expr(cu, fi, m.object^, &obj_op)
 	if obj_op.kind != .Namespace {
@@ -644,19 +648,13 @@ is_binding :: proc(fi: ^Loaded_File, name: string) -> bool {
 }
 
 resolve_rule :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, name: string) -> (Rule_Ref, bool) {
+	if l_rule, ok := fi.local_rules[name]; ok {
+		return l_rule, true
+	}
 	ns := cu.namespaces[fi.namespace_path]
 	if ns == nil do return {}, false
 	rule, ok := ns.rules[name]
 	return rule, ok
-}
-
-// is_defined reports whether name is a rule in the file's namespace or a
-// binding declared in the file.
-is_defined0 :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, name: string) -> bool {
-	ns := cu.namespaces[fi.namespace_path]
-	if ns == nil do return false
-	_, ok := ns.rules[name]
-	return ok
 }
 
 // add_redeclared reports that name is declared twice, pointing at the first
@@ -753,4 +751,12 @@ unquote :: proc(s: string) -> string {
 		return s[1:len(s) - 1]
 	}
 	return s
+}
+
+is_local_rule :: proc(name: string) -> bool {
+	if name == "" {
+		return false
+	}
+	first := name[0]
+	return first >= 'a' && first <= 'z'
 }

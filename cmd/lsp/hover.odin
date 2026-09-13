@@ -57,7 +57,9 @@ handle_hover :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok: boo
 		return true
 	}
 
-	result := Hover{contents = Marked_String{language = "grammar", value = content}}
+	result := Hover {
+		contents = Marked_String{language = "grammar", value = content},
+	}
 	buf, err := json.marshal(result, allocator = context.temp_allocator)
 	if err != nil {
 		debugf(srv, "failed to marshal hover: %v", err)
@@ -105,6 +107,9 @@ symbol_hover :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, name: 
 	if file, off, ok := rule_ref_at(cu, fi, name); ok {
 		return fmt.tprintf("rule `%s`\ndeclared at %s", name, location_string(file, off))
 	}
+	if r, is_local := fi.local_rules[name]; is_local {
+		return fmt.tprintf("rule `%s`\ndeclared at %s", name, location_string(fi, r.offset))
+	}
 	if _, is_binding := fi.bindings[name]; is_binding {
 		return binding_hover(cu, fi, name)
 	}
@@ -112,7 +117,11 @@ symbol_hover :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, name: 
 }
 
 // binding_hover describes an import binding and the namespace it points at.
-binding_hover :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, name: string) -> string {
+binding_hover :: proc(
+	cu: ^check.Compilation_Unit,
+	fi: ^check.Loaded_File,
+	name: string,
+) -> string {
 	dir, found := fi.bindings[name]
 	if !found {
 		return fmt.tprintf("identifier `%s`", name)
@@ -143,7 +152,11 @@ member_hover :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, hit: H
 	}
 	ref, rule_found := ns.rules[hit.ident.name]
 	if !rule_found {
-		return fmt.tprintf("rule `%s` in namespace `%s`", hit.ident.name, filepath.base(target_dir))
+		return fmt.tprintf(
+			"rule `%s` in namespace `%s`",
+			hit.ident.name,
+			filepath.base(target_dir),
+		)
 	}
 	return fmt.tprintf(
 		"rule `%s` in namespace `%s`\ndeclared at %s",
@@ -155,7 +168,15 @@ member_hover :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, hit: H
 
 // rule_ref_at resolves name to the file and offset of its declaration in the
 // file's own namespace.
-rule_ref_at :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, name: string) -> (file: ^check.Loaded_File, offset: int, found: bool) {
+rule_ref_at :: proc(
+	cu: ^check.Compilation_Unit,
+	fi: ^check.Loaded_File,
+	name: string,
+) -> (
+	file: ^check.Loaded_File,
+	offset: int,
+	found: bool,
+) {
 	ns := cu.namespaces[fi.namespace_path]
 	if ns == nil {
 		return nil, 0, false

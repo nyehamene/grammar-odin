@@ -66,7 +66,14 @@ handle_definition :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok
 // definition_for resolves hit to the declaration of the referenced symbol: a
 // rule declaration (in the same namespace or via a member access) or an import
 // binding declaration.
-definition_for :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, hit: Hit) -> (Location, bool) {
+definition_for :: proc(
+	cu: ^check.Compilation_Unit,
+	fi: ^check.Loaded_File,
+	hit: Hit,
+) -> (
+	Location,
+	bool,
+) {
 	target: ^check.Loaded_File
 	target_offset := 0
 	name_len := 0
@@ -83,6 +90,10 @@ definition_for :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, hit:
 				target_offset = off
 				name_len = len(hit.ident.name)
 			}
+		} else if r, is_local := fi.local_rules[hit.ident.name]; is_local {
+			target = fi
+			target_offset = r.offset
+			name_len = len(hit.ident.name)
 		}
 	case .Binding_Name, .Member_Object:
 		if off, ok := fi.binding_offsets[hit.ident.name]; ok {
@@ -108,11 +119,11 @@ definition_for :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, hit:
 	}
 	defer delete(abs)
 
-	loc := Location{
+	loc := Location {
 		uri = path_to_uri(abs),
-		range = Range{
+		range = Range {
 			start = position_at_offset(target.src, target_offset),
-			end   = position_at_offset(target.src, target_offset + name_len),
+			end = position_at_offset(target.src, target_offset + name_len),
 		},
 	}
 	return loc, true
@@ -120,7 +131,15 @@ definition_for :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, hit:
 
 // member_ref_at resolves a member access such as `base.expr` to the rule's
 // declaration in the namespace that object_name binds to.
-member_ref_at :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, hit: Hit) -> (file: ^check.Loaded_File, offset: int, ok: bool) {
+member_ref_at :: proc(
+	cu: ^check.Compilation_Unit,
+	fi: ^check.Loaded_File,
+	hit: Hit,
+) -> (
+	file: ^check.Loaded_File,
+	offset: int,
+	ok: bool,
+) {
 	if hit.member_object == "" {
 		return nil, 0, false
 	}
@@ -140,7 +159,13 @@ member_ref_at :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, hit: 
 }
 
 // find_file_abs returns a clone of the absolute path that names target in cu.
-find_file_abs :: proc(cu: ^check.Compilation_Unit, target: ^check.Loaded_File) -> (abs: string, ok: bool) {
+find_file_abs :: proc(
+	cu: ^check.Compilation_Unit,
+	target: ^check.Loaded_File,
+) -> (
+	abs: string,
+	ok: bool,
+) {
 	for key, f in cu.files {
 		if f == target {
 			return strings.clone(key), true

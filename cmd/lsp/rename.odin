@@ -52,10 +52,10 @@ handle_prepare_rename :: proc(srv: ^Server, id: Request_Id, obj: json.Object) ->
 		return true
 	}
 
-	result := Prepare_Rename_Result{
-		range = Range{
+	result := Prepare_Rename_Result {
+		range = Range {
 			start = position_at_offset(doc.text, hit.ident.pos),
-			end   = position_at_offset(doc.text, hit.ident.pos + len(hit.ident.name)),
+			end = position_at_offset(doc.text, hit.ident.pos + len(hit.ident.name)),
 		},
 		placeholder = hit.ident.name,
 	}
@@ -127,6 +127,14 @@ handle_rename :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok: bo
 			if f == target.origin_file {
 				collect_binding_refs(f, target.name, true, uris, &refs)
 			}
+		case .Local_Rule:
+			if f == target.origin_file {
+				collect_rule_refs(f, "", target.name, true, uris, &refs, true)
+			}
+		case .Param:
+			if f == target.origin_file {
+				collect_param_refs(f, target.decl, target.name, true, uris, &refs)
+			}
 		}
 	}
 
@@ -177,11 +185,19 @@ rename_position_offset :: proc(params: json.Object, doc: ^Document) -> (int, boo
 	if !char_ok {
 		return 0, false
 	}
-	return offset_at_position(doc.text, Position{line = int(line), character = int(character)}), true
+	return offset_at_position(doc.text, Position{line = int(line), character = int(character)}),
+		true
 }
 
 // cu_file_for looks up the Loaded_File backing an open document's uri.
-cu_file_for :: proc(srv: ^Server, cu: ^check.Compilation_Unit, uri: string) -> (^check.Loaded_File, bool) {
+cu_file_for :: proc(
+	srv: ^Server,
+	cu: ^check.Compilation_Unit,
+	uri: string,
+) -> (
+	^check.Loaded_File,
+	bool,
+) {
 	target_abs, abs_ok := uri_to_path(uri)
 	if !abs_ok {
 		return nil, false

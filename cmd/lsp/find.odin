@@ -24,12 +24,13 @@ Hit :: struct {
 	ident:         ast.Ident,
 	literal:       string,
 	member_object: string, // receiver name when kind == .Member
+	decl:          int, // decl index in Loaded_File.file when kind == .Param
 }
 
 // find_hit locates the most specific node in file whose source span contains
 // offset. Offsets between tokens (whitespace, `=`, quotes) usually miss.
 find_hit :: proc(file: ^ast.File, offset: int) -> Hit {
-	for decl in file.decls {
+	for decl, id in file.decls {
 		#partial switch d in decl {
 		case ast.Rule_Decl:
 			if hit_ident(d.name, offset) {
@@ -37,7 +38,7 @@ find_hit :: proc(file: ^ast.File, offset: int) -> Hit {
 			}
 			for p in d.params {
 				if hit_ident(p, offset) {
-					return Hit{kind = .Param, ident = p}
+					return Hit{kind = .Param, ident = p, decl = id}
 				}
 			}
 			for e in d.body {

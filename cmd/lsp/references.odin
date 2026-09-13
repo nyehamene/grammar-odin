@@ -10,7 +10,9 @@ import "../check"
 // Symbol_Ref_Kind discriminates what a symbol reference consists of.
 Symbol_Ref_Kind :: enum {
 	Rule,
+	Local_Rule,
 	Binding,
+	Param,
 }
 
 // Symbol_Ref identifies a symbol whose references we want: either a rule living
@@ -20,6 +22,7 @@ Symbol_Ref :: struct {
 	name:        string,
 	ns_dir:      string, // for .Rule
 	origin_file: ^check.Loaded_File, // for .Binding
+	decl:        int, // for .Paran
 }
 
 // handle_references implements textDocument/references. It finds every
@@ -96,6 +99,15 @@ handle_references :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok
 			if f == target.origin_file {
 				collect_binding_refs(f, target.name, include_declaration, uris, &refs)
 			}
+		case .Local_Rule:
+			if f == target.origin_file {
+				collect_rule_refs(f, "", target.name, include_declaration, uris, &refs, true)
+			}
+
+		case .Param:
+			if f == target.origin_file {
+				collect_param_refs(f, target.decl, target.name, include_declaration, uris, &refs)
+			}
 		}
 	}
 
@@ -128,6 +140,9 @@ reference_target :: proc(
 		if _, is_binding := fi.bindings[hit.ident.name]; is_binding {
 			return Symbol_Ref{kind = .Binding, name = hit.ident.name, origin_file = fi}, true
 		}
+		if _, ok := fi.local_rules[hit.ident.name]; ok {
+			return Symbol_Ref{kind = .Local_Rule, name = hit.ident.name, origin_file = fi}, true
+		}
 		if _, _, ok := rule_ref_at(cu, fi, hit.ident.name); ok {
 			return Symbol_Ref{kind = .Rule, name = hit.ident.name, ns_dir = fi.namespace_path},
 				true
@@ -142,6 +157,9 @@ reference_target :: proc(
 				return Symbol_Ref{kind = .Rule, name = hit.ident.name, ns_dir = dir}, true
 			}
 		}
+	case .Param:
+		return Symbol_Ref{kind = .Param, name = hit.ident.name, origin_file = fi, decl = hit.decl},
+			true
 	}
 	return {}, false
 }
@@ -155,6 +173,7 @@ collect_rule_refs :: proc(
 	include_declaration: bool,
 	uris: map[^check.Loaded_File]string,
 	out: ^[dynamic]Location,
+	local := false,
 ) {
 	for decl in f.file.decls {
 		#partial switch d in decl {
@@ -163,7 +182,7 @@ collect_rule_refs :: proc(
 				push_reference(out, uris, f, d.name.pos, d.name.name)
 			}
 			for e in d.body {
-				rule_ref_in_expr(f, target_ns_dir, name, e, uris, out)
+				rule_ref_in_expr(f, target_ns_dir, name, e, uris, out, local)
 			}
 		case ast.Binding_Decl, ast.Comment_Group:
 		}
@@ -194,12 +213,32 @@ collect_binding_refs :: proc(
 	}
 }
 
+collect_param_refs :: proc(
+	f: ^check.Loaded_File,
+	index: int,
+	name: string,
+	include_declaration: bool,
+	uris: map[^check.Loaded_File]string,
+	out: ^[dynamic]Location,
+) {
+	if index >= len(f.file.decls) do return
+	decl := f.file.decls[index]
+	#partial switch d in decl {
+	case ast.Rule_Decl:
+		for e in d.body {
+			rule_ref_in_expr(f, "", name, e, uris, out, true)
+		}
+	case ast.Comment_Group:
+	}
+}
+
 rule_ref_in_expr :: proc(
 	f: ^check.Loaded_File,
 	target_ns_dir, name: string,
 	expr: ast.Expr,
 	uris: map[^check.Loaded_File]string,
 	out: ^[dynamic]Location,
+	local := false,
 ) {
 	#partial switch v in expr {
 	case ast.Ident:
@@ -211,6 +250,8 @@ rule_ref_in_expr :: proc(
 		rule_ref_in_expr(f, target_ns_dir, name, v.x^, uris, out)
 
 	case ast.Member_Expr:
+		if local do break
+
 		if obj, is_ident := v.object^.(ast.Ident); is_ident {
 			if dir, is_binding := f.bindings[obj.name];
 			   is_binding && dir == target_ns_dir && v.member.name == name {
