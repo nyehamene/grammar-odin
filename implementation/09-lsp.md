@@ -43,12 +43,13 @@ The language server protocol implementation code and API should be placed in 'se
     - [x] **Test**: `test_lsp_workspace_symbol` in `cmd/lsp/lsp_test.odin`.
     - [x] **Fix**: Intermittent parallel-test segfault fixed in `cmd/lsp/lsp.odin` (re-init frame headers map before each frame read).
 
-- [ ] **6. `textDocument/rename`**
-    - [ ] **Types**: Add `RenameParams` and `WorkspaceEdit` to `server/types.odin`.
-    - [ ] **Handlers**: Implement `handlePrepareRename` and `handleRename` in `server/rename.odin`.
-    - [ ] **Logic**: Use the "Find All References" logic to get all locations of a symbol and create a `WorkspaceEdit` containing `TextEdit`s to perform the rename.
-    - [ ] **Dispatcher**: Wire up `textDocument/prepareRename` and `textDocument/rename` in `server.odin`.
-    - [ ] **Test**: Add an integration test for the rename feature. (See `server/rename_test.odin`)
+- [x] **6. `textDocument/rename`** (implemented in `cmd/lsp/rename.odin`)
+    - [x] **Types**: `Text_Edit`, `Workspace_Edit`, `Prepare_Rename_Result` added in `cmd/lsp/rename.odin`.
+    - [x] **Handlers**: `handle_prepare_rename` and `handle_rename` implemented in `cmd/lsp/rename.odin`.
+    - [x] **Logic**: Reuses `reference_target` and the `collect_*_refs` walkers (with `include_declaration`) to build a per-document `WorkspaceEdit`.
+    - [x] **Dispatcher**: `textDocument/prepareRename` and `textDocument/rename` are wired in `cmd/lsp/server.odin`.
+    - [x] **Test**: `test_lsp_rename` in `cmd/lsp/lsp_test.odin`.
+    - [x] **Fix**: The frame use-after-free fix moved into `Frame_destroy` (recreates the headers map after freeing the arena).
 
 - [ ] **7. `textDocument/completion`**
     - [ ] **Types**: Add `CompletionParams`, `CompletionItem`, `CompletionList` to `server/types.odin`.

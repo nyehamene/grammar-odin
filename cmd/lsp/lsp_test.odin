@@ -250,6 +250,52 @@ test_lsp_workspace_symbol :: proc(t: ^testing.T) {
 	testing.expect(t, !strings.contains(output, `"name":"departure"`))
 }
 
+@(test)
+test_lsp_rename :: proc(t: ^testing.T) {
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(
+			`textDocument/didOpen`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar","languageId":"grammar","version":1,"text":"expr = term | term;\nterm = \"a\";"}}`,
+		),
+		// prepareRename on the first `term` (line 0, character 8).
+		make_request(
+			`2`,
+			`textDocument/prepareRename`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar"},"position":{"line":0,"character":8}}`,
+		),
+		// Rename `term` to `elem`: affects both usages and the declaration.
+		make_request(
+			`3`,
+			`textDocument/rename`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar"},"position":{"line":0,"character":8},"newName":"elem"}`,
+		),
+		make_request(`4`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	log.debugf("output:\n%v", output)
+	testing.expect(t, strings.contains(output, `"id": 2`))
+	testing.expect(t, strings.contains(output, `"placeholder":"term"`))
+	testing.expect(t, strings.contains(output, `"id": 3`))
+	testing.expect(t, strings.contains(output, `"changes":{`))
+	testing.expect(t, strings.contains(output, `"uri":"file:///tmp/test.grammar"`))
+
+	rename_edits_ok := false
+	lines := strings.split_lines(output)
+	defer delete(lines)
+	for line in lines {
+		if strings.has_prefix(line, `{"jsonrpc": "2.0", "id": 3`) {
+			rename_edits_ok = strings.count(line, `"newText":"elem"`) == 3
+		}
+	}
+	testing.expect(t, rename_edits_ok)
+}
+
 // make_request builds a single framed JSON-RPC request message.
 make_request :: proc(id, method, params: string) -> string {
 	sb := strings.builder_make(context.temp_allocator)

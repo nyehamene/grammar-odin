@@ -26,6 +26,8 @@ Frame_init :: proc(f: ^Frame, stdin: io.Reader, logout: io.Writer) {
 
 Frame_destroy :: proc(f: ^Frame) {
 	virtual.arena_free_all(&f.arena)
+	alloc := virtual.arena_allocator(&f.arena)
+	f.headers = make(map[string]string, allocator = alloc)
 }
 
 read_frame :: proc(frame: ^Frame) -> (buf: []byte, ok: bool) {
