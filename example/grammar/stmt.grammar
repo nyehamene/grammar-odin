@@ -1,6 +1,6 @@
 Block stmt     = "{" <One_Or_More stmt> "}" Sep;
 If expr stmt   = "if" expr <Block stmt> [ else ] Sep;
-else expr stmt = "else"  <If expr stmt>
+else expr stmt = "else" <If expr stmt>
                | "else" <Block stmt>
                ;
 Cond expr stmt = "cond" expr "{"
@@ -9,8 +9,8 @@ Cond expr stmt = "cond" expr "{"
                Sep
                ;
 
-case  stmt          = "case" Case_Selector "=" <One_Or_More stmt>;
-default stmt  = "case" "=" <One_Or_More stmt>;
+case stmt           = "case" Case_Selector "=" <One_Or_More stmt>;
+default stmt        = "case" "=" <One_Or_More stmt>;
 Case_Selector       = Ident ":" Qual_Ident
                     | Primary
                     ;

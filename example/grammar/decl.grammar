@@ -3,10 +3,8 @@ var_init = ( var_type | ":" ) ( ":" | "=" ) expr ";";
 var_type = ":" Type;
 expr     = Enum
          | Union
-         | Component
-         | Rule
-         | Compound
-         ;
+         | Component | Rule
+         | Compound;
 
 Doc              = Ident ":" ( Quoted_String | Line_String );
 Api              = Ident ":" ( api_public | api_private );

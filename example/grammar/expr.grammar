@@ -77,10 +77,10 @@ size      = number unit;
 unit      = "%" | "px" | "ch" | "em" | "rem";
 
 // String & String line
-String = Quoted_String | Line_String ;
+String          = Quoted_String | Line_String;
 Quoted_String   = "\"" { string_content } "\"";
 line_string     = "\\" { string_content };
-Line_String    = line_string { line_string };
+Line_String     = line_string { line_string };
 string_content  = escape_char
                 | string_template
                 | '[^\n"]'
@@ -88,7 +88,7 @@ string_content  = escape_char
 string_template = "\\{" Expr "}";
 escape_char     = '\\["trsfvn]';
 
-Comment   = '//[^\n]*[\n]?';
+Comment = '//[^\n]*[\n]?';
 
 // Tag
 Tag   = '.*';

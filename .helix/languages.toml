@@ -5,7 +5,7 @@ injection-regex = "grammar"
 file-types = ["grammar"]
 comment-tokens = "//"
 indent = { tab-width = 2, unit = "  " }
-formatter = { command = "grammar" , args = ["fmt", "--stdin"] }
+formatter = { command = "./grammar" , args = ["fmt", "--stdin"] }
 language-servers = [ "grammar" ]
 
 [language-server.grammar]

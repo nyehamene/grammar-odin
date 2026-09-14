@@ -11,10 +11,10 @@ text_element      = "[" "_" Ident "]";
 component_element = "[" component_tag [ Element_Children ] "]";
 component_tag     = Expr;
 
-Element_Children          = Attribute
-                  | Inline_Style
-                  | Element
-                  ;
+Element_Children = Attribute
+                 | Inline_Style
+                 | Element
+                 ;
 
 Inline_Style          = [ field_selector ] "style" [ pseudo_selector_group ] Style_Block;
 pseudo_selector_group = "(" pseudo_selector { "," pseudo_selector } [ "," ] ")";
@@ -23,7 +23,7 @@ pseudo_selector       = ":" [ ":" ] ( Ident_Dash | Ident );
 field_selector = "@" Qual_Ident;
 
 // Attribute
-Attribute           = qualified_attribute_group
+Attribute                 = qualified_attribute_group
                           | named_attribute_group
                           | attribute_block
                           ;
@@ -42,17 +42,17 @@ attribute_value           = <if_expr Expr>
                           | Expr
                           ;
 
-if_expr   expr         = "if" Expr "then" Expr [ <else_expr Expr> ];
+if_expr expr           = "if" Expr "then" Expr [ <else_expr Expr> ];
 else_expr expr         = "else" ( <if_expr Expr> | Expr );
 cond_expr expr         = "cond" Expr "{" <case_expr Expr> { <case_expr Expr> } [ <case_expr_default Expr> ] "}";
 case_expr expr         = "case" Case_Selector "=" Expr Sep;
 case_expr_default expr = "case" "=" Expr Sep;
 
-stmt = if_stmt
-     | cond_stmt
-     | foreach_stmt
-     ;
-if_stmt = <If expr Element>;
-cond_stmt = <Cond expr Element>;
+stmt         = if_stmt
+             | cond_stmt
+             | foreach_stmt
+             ;
+if_stmt      = <If expr Element>;
+cond_stmt    = <Cond expr Element>;
 foreach_stmt = <Foreach expr Element>;
-expr = Expr;
+expr         = Expr;

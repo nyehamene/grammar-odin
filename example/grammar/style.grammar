@@ -12,7 +12,7 @@ stmt        = decl ";"
             | cond_stmt ";"
             | field_style ";"
             ;
-decl        = property ;
+decl        = property;
 property    = Ident ":" value [ "!important" ];
 field_style = "self" "." Member block;
 
@@ -24,7 +24,7 @@ comma_list = term { "," term };
 term       = calc | Term;
 calc       = "calc" "(" list ")";
 
-if_stmt = <If expr stmt>;
-cond_stmt = <Cond expr stmt>;
+if_stmt     = <If expr stmt>;
+cond_stmt   = <Cond expr stmt>;
 Style_Block = block;
-expr = Expr;
+expr        = Expr;
