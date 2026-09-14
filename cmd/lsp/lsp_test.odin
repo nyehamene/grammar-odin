@@ -2,6 +2,7 @@ package lsp
 
 import "core:io"
 import "core:log"
+import "core:os"
 import "core:strings"
 import "core:testing"
 
@@ -38,6 +39,106 @@ test_lsp_did_open_publishes_diagnostics :: proc(t: ^testing.T) {
 	log.debugf("output:\n%v", output)
 	testing.expect(t, strings.contains(output, `"method":"textDocument/publishDiagnostics"`))
 	testing.expect(t, strings.contains(output, "undefined identifier: b"))
+}
+
+// ns_setup creates the scratch directory rel under the test working directory
+// and returns its absolute path. The caller must delete the result.
+ns_setup :: proc(t: ^testing.T, rel: string) -> string {
+	os.remove_all(rel)
+	os.make_directory_all(rel)
+	cwd, err := os.get_working_directory(context.temp_allocator)
+	if err != nil || cwd == "" {
+		testing.fail_now(t, "failed to get working directory")
+	}
+	return strings.concatenate({cwd, "/", rel})
+}
+
+@(test)
+test_lsp_did_open_publishes_namespace_diagnostics :: proc(t: ^testing.T) {
+	dir := ns_setup(t, "cmd/lsp/testdata/scratch/did_open_ns")
+	defer os.remove_all("cmd/lsp/testdata/scratch/did_open_ns")
+	defer delete(dir)
+
+	// A sibling file that is never opened but lives on disk.
+	sib := strings.concatenate({dir, "/sib.grammar"})
+	defer delete(sib)
+	if err := os.write_entire_file(sib, "bad = missing_rule;\n"); err != nil {
+		testing.fail_now(t, "failed to write sibling grammar")
+	}
+
+	main_uri := strings.concatenate({"file://", dir, "/main.grammar"})
+	defer delete(main_uri)
+	params := strings.concatenate({
+		`{"textDocument":{"uri":"`,
+		main_uri,
+		`","languageId":"grammar","version":1,"text":"a = \"x\";"}}`,
+	})
+
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(`textDocument/didOpen`, params),
+		make_request(`2`, `shutdown`, `null`),
+	)
+	output := send_request(stdin)
+	delete(params)
+
+	sib_uri := strings.concatenate({"file://", dir, "/sib.grammar"})
+	defer delete(sib_uri)
+	testing.expect(
+		t,
+		strings.contains(output, `"uri":"`) && strings.contains(output, sib_uri),
+		"opening a file must publish diagnostics for its sibling namespace files",
+	)
+	testing.expect(
+		t,
+		strings.contains(output, "undefined identifier: missing_rule"),
+		"namespace diagnostics must include the sibling's error",
+	)
+}
+
+@(test)
+test_lsp_did_open_prefers_open_text_over_disk :: proc(t: ^testing.T) {
+	dir := ns_setup(t, "cmd/lsp/testdata/scratch/did_open_disk")
+	defer os.remove_all("cmd/lsp/testdata/scratch/did_open_disk")
+	defer delete(dir)
+
+	// The on-disk copy has an error, but the opened text is clean; the open
+	// text must win when the namespace is loaded.
+	main_path := strings.concatenate({dir, "/main.grammar"})
+	defer delete(main_path)
+	if err := os.write_entire_file(main_path, "bad = disk_only;\n"); err != nil {
+		testing.fail_now(t, "failed to write main grammar")
+	}
+
+	main_uri := strings.concatenate({"file://", main_path})
+	defer delete(main_uri)
+	params := strings.concatenate({
+		`{"textDocument":{"uri":"`,
+		main_uri,
+		`","languageId":"grammar","version":1,"text":"a = \"x\";"}}`,
+	})
+
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(`textDocument/didOpen`, params),
+		make_request(`2`, `shutdown`, `null`),
+	)
+	output := send_request(stdin)
+	delete(params)
+
+	testing.expect(
+		t,
+		!strings.contains(output, "undefined identifier: disk_only"),
+		"the opened text must be used instead of the on-disk copy",
+	)
 }
 
 @(test)

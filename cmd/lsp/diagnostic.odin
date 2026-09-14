@@ -1,6 +1,7 @@
 package lsp
 
 import "core:encoding/json"
+import "core:strings"
 
 import "../check"
 
@@ -32,6 +33,33 @@ public_diagnostics :: proc(srv: ^Server, uri: string) {
 	diags := diagnostics_for(srv, uri)
 	defer delete(diags)
 	publish_diagnostics(srv, uri, diags)
+}
+
+// publish_namespace_diagnostics computes diagnostics for every grammar file in
+// the namespace tree rooted at abs_dir and pushes them to the client, one
+// textDocument/publishDiagnostics notification per file. Files that check
+// clean are published with an empty diagnostic list so stale errors are
+// cleared.
+publish_namespace_diagnostics :: proc(srv: ^Server, abs_dir: string) {
+	cu := index_namespace(srv, abs_dir)
+	defer check.destroy_compilation_unit(&cu)
+
+	for abs, fi in cu.files {
+		if !is_under_namespace(abs_dir, fi.namespace_path) do continue
+		uri := path_to_uri(abs)
+		diags := file_diagnostics(srv, &cu, fi.display, fi.src)
+		publish_diagnostics(srv, uri, diags)
+		delete(uri)
+		delete(diags)
+	}
+}
+
+// is_under_namespace reports whether the namespace tree rooted at ns_dir
+// contains dir (dir itself, or a descendant directory).
+is_under_namespace :: proc(ns_dir, dir: string) -> bool {
+	if len(dir) < len(ns_dir) do return false
+	if !strings.has_prefix(dir, ns_dir) do return false
+	return len(dir) == len(ns_dir) || dir[len(ns_dir)] == '/'
 }
 
 // release_diagnostics clears the diagnostics for uri on the client.
@@ -92,9 +120,21 @@ diagnostics_for :: proc(srv: ^Server, uri: string) -> []Diagnostic {
 	target_display := check.display_of(&cu, target_abs)
 	defer delete(target_display)
 
+	return file_diagnostics(srv, &cu, target_display, doc.text)
+}
+
+// file_diagnostics collects the diagnostics belonging to the loaded file with
+// the given display path, using src to compute ranges. The returned slice is
+// owned by the caller; each Diagnostic.message is cloned into the server
+// arena.
+file_diagnostics :: proc(
+	srv: ^Server,
+	cu: ^check.Compilation_Unit,
+	display, src: string,
+) -> []Diagnostic {
 	count := 0
 	for e in cu.errors {
-		if e.path == target_display {
+		if e.path == display {
 			count += 1
 		}
 	}
@@ -102,7 +142,7 @@ diagnostics_for :: proc(srv: ^Server, uri: string) -> []Diagnostic {
 	diags := make([]Diagnostic, count)
 	index := 0
 	for e in cu.errors {
-		if e.path != target_display {
+		if e.path != display {
 			continue
 		}
 		start := Position {
@@ -110,14 +150,14 @@ diagnostics_for :: proc(srv: ^Server, uri: string) -> []Diagnostic {
 			character = e.col - 1,
 		}
 		end := start
-		if extent := word_extent(doc.text, e.offset); extent > 0 {
-			end = position_at_offset(doc.text, e.offset + extent)
+		if extent := word_extent(src, e.offset); extent > 0 {
+			end = position_at_offset(src, e.offset + extent)
 		}
 		diags[index] = Diagnostic {
-			range = Range{start = start, end = end},
+			range    = Range{start = start, end = end},
 			severity = 1, // Error
-			source = "grammar",
-			message = clone_string(&srv.arena, e.message),
+			source   = "grammar",
+			message  = clone_string(&srv.arena, e.message),
 		}
 		index += 1
 	}
