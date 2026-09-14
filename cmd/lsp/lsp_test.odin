@@ -355,6 +355,99 @@ test_lsp_completion_member :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_lsp_format_document :: proc(t: ^testing.T) {
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(
+			`textDocument/didOpen`,
+			`{"textDocument":{"uri":"file:///tmp/fmt.grammar","languageId":"grammar","version":1,"text":"a = \"a\";\nbar = \"bar\";\n"}}`,
+		),
+		make_request(
+			`2`,
+			`textDocument/formatting`,
+			`{"textDocument":{"uri":"file:///tmp/fmt.grammar"}}`,
+		),
+		make_request(`3`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	log.debugf("output:\n%v", output)
+	testing.expect(t, strings.contains(output, `"id": 2`))
+	// The whole document is replaced by the formatted text: `a` is padded to
+	// line up with `bar` and the header of both rules is aligned.
+	testing.expect(
+		t,
+		strings.contains(
+			output,
+			`"result":[{"range":{"start":{"line":0,"character":0},"end":{"line":2,"character":0}},"newText":"a   = \"a\";\nbar = \"bar\";\n"}]`,
+		),
+	)
+}
+
+@(test)
+test_lsp_format_already_formatted :: proc(t: ^testing.T) {
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(
+			`textDocument/didOpen`,
+			`{"textDocument":{"uri":"file:///tmp/fmt.grammar","languageId":"grammar","version":1,"text":"a   = \"a\";\nbar = \"bar\";\n"}}`,
+		),
+		make_request(
+			`2`,
+			`textDocument/formatting`,
+			`{"textDocument":{"uri":"file:///tmp/fmt.grammar"}}`,
+		),
+		// An unknown document yields the same empty-array result.
+		make_request(
+			`3`,
+			`textDocument/formatting`,
+			`{"textDocument":{"uri":"file:///tmp/missing.grammar"}}`,
+		),
+		make_request(`4`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	log.debugf("output:\n%v", output)
+	testing.expect(t, strings.contains(output, `"id": 2`))
+	testing.expect(t, strings.contains(output, `"result":[]`))
+	testing.expect(t, strings.contains(output, `"id": 3`))
+}
+
+@(test)
+test_lsp_format_syntax_error_is_null :: proc(t: ^testing.T) {
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(
+			`textDocument/didOpen`,
+			`{"textDocument":{"uri":"file:///tmp/bad.grammar","languageId":"grammar","version":1,"text":"bad = (\"a\" \"b\";\n"}}`,
+		),
+		make_request(
+			`2`,
+			`textDocument/formatting`,
+			`{"textDocument":{"uri":"file:///tmp/bad.grammar"}}`,
+		),
+		make_request(`3`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	log.debugf("output:\n%v", output)
+	testing.expect(t, strings.contains(output, `"id": 2`))
+	testing.expect(t, strings.contains(output, `"result":null`))
+}
+
+@(test)
 test_lsp_document_highlight :: proc(t: ^testing.T) {
 	stdin := create_stream_reader(
 		make_request(

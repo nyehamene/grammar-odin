@@ -48,7 +48,7 @@ run :: proc(args: []string, stdin: io.Reader, stdout, stderr: io.Writer) -> int 
 		}
 		defer delete(data)
 
-		text, ok := format_text(string(data), "<stdin>", stderr)
+		text, ok := Format_Text(string(data), "<stdin>", stderr)
 		if !ok do return 1
 		defer delete(text)
 		io.write_string(stdout, text)
@@ -82,7 +82,7 @@ run :: proc(args: []string, stdin: io.Reader, stdout, stderr: io.Writer) -> int 
 		}
 		src := string(data)
 
-		text, ok := format_text(src, item.path, stderr)
+		text, ok := Format_Text(src, item.path, stderr)
 		if !ok {
 			delete(data)
 			failed = true
@@ -137,10 +137,10 @@ parse_args :: proc(args: []string) -> (items: [dynamic]Fmt_Item, use_stdin: bool
 	return items, use_stdin, true
 }
 
-// format_text validates src and returns its formatted text. On a lexical or
+// Format_Text validates src and returns its formatted text. On a lexical or
 // syntax error, the diagnostics are reported on stderr and ok is false. The
 // returned string is owned by the caller and must be freed with delete.
-format_text :: proc(src, name: string, stderr: io.Writer) -> (text: string, ok: bool) {
+Format_Text :: proc(src, name: string, stderr: io.Writer) -> (text: string, ok: bool) {
 	tokens, lex_errors := token.scan(src)
 	defer delete(tokens)
 	defer delete(lex_errors)

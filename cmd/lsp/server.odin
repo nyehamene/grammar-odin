@@ -132,6 +132,9 @@ handle_message :: proc(srv: ^Server, msg: json.Value) -> bool {
 
 	case "textDocument/documentLink":
 		handle_document_link(srv, id, obj)
+
+	case "textDocument/formatting":
+		handle_format_document(srv, id, obj)
 	}
 
 	return true

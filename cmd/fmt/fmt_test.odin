@@ -19,14 +19,14 @@ stdin_from :: proc(src: string) -> io.Stream {
 	return strings.to_reader(r, src)
 }
 
-// format_text for a source string, or nothing when it fails.
+// Format_Text for a source string, or nothing when it fails.
 format_ok :: proc(t: ^testing.T, src: string) -> string {
 	errbuf: bytes.Buffer
 	bytes.buffer_init(&errbuf, {})
 	defer bytes.buffer_destroy(&errbuf)
 
-	text, ok := format_text(src, "<test>", bytes.buffer_to_stream(&errbuf))
-	testing.expect(t, ok, "format_text should succeed")
+	text, ok := Format_Text(src, "<test>", bytes.buffer_to_stream(&errbuf))
+	testing.expect(t, ok, "Format_Text should succeed")
 	testing.expect(t, len(bytes.buffer_to_bytes(&errbuf)) == 0, "no errors expected")
 	return text
 }
@@ -202,7 +202,7 @@ test_error_reported_and_source_first :: proc(t: ^testing.T) {
 	bytes.buffer_init(&errbuf, {})
 	defer bytes.buffer_destroy(&errbuf)
 
-	text, ok := format_text(src, "demo.grammar", bytes.buffer_to_stream(&errbuf))
+	text, ok := Format_Text(src, "demo.grammar", bytes.buffer_to_stream(&errbuf))
 	testing.expect(t, !ok, "format must fail on a syntax error")
 	testing.expect(t, text == "", "no output on error")
 	err := string(bytes.buffer_to_bytes(&errbuf))
