@@ -29,10 +29,11 @@ Operand_Kind :: enum {
 }
 
 Operand :: struct {
-	kind: Operand_Kind,
-	type: Type,
-	pos:  int,
-	name: string,
+	kind:  Operand_Kind,
+	type:  Type,
+	pos:   int,
+	name:  string,
+	arity: int, // number of parameters a Proc expects; meaningful for .Proc
 }
 
 Operand_invalid :: proc(o: ^Operand, pos: int, name := "") {
@@ -407,8 +408,68 @@ check_file :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File) {
 			for body in d.body {
 				check_body(cu, fi, d.params[:], body)
 			}
+			if len(d.params) > 0 {
+				check_unused_params(cu, fi, d.params[:], d.body[:])
+			}
 		}
 	}
+}
+
+// check_unused_params reports every proc parameter that is never referenced in
+// the rule body.
+check_unused_params :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, params: []ast.Ident, body: []ast.Expr) {
+	for p in params {
+		used := false
+		for b in body {
+			if uses_param(b, p.name) {
+				used = true
+				break
+			}
+		}
+		if !used {
+			add_error(
+				cu,
+				fi.display,
+				fi.src,
+				p.pos,
+				fmt.tprintf("unused proc parameter: %s", p.name),
+			)
+		}
+	}
+}
+
+// uses_param reports whether param appears as an identifier anywhere in expr.
+uses_param :: proc(expr: ast.Expr, param: string) -> bool {
+	switch v in expr {
+	case ast.Ident:
+		return v.name == param
+	case ast.String_Lit, ast.Regex_Lit, ast.External_Value, ast.Directive_Expr:
+		return false
+	case ast.Term_Expr:
+		return uses_param(v.x^, param)
+	case ast.Member_Expr:
+		return uses_param(v.object^, param) || uses_param(v.member, param)
+	case ^ast.Call_Expr:
+		return uses_param(v.name, param) || exprs_use_param(v.args[:], param)
+	case ast.Sequence_Expr:
+		return exprs_use_param(v.exprs[:], param)
+	case ast.Alternative_Expr:
+		return exprs_use_param(v.exprs[:], param)
+	case ast.Optional_Expr:
+		return exprs_use_param(v.exprs[:], param)
+	case ast.Repetition_Expr:
+		return exprs_use_param(v.exprs[:], param)
+	case ast.Group_Expr:
+		return exprs_use_param(v.exprs[:], param)
+	}
+	return false
+}
+
+exprs_use_param :: proc(exprs: []ast.Expr, param: string) -> bool {
+	for e in exprs {
+		if uses_param(e, param) do return true
+	}
+	return false
 }
 
 // check_body checks expr with a rule's parameters in scope.
@@ -449,6 +510,7 @@ check_expr_scoped :: proc(
 
 		rule, defined := resolve_rule(cu, fi, v.name)
 		if !defined {
+			Operand_invalid(o, v.pos, v.name)
 			add_error(
 				cu,
 				fi.display,
@@ -456,12 +518,23 @@ check_expr_scoped :: proc(
 				v.pos,
 				fmt.tprintf("undefined identifier: %s", v.name),
 			)
+			break
 		}
 		Operand_lvalue(o, rule.type, v.pos, v.name)
+		o.arity = rule.arity
 
 	case ast.Term_Expr:
 		check_expr_scoped(cu, fi, params, v.x^, o)
 		if o.kind == .LValue {
+			if o.type == .Proc {
+				add_error(
+					cu,
+					fi.display,
+					fi.src,
+					o.pos,
+					fmt.tprintf("proc cannot be used as a production: %s", o.name),
+				)
+			}
 			break
 		}
 		switch o.type {
@@ -505,12 +578,29 @@ check_expr_scoped :: proc(
 			)
 		}
 
+		if name_op.type == .Proc && name_op.kind == .LValue && len(v.args) != name_op.arity {
+			plural := "s" if name_op.arity != 1 else ""
+			add_error(
+				cu,
+				fi.display,
+				fi.src,
+				name_op.pos,
+				fmt.tprintf(
+					"proc '%s' expects %d argument%s, but got %d",
+					name_op.name,
+					name_op.arity,
+					plural,
+					len(v.args),
+				),
+			)
+		}
+
 		Operand_lvalue(o, .Production, v.pos, name_op.name)
 
 		for arg in v.args {
 			arg_op: Operand
 			check_expr_scoped(cu, fi, params, arg, &arg_op)
-			if arg_op.kind == .LValue {
+			if arg_op.kind == .LValue && arg_op.type != .Proc {
 				continue
 			}
 
@@ -587,6 +677,15 @@ check_expr_group :: proc(
 	for e in exprs {
 		eop: Operand
 		check_expr_scoped(cu, fi, params, e, &eop)
+		if eop.kind == .LValue && eop.type == .Proc {
+			add_error(
+				cu,
+				fi.display,
+				fi.src,
+				eop.pos,
+				fmt.tprintf("proc cannot be used as a production: %s", eop.name),
+			)
+		}
 	}
 	Operand_lvalue(o, .Production, pos)
 }
@@ -695,6 +794,9 @@ cmp_errors :: proc(a, b: Semantic_Error) -> int {
 	}
 	if a.col != b.col {
 		return -1 if a.col < b.col else 1
+	}
+	if a.message != b.message {
+		return -1 if a.message < b.message else 1
 	}
 	return 0
 }

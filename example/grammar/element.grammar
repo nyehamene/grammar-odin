@@ -1,26 +1,23 @@
 // Element
-Element           = string_element
-                  | text_element
-                  | component_element
-                  | stmt
-                  ;
-string_element    = Quoted_String
-                  | Line_String
-                  ;
-text_element      = "[" "_" Ident "]";
-component_element = "[" component_tag [ Element_Children ] "]";
-component_tag     = Expr;
-
-Element_Children = Attribute
-                 | Inline_Style
-                 | Element
-                 ;
-
+Element               = string_element
+                      | text_element
+                      | component_element
+                      | stmt
+                      ;
+string_element        = Quoted_String
+                      | Line_String
+                      ;
+text_element          = "[" "_" Ident "]";
+component_element     = "[" component_tag [ Element_Children ] "]";
+component_tag         = Expr;
+Element_Children      = Attribute
+                      | Inline_Style
+                      | Element
+                      ;
 Inline_Style          = [ field_selector ] "style" [ pseudo_selector_group ] Style_Block;
 pseudo_selector_group = "(" pseudo_selector { "," pseudo_selector } [ "," ] ")";
 pseudo_selector       = ":" [ ":" ] ( Ident_Dash | Ident );
-
-field_selector = "@" Qual_Ident;
+field_selector        = "@" Qual_Ident;
 
 // Attribute
 Attribute                 = qualified_attribute_group
@@ -37,22 +34,21 @@ attribute_key             = Ident
                           | Ident_Dash
                           | Quoted_String
                           ;
-attribute_value           = <if_expr Expr>
-                          | <cond_expr Expr>
-                          | Expr
+attribute_value           = <if Expr>
+                          | <cond Expr>
+                          | expr
                           ;
 
-if_expr expr           = "if" Expr "then" Expr [ <else_expr Expr> ];
-else_expr expr         = "else" ( <if_expr Expr> | Expr );
-cond_expr expr         = "cond" Expr "{" <case_expr Expr> { <case_expr Expr> } [ <case_expr_default Expr> ] "}";
-case_expr expr         = "case" Case_Selector "=" Expr Sep;
-case_expr_default expr = "case" "=" Expr Sep;
-
-stmt         = if_stmt
-             | cond_stmt
-             | foreach_stmt
-             ;
-if_stmt      = <If expr Element>;
-cond_stmt    = <Cond expr Element>;
-foreach_stmt = <Foreach expr Element>;
-expr         = Expr;
+if expr           = "if" expr "then" Expr [ <else expr> ];
+else expr         = "else" ( <if expr> | expr );
+cond expr         = "cond" expr "{" <case expr> { <case expr> } [ <case_default expr> ] "}";
+case expr         = "case" Case_Selector "=" expr Sep;
+case_default expr = "case" "=" expr Sep;
+stmt              = if_stmt
+                  | cond_stmt
+                  | foreach_stmt
+                  ;
+if_stmt           = <If expr Element>;
+cond_stmt         = <Cond expr Element>;
+foreach_stmt      = <Foreach expr Element>;
+expr              = Expr;

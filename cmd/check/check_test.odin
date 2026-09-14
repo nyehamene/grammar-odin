@@ -116,15 +116,16 @@ scratch_dir :: proc(t: ^testing.T, rel: string) -> string {
 // share a namespace.
 test_src :: proc(t: ^testing.T, dir, display, src: string) -> Mem_File {
 	return Mem_File {
-		abs     = fmt.tprintf("/tmp/grammar_ut/%s/%s", dir, display),
+		abs = fmt.tprintf("/tmp/grammar_ut/%s/%s", dir, display),
 		display = display,
-		src     = src,
+		src = src,
 	}
 }
 
 @(test)
 test_valid_program_has_no_errors :: proc(t: ^testing.T) {
-	src := "a = \"x\";\n" +
+	src :=
+		"a = \"x\";\n" +
 		"b = a | b;\n" +
 		"c = a b;\n" +
 		"d = [a] { b };\n" +
@@ -139,9 +140,7 @@ test_valid_program_has_no_errors :: proc(t: ^testing.T) {
 test_undefined_identifier :: proc(t: ^testing.T) {
 	src := "a = \"x\";\nb = c;\n"
 	msgs := run_semantics([]Mem_File{test_src(t, "undef", "main.grammar", src)})
-	assert_messages(t, msgs, {
-		"main.grammar:2:5: undefined identifier: c",
-	})
+	assert_messages(t, msgs, {"main.grammar:2:5: undefined identifier: c"})
 }
 
 @(test)
@@ -153,18 +152,20 @@ test_local_rule_visible_only_in_its_file :: proc(t: ^testing.T) {
 		test_src(t, "locals", "b.grammar", "use = axe;\n"),
 	}
 	msgs := run_semantics(files)
-	assert_messages(t, msgs, {
-		"b.grammar:1:7: undefined identifier: axe",
-	})
+	assert_messages(t, msgs, {"b.grammar:1:7: undefined identifier: axe"})
 }
 
 @(test)
 test_redeclared_in_same_file :: proc(t: ^testing.T) {
 	src := "Foo = \"a\";\nFoo = \"b\";\n"
 	msgs := run_semantics([]Mem_File{test_src(t, "redecl", "main.grammar", src)})
-	assert_messages(t, msgs, {
-		"main.grammar:2:1: field Foo redeclared in this namespace. (see other declaration at main.grammar:1:1)",
-	})
+	assert_messages(
+		t,
+		msgs,
+		{
+			"main.grammar:2:1: field Foo redeclared in this namespace. (see other declaration at main.grammar:1:1)",
+		},
+	)
 }
 
 @(test)
@@ -174,54 +175,95 @@ test_redeclared_across_files :: proc(t: ^testing.T) {
 		test_src(t, "dup", "b.grammar", "Thing = \"b\";\n"),
 	}
 	msgs := run_semantics(files)
-	assert_messages(t, msgs, {
-		"b.grammar:1:1: field Thing redeclared in this namespace. (see other declaration at a.grammar:1:1)",
-	})
+	assert_messages(
+		t,
+		msgs,
+		{
+			"b.grammar:1:1: field Thing redeclared in this namespace. (see other declaration at a.grammar:1:1)",
+		},
+	)
 }
 
-// A rule with parameters (a proc) used bare as a production is tolerated; the
-// checker only rejects procs as call targets.
+// A rule with parameters (a proc) must be called; using it bare as a
+// production is an error.
 @(test)
-test_proc_used_as_production_has_no_error :: proc(t: ^testing.T) {
+test_proc_used_as_production :: proc(t: ^testing.T) {
 	src := "foo x = x;\nb = foo;\n"
-	assert_messages(t, run_semantics([]Mem_File{test_src(t, "proc", "main.grammar", src)}), {})
+	assert_messages(
+		t,
+		run_semantics([]Mem_File{test_src(t, "proc", "main.grammar", src)}),
+		{"main.grammar:2:5: proc cannot be used as a production: foo"},
+	)
+}
+
+@(test)
+test_proc_call_arity :: proc(t: ^testing.T) {
+	src :=
+		"a = \"y\";\n" +
+		"b = \"z\";\n" +
+		"p x = x;\n" +
+		"ok = <p a>;\n" +
+		"too_many = <p a b>;\n" +
+		"too_few = <p>;\n"
+	msgs := run_semantics([]Mem_File{test_src(t, "arity", "main.grammar", src)})
+	assert_messages(
+		t,
+		msgs,
+		{
+			"main.grammar:5:13: proc 'p' expects 1 argument, but got 2",
+			"main.grammar:6:12: proc 'p' expects 1 argument, but got 0",
+		},
+	)
+}
+
+@(test)
+test_unused_proc_parameter :: proc(t: ^testing.T) {
+	src := "n x y = x;\n"
+	msgs := run_semantics([]Mem_File{test_src(t, "unusedparam", "main.grammar", src)})
+	assert_messages(t, msgs, {"main.grammar:1:5: unused proc parameter: y"})
 }
 
 @(test)
 test_call_on_non_callable :: proc(t: ^testing.T) {
-	src := "a = \"x\";\nb = <a \"y\">;\n"
+	src := "a = \"x\";\nb = <a \"y\">;\nc x = <x a>;"
 	msgs := run_semantics([]Mem_File{test_src(t, "callable", "main.grammar", src)})
-	assert_messages(t, msgs, {
-		"main.grammar:2:6: not callable: 'a'",
-	})
+	assert_messages(
+		t,
+		msgs,
+		{"main.grammar:2:6: not callable: 'a'", "main.grammar:3:8: not callable: 'x'"},
+	)
 }
 
 @(test)
 test_external_value_passed_to_call :: proc(t: ^testing.T) {
 	src := "p x = x;\nb = <p __ext__>;\n"
 	msgs := run_semantics([]Mem_File{test_src(t, "ext", "main.grammar", src)})
-	assert_messages(t, msgs, {
-		"main.grammar:2:8: external cannot be pass as proc argument: ext",
-	})
+	assert_messages(t, msgs, {"main.grammar:2:8: external cannot be pass as proc argument: ext"})
 }
 
 @(test)
 test_member_of_non_namespace :: proc(t: ^testing.T) {
 	src := "a = \"x\";\nb = a.c;\n"
 	msgs := run_semantics([]Mem_File{test_src(t, "member", "main.grammar", src)})
-	assert_messages(t, msgs, {
-		"main.grammar:2:7: expected a namespace, but 'a' is not a namespace",
-	})
+	assert_messages(
+		t,
+		msgs,
+		{"main.grammar:2:7: expected a namespace, but 'a' is not a namespace"},
+	)
 }
 
 @(test)
 test_member_object_undefined :: proc(t: ^testing.T) {
 	src := "b = c.x;\n"
 	msgs := run_semantics([]Mem_File{test_src(t, "memberundef", "main.grammar", src)})
-	assert_messages(t, msgs, {
-		"main.grammar:1:5: undefined identifier: c",
-		"main.grammar:1:7: expected a namespace, but 'c' is not a namespace",
-	})
+	assert_messages(
+		t,
+		msgs,
+		{
+			"main.grammar:1:5: expected a namespace on the left of '.'",
+			"main.grammar:1:5: undefined identifier: c",
+		},
+	)
 }
 
 // ---------------------------------------------------------------------------
@@ -267,9 +309,11 @@ test_import_undefined_member :: proc(t: ^testing.T) {
 	src := "ns = @import(\"./base\");\nuse = ns.Missing;\n"
 	files := []Mem_File{{abs = abs, display = "main.grammar", src = src}}
 	msgs := run_semantics(files)
-	assert_messages(t, msgs, {
-		"main.grammar:2:10: ns.Missing is undefined. namespace base has no field Missing",
-	})
+	assert_messages(
+		t,
+		msgs,
+		{"main.grammar:2:10: ns.Missing is undefined. namespace base has no field Missing"},
+	)
 }
 
 @(test)
@@ -290,9 +334,7 @@ test_namespace_used_as_production :: proc(t: ^testing.T) {
 	src := "ns = @import(\"./base\");\nuse = ns;\n"
 	files := []Mem_File{{abs = abs, display = "main.grammar", src = src}}
 	msgs := run_semantics(files)
-	assert_messages(t, msgs, {
-		"main.grammar:2:7: namespace cannot be used as an production: ns",
-	})
+	assert_messages(t, msgs, {"main.grammar:2:7: namespace cannot be used as an production: ns"})
 }
 
 @(test)
@@ -313,9 +355,7 @@ test_namespace_passed_to_call :: proc(t: ^testing.T) {
 	src := "p x = x;\nns = @import(\"./base\");\nuse = <p ns>;\n"
 	files := []Mem_File{{abs = abs, display = "main.grammar", src = src}}
 	msgs := run_semantics(files)
-	assert_messages(t, msgs, {
-		"main.grammar:3:10: namespace cannot be pass as proc argument: ns",
-	})
+	assert_messages(t, msgs, {"main.grammar:3:10: namespace cannot be pass as proc argument: ns"})
 }
 
 @(test)
@@ -329,9 +369,7 @@ test_import_nonexistent_namespace :: proc(t: ^testing.T) {
 	src := "ns = @import(\"./nope\");\n"
 	files := []Mem_File{{abs = abs, display = "main.grammar", src = src}}
 	msgs := run_semantics(files)
-	assert_messages(t, msgs, {
-		"main.grammar:1:14: namespace \"./nope\" does not exist",
-	})
+	assert_messages(t, msgs, {"main.grammar:1:14: namespace \"./nope\" does not exist"})
 }
 
 @(test)
@@ -356,10 +394,12 @@ test_import_cycle :: proc(t: ^testing.T) {
 	run_checks(&cu)
 
 	msgs := collect_messages(&cu)
-	msg := strings.concatenate({
-		"cmd/check/testdata/scratch/cycle/sub/s.grammar:1:1: import cycle detected involving ",
-		"cmd/check/testdata/scratch/cycle",
-	})
+	msg := strings.concatenate(
+		{
+			"cmd/check/testdata/scratch/cycle/sub/s.grammar:1:1: import cycle detected involving ",
+			"cmd/check/testdata/scratch/cycle",
+		},
+	)
 	defer delete(msg)
 	assert_messages(t, msgs, {msg})
 }
@@ -380,7 +420,11 @@ test_check_cli_reports_semantic_errors :: proc(t: ^testing.T) {
 
 	code := check(ok_dir, .Package, bytes.buffer_to_stream(&stderr))
 	testing.expect(t, code == 0, "valid package must check clean")
-	testing.expect(t, len(bytes.buffer_to_bytes(&stderr)) == 0, "no diagnostics on a valid package")
+	testing.expect(
+		t,
+		len(bytes.buffer_to_bytes(&stderr)) == 0,
+		"no diagnostics on a valid package",
+	)
 
 	bad_dir := "cmd/check/testdata/scratch/cli_bad"
 	os.remove_all(bad_dir)
