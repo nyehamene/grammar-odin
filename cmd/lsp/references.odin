@@ -146,7 +146,7 @@ reference_target :: proc(
 		if _, ok := fi.local_rules[hit.ident.name]; ok {
 			return Symbol_Ref{kind = .Local_Rule, name = hit.ident.name, origin_file = fi}, true
 		}
-		if _, _, ok := rule_ref_at(cu, fi, hit.ident.name); ok {
+		if _, ok := rule_ref_at(cu, fi, hit.ident.name); ok {
 			return Symbol_Ref{kind = .Rule, name = hit.ident.name, ns_dir = fi.namespace_path},
 				true
 		}

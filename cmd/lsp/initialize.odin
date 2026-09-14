@@ -31,6 +31,11 @@ Diagnostic_Provider :: struct {
 
 Completion_Options :: struct {}
 
+Signature_Help_Options :: struct {
+	trigger_characters:   []string `json:"triggerCharacters"`,
+	retrigger_characters: []string `json:"retriggerCharacters"`,
+}
+
 Document_Link_Options :: struct {}
 
 Rename_Options :: struct {
@@ -51,6 +56,7 @@ Server_Capabilities :: struct {
 	highlight_provider:           bool `json:"documentHighlightProvider"`,
 	document_formatting_provider: bool `json:"documentFormattingProvider"`,
 	completion_provider:          Completion_Options `json:"completionProvider"`,
+	signature_help_provider:      Signature_Help_Options `json:"signatureHelpProvider"`,
 	document_link_provider:       Document_Link_Options `json:"documentLinkProvider"`,
 	rename_provider:              Rename_Options `json:"renameProvider"`,
 	workspace_symbol_provider:    bool `json:"workspaceSymbolProvider"`,
@@ -120,6 +126,7 @@ create_initialize_result :: proc(srv: ^Server) -> string {
 		highlight_provider = true,
 		document_formatting_provider = true,
 		completion_provider = {},
+		signature_help_provider = Signature_Help_Options {trigger_characters = []string{"<"}},
 		document_link_provider = {},
 		rename_provider = {prepare_provider = true},
 		workspace_symbol_provider = true,

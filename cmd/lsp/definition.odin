@@ -81,9 +81,9 @@ definition_for :: proc(
 
 	#partial switch hit.kind {
 	case .Rule_Name, .Ident, .Call_Name:
-		if file, off, ok := rule_ref_at(cu, fi, hit.ident.name); ok {
-			target = file
-			target_offset = off
+		if ref, ok := rule_ref_at(cu, fi, hit.ident.name); ok {
+			target = ref.file
+			target_offset = ref.offset
 			name_len = len(hit.ident.name)
 		} else if _, is_binding := fi.bindings[hit.ident.name]; is_binding {
 			if off, ok := fi.binding_offsets[hit.ident.name]; ok {

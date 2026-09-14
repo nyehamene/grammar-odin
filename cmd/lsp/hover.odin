@@ -78,15 +78,15 @@ hover_for :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, offset: i
 	case .None:
 		return ""
 	case .String:
-		return "string literal"
+		return "type: string literal"
 	case .Regex:
-		return "regular expression"
+		return "type: regular expression"
 	case .External:
-		return fmt.tprintf("external value `%s`", hit.literal)
+		return fmt.tprintf("type: external value `%s`", hit.literal)
 	case .Directive:
-		return fmt.tprintf("directive `@%s`", hit.ident.name)
+		return fmt.tprintf("type: directive `@%s`", hit.ident.name)
 	case .Param:
-		return fmt.tprintf("parameter `%s`", hit.ident.name)
+		return fmt.tprintf("type: proc parameter `%s`", hit.ident.name)
 	case .Rule_Name:
 		return symbol_hover(cu, fi, hit.ident.name)
 	case .Ident, .Call_Name:
@@ -102,14 +102,26 @@ hover_for :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, offset: i
 }
 
 // symbol_hover describes a name in scope: a rule in the file's namespace, an
-// import binding, or an unknown identifier.
+// import binding, or an unknown identifier. It reports the type of the value
+// the name produces.
 symbol_hover :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, name: string) -> string {
-	if file, off, ok := rule_ref_at(cu, fi, name); ok {
-		return fmt.tprintf("rule `%s`\ndeclared at %s", name, location_string(file, off))
+	if ref, ok := rule_ref_at(cu, fi, name); ok {
+		return fmt.tprintf(
+			"rule `%s` — %s\ndeclared at %s",
+			name,
+			type_doc(ref),
+			location_string(ref.file, ref.offset),
+		)
 	}
 	if r, is_local := fi.local_rules[name]; is_local {
 		pos := token.position_at(fi.src, r.offset)
-		return fmt.tprintf("rule `%s`\ndeclared at %d:%d", name, pos.line, pos.column)
+		return fmt.tprintf(
+			"rule `%s` — %s\ndeclared at %d:%d",
+			name,
+			type_doc(r),
+			pos.line,
+			pos.column,
+		)
 	}
 	if _, is_binding := fi.bindings[name]; is_binding {
 		return binding_hover(cu, fi, name)
@@ -129,64 +141,65 @@ binding_hover :: proc(
 	}
 	if off, off_found := fi.binding_offsets[name]; off_found {
 		return fmt.tprintf(
-			"import `%s` → namespace `%s`\ndeclared at %s",
+			"type: namespace import\nimport `%s` → namespace `%s`\ndeclared at %s",
 			name,
 			filepath.base(dir),
 			location_string(fi, off),
 		)
 	}
-	return fmt.tprintf("import `%s` → namespace `%s`", name, filepath.base(dir))
+	return fmt.tprintf(
+		"type: namespace import\nimport `%s` → namespace `%s`",
+		name,
+		filepath.base(dir),
+	)
 }
 
 // member_hover describes a member access such as `base.expr`.
 member_hover :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, hit: Hit) -> string {
 	if hit.member_object == "" {
-		return fmt.tprintf("member `%s`", hit.ident.name)
+		return fmt.tprintf("type: member\nmember `%s`", hit.ident.name)
 	}
 	target_dir, object_binding := fi.bindings[hit.member_object]
 	if !object_binding {
-		return fmt.tprintf("member `%s`", hit.ident.name)
+		return fmt.tprintf("type: member\nmember `%s`", hit.ident.name)
 	}
 	ns := cu.namespaces[target_dir]
 	if ns == nil {
-		return fmt.tprintf("member `%s`", hit.ident.name)
+		return fmt.tprintf("type: member\nmember `%s`", hit.ident.name)
 	}
 	ref, rule_found := ns.rules[hit.ident.name]
 	if !rule_found {
 		return fmt.tprintf(
-			"rule `%s` in namespace `%s`",
+			"type: member\nmember `%s` in namespace `%s`",
 			hit.ident.name,
 			filepath.base(target_dir),
 		)
 	}
 	return fmt.tprintf(
-		"rule `%s` in namespace `%s`\ndeclared at %s",
+		"type: member — %s\nrule `%s` in namespace `%s`\ndeclared at %s",
+		type_doc(ref),
 		hit.ident.name,
 		filepath.base(target_dir),
 		location_string(ref.file, ref.offset),
 	)
 }
 
-// rule_ref_at resolves name to the file and offset of its declaration in the
-// file's own namespace.
+// rule_ref_at resolves name to the Rule_Ref of its declaration in the file's
+// own namespace.
 rule_ref_at :: proc(
 	cu: ^check.Compilation_Unit,
 	fi: ^check.Loaded_File,
 	name: string,
 ) -> (
-	file: ^check.Loaded_File,
-	offset: int,
+	ref: check.Rule_Ref,
 	found: bool,
 ) {
 	ns := cu.namespaces[fi.namespace_path]
 	if ns == nil {
-		return nil, 0, false
+		return {}, false
 	}
-	ref, ok := ns.rules[name]
-	if !ok {
-		return nil, 0, false
-	}
-	return ref.file, ref.offset, true
+	rule, ok := ns.rules[name]
+	return rule, ok
 }
 
 // location_string renders "path:line:column" for an offset within fi.

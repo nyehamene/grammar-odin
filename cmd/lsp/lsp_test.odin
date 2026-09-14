@@ -223,10 +223,11 @@ test_lsp_hover :: proc(t: ^testing.T) {
 	log.debugf("output:\n%v", output)
 	testing.expect(t, strings.contains(output, `"id": 2`))
 	testing.expect(t, strings.contains(output, "rule `greeting`"))
+	testing.expect(t, strings.contains(output, "type: production, returns a production"))
 	testing.expect(t, strings.contains(output, "declared at"))
 	testing.expect(t, strings.contains(output, "1:1"))
 	testing.expect(t, strings.contains(output, `"id": 3`))
-	testing.expect(t, strings.contains(output, "string literal"))
+	testing.expect(t, strings.contains(output, "type: string literal"))
 }
 
 @(test)
@@ -546,6 +547,53 @@ test_lsp_format_syntax_error_is_null :: proc(t: ^testing.T) {
 	log.debugf("output:\n%v", output)
 	testing.expect(t, strings.contains(output, `"id": 2`))
 	testing.expect(t, strings.contains(output, `"result":null`))
+}
+
+@(test)
+test_lsp_signature_help :: proc(t: ^testing.T) {
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(
+			`textDocument/didOpen`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar","languageId":"grammar","version":1,"text":"greet name title = \"hello\" name title;\ngreeting = \"hi\";\nmain = <greet greeting greeting>;"}}`,
+		),
+		// Signature help on the proc name inside the call (line 2, character 8).
+		make_request(
+			`2`,
+			`textDocument/signatureHelp`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar"},"position":{"line":2,"character":8}}`,
+		),
+		// Signature help while editing the second argument (character 24).
+		make_request(
+			`3`,
+			`textDocument/signatureHelp`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar"},"position":{"line":2,"character":24}}`,
+		),
+		// Signature help on a production's rule name (line 1, character 3).
+		make_request(
+			`4`,
+			`textDocument/signatureHelp`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar"},"position":{"line":1,"character":3}}`,
+		),
+		make_request(`5`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	log.debugf("output:\n%v", output)
+	testing.expect(t, strings.contains(output, `"id": 2`))
+	testing.expect(t, strings.contains(output, `"label":"greet(name, title)"`))
+	testing.expect(t, strings.contains(output, `"label":"name"`))
+	testing.expect(t, strings.contains(output, `"label":"title"`))
+	testing.expect(t, strings.contains(output, `"type: proc, 2 parameters, returns a production"`))
+	testing.expect(t, strings.contains(output, `"id": 3`))
+	testing.expect(t, strings.contains(output, `"activeParameter":1`))
+	testing.expect(t, strings.contains(output, `"id": 4`))
+	testing.expect(t, strings.contains(output, `"label":"greeting"`))
+	testing.expect(t, strings.contains(output, `"type: production, returns a production"`))
 }
 
 @(test)
