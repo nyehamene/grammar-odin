@@ -7,15 +7,15 @@ import "core:path/filepath"
 import "../../token"
 import "../check"
 
-// Marked_String is an LSP MarkedString carrying its language and rendered text.
-Marked_String :: struct {
-	language: string,
-	value:    string,
+// Markup_Content carries a markdown string for hover and signature help.
+Markup_Content :: struct {
+	kind:  string, // "markdown"
+	value: string,
 }
 
 // Hover is the response payload of textDocument/hover.
 Hover :: struct {
-	contents: Marked_String,
+	contents: Markup_Content,
 }
 
 // handle_hover implements textDocument/hover. It reports the kind of token
@@ -58,7 +58,7 @@ handle_hover :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok: boo
 	}
 
 	result := Hover {
-		contents = Marked_String{language = "grammar", value = content},
+		contents = Markup_Content{kind = "markdown", value = content},
 	}
 	buf, err := json.marshal(result, allocator = context.temp_allocator)
 	if err != nil {
@@ -78,15 +78,15 @@ hover_for :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, offset: i
 	case .None:
 		return ""
 	case .String:
-		return "type: string literal"
+		return "**type:** string literal"
 	case .Regex:
-		return "type: regular expression"
+		return "**type:** regular expression"
 	case .External:
-		return fmt.tprintf("type: external value `%s`", hit.literal)
+		return fmt.tprintf("**type:** external value `%s`", hit.literal)
 	case .Directive:
-		return fmt.tprintf("type: directive `@%s`", hit.ident.name)
+		return fmt.tprintf("**type:** directive `@%s`", hit.ident.name)
 	case .Param:
-		return fmt.tprintf("type: proc parameter `%s`", hit.ident.name)
+		return fmt.tprintf("**type:** proc parameter `%s`", hit.ident.name)
 	case .Rule_Name:
 		return symbol_hover(cu, fi, hit.ident.name)
 	case .Ident, .Call_Name:
@@ -107,7 +107,7 @@ hover_for :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, offset: i
 symbol_hover :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, name: string) -> string {
 	if ref, ok := rule_ref_at(cu, fi, name); ok {
 		return fmt.tprintf(
-			"rule `%s` — %s\ndeclared at %s",
+			"**`%s`**\n\n**type:** %s\n**declared at:** `%s`",
 			name,
 			type_doc(ref),
 			location_string(ref.file, ref.offset),
@@ -116,7 +116,7 @@ symbol_hover :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, name: 
 	if r, is_local := fi.local_rules[name]; is_local {
 		pos := token.position_at(fi.src, r.offset)
 		return fmt.tprintf(
-			"rule `%s` — %s\ndeclared at %d:%d",
+			"**`%s`**\n\n**type:** %s\n**declared at:** `%d:%d`",
 			name,
 			type_doc(r),
 			pos.line,
@@ -126,7 +126,7 @@ symbol_hover :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, name: 
 	if _, is_binding := fi.bindings[name]; is_binding {
 		return binding_hover(cu, fi, name)
 	}
-	return fmt.tprintf("identifier `%s`", name)
+	return fmt.tprintf("**identifier** `%s`", name)
 }
 
 // binding_hover describes an import binding and the namespace it points at.
@@ -137,18 +137,18 @@ binding_hover :: proc(
 ) -> string {
 	dir, found := fi.bindings[name]
 	if !found {
-		return fmt.tprintf("identifier `%s`", name)
+		return fmt.tprintf("**identifier** `%s`", name)
 	}
 	if off, off_found := fi.binding_offsets[name]; off_found {
 		return fmt.tprintf(
-			"type: namespace import\nimport `%s` → namespace `%s`\ndeclared at %s",
+			"**`%s`**\n\n**type:** namespace import\n**namespace:** `%s`\n**declared at:** `%s`",
 			name,
 			filepath.base(dir),
 			location_string(fi, off),
 		)
 	}
 	return fmt.tprintf(
-		"type: namespace import\nimport `%s` → namespace `%s`",
+		"**`%s`**\n\n**type:** namespace import\n**namespace:** `%s`",
 		name,
 		filepath.base(dir),
 	)
@@ -157,26 +157,26 @@ binding_hover :: proc(
 // member_hover describes a member access such as `base.expr`.
 member_hover :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, hit: Hit) -> string {
 	if hit.member_object == "" {
-		return fmt.tprintf("type: member\nmember `%s`", hit.ident.name)
+		return fmt.tprintf("**member** `%s`\n\n**type:** member", hit.ident.name)
 	}
 	target_dir, object_binding := fi.bindings[hit.member_object]
 	if !object_binding {
-		return fmt.tprintf("type: member\nmember `%s`", hit.ident.name)
+		return fmt.tprintf("**member** `%s`\n\n**type:** member", hit.ident.name)
 	}
 	ns := cu.namespaces[target_dir]
 	if ns == nil {
-		return fmt.tprintf("type: member\nmember `%s`", hit.ident.name)
+		return fmt.tprintf("**member** `%s`\n\n**type:** member", hit.ident.name)
 	}
 	ref, rule_found := ns.rules[hit.ident.name]
 	if !rule_found {
 		return fmt.tprintf(
-			"type: member\nmember `%s` in namespace `%s`",
+			"**member** `%s`\n\n**type:** member\n**namespace:** `%s`",
 			hit.ident.name,
 			filepath.base(target_dir),
 		)
 	}
 	return fmt.tprintf(
-		"type: member — %s\nrule `%s` in namespace `%s`\ndeclared at %s",
+		"**member** `%s`\n\n**type:** member — %s\n**namespace:** `%s`\n**declared at:** `%s`",
 		type_doc(ref),
 		hit.ident.name,
 		filepath.base(target_dir),

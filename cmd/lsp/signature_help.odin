@@ -17,14 +17,14 @@ Signature_Help :: struct {
 // Signature_Information describes one callable signature.
 Signature_Information :: struct {
 	label:         string, // e.g. `greet(name, title)`
-	documentation: string, // the type of the value requested and its arity
+	documentation: Markup_Content, // the type of the value requested and its arity
 	parameters:    []Parameter_Information,
 }
 
 // Parameter_Information describes a single proc parameter.
 Parameter_Information :: struct {
 	label:         string, // the parameter name
-	documentation: string,
+	documentation: Markup_Content,
 }
 
 // handle_signature_help implements textDocument/signatureHelp. Inside a rule
@@ -160,9 +160,12 @@ proc_signature :: proc(
 	params, p_ok := rule_params(fi, ref)
 	if !p_ok {
 		sig := Signature_Information {
-			label         = name,
-			documentation = fmt.tprintf("type: proc, %d parameter%s", ref.arity, plural(ref.arity)),
-			parameters    = []Parameter_Information{},
+			label = name,
+			documentation = Markup_Content {
+				kind  = "markdown",
+				value = fmt.tprintf("**type:** proc, %d parameter%s", ref.arity, plural(ref.arity)),
+			},
+			parameters = []Parameter_Information{},
 		}
 		return single_signature_help(sig)
 	}
@@ -181,15 +184,18 @@ proc_signature :: proc(
 	infos := make([]Parameter_Information, len(params), context.temp_allocator)
 	for p, i in params {
 		infos[i] = Parameter_Information {
-			label         = p.name,
-			documentation = "proc parameter",
+			label = p.name,
+			documentation = Markup_Content {kind = "markdown", value = "**type:** proc parameter"},
 		}
 	}
 
 	sig := Signature_Information {
-		label         = strings.to_string(sb),
-		documentation = type_doc(ref),
-		parameters    = infos,
+		label = strings.to_string(sb),
+		documentation = Markup_Content {
+			kind  = "markdown",
+			value = fmt.tprintf("**type:** %s", type_doc(ref)),
+		},
+		parameters = infos,
 	}
 	return single_signature_help(sig)
 }
@@ -197,9 +203,12 @@ proc_signature :: proc(
 // production_signature describes a rule without parameters.
 production_signature :: proc(name: string) -> Signature_Help {
 	sig := Signature_Information {
-		label         = name,
-		documentation = type_doc({arity = 0}),
-		parameters    = []Parameter_Information{},
+		label = name,
+		documentation = Markup_Content {
+			kind  = "markdown",
+			value = fmt.tprintf("**type:** %s", type_doc({arity = 0})),
+		},
+		parameters = []Parameter_Information{},
 	}
 	return single_signature_help(sig)
 }
@@ -211,9 +220,12 @@ type_help :: proc(value_type: string, name := "") -> Signature_Help {
 		label = value_type
 	}
 	sig := Signature_Information {
-		label         = label,
-		documentation = fmt.tprintf("type: %s", value_type),
-		parameters    = []Parameter_Information{},
+		label = label,
+		documentation = Markup_Content {
+			kind  = "markdown",
+			value = fmt.tprintf("**type:** %s", value_type),
+		},
+		parameters = []Parameter_Information{},
 	}
 	return single_signature_help(sig)
 }
@@ -458,12 +470,13 @@ plural :: proc(n: int) -> string {
 	return "s" if n != 1 else ""
 }
 
-// type_doc renders the type description of a value produced by the rule ref,
-// e.g. "type: proc, 2 parameters, returns a production". It is used by both
-// signature help and hover.
+// type_doc renders the value type description of the rule ref, e.g.
+// "proc, 2 parameters, returns a production" or "production, returns a
+// production". Callers prefix it with their own label (hover and signature
+// help both render it as "**type:** ..." markdown).
 type_doc :: proc(ref: check.Rule_Ref) -> string {
 	if ref.arity > 0 {
-		return fmt.tprintf("type: proc, %d parameter%s, returns a production", ref.arity, plural(ref.arity))
+		return fmt.tprintf("proc, %d parameter%s, returns a production", ref.arity, plural(ref.arity))
 	}
-	return "type: production, returns a production"
+	return "production, returns a production"
 }
