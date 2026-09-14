@@ -306,14 +306,16 @@ load_namespace :: proc(cu: ^Compilation_Unit, dir: string) {
 	if _, ok := cu.namespaces[dir]; ok do return
 	if cu.loading_ns[dir] do return
 
-	cu.loading_ns[strings.clone(dir)] = true
+	key := strings.clone(dir)
+	defer delete(key)
+	cu.loading_ns[key] = true
 	files := list_grammar_files(dir)
 	for f in files {
 		load(cu, f)
 		delete(f)
 	}
 	delete(files)
-	delete_key(&cu.loading_ns, dir)
+	delete_key(&cu.loading_ns, key)
 }
 
 // list_grammar_files returns clones of the absolute paths of the .grammar
