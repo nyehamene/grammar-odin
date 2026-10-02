@@ -337,7 +337,9 @@ list_grammar_files :: proc(dir: string) -> [dynamic]string {
 
 // bind_all registers every rule in its file's namespace and reports duplicate
 // declarations. Names that collide within a single file (a rule and a binding,
-// or two bindings) are reported as well.
+// or two bindings) are reported as well. Local rules (`_name`) are registered
+// in the declaring file instead of the namespace, so they never collide across
+// files.
 bind_all :: proc(cu: ^Compilation_Unit) {
 	for i in 0 ..< len(cu.files_order) {
 		fi := cu.files_order[i]
@@ -348,6 +350,18 @@ bind_all :: proc(cu: ^Compilation_Unit) {
 		for decl in fi.file.decls {
 			#partial switch d in decl {
 			case ast.Rule_Decl:
+				if is_malformed_local_name(d.name.name) {
+					add_error(
+						cu,
+						fi.display,
+						fi.src,
+						d.name.pos,
+						fmt.tprintf(
+							"malformed local rule name %s. a local rule name is an underscore followed by a letter, as in _helper",
+							d.name.name,
+						),
+					)
+				}
 				if other, ok := seen[d.name.name]; ok {
 					add_redeclared(cu, fi, d.name.pos, d.name.name, fi, other)
 				} else if other_ref, exists := ns.rules[d.name.name]; exists {
@@ -857,10 +871,29 @@ unquote :: proc(s: string) -> string {
 	return s
 }
 
+// is_local_rule reports whether name declares a file-local rule: an underscore
+// followed by a letter, as in `_helper`. Such a rule is visible only inside the
+// file that declares it.
 is_local_rule :: proc(name: string) -> bool {
-	if name == "" {
+	if len(name) < 2 {
 		return false
 	}
-	first := name[0]
-	return first >= 'a' && first <= 'z'
+	if name[0] != '_' || name[1] == '_' {
+		return false
+	}
+	return is_alpha_byte(name[1])
+}
+
+// is_malformed_local_name reports whether name starts like a local rule name but
+// is not one: a bare `_`, a name whose second character is not a letter, or a
+// double-underscore name, which is reserved for `__extern__` values.
+is_malformed_local_name :: proc(name: string) -> bool {
+	if len(name) == 0 || name[0] != '_' {
+		return false
+	}
+	return !is_local_rule(name)
+}
+
+is_alpha_byte :: proc(ch: byte) -> bool {
+	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
 }

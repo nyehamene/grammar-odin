@@ -1,95 +1,95 @@
 // Expression
-Compound   = Line_String
-           | slice_lit
-           | map_lit
-           | object_lit
-           | Expr
-           ;
-Expr       = or;
-or         = and { "or" and };
-and        = eq { "and" eq };
-eq         = comparison { ( "!=" | "==" ) comparison };
-comparison = Term { ( ">" | ">=" | "<" | "<=" ) } Term;
-Term       = factor { ( "-" | "+" ) factor };
-factor     = unary { ( "*" | "/" | "%" ) unary };
-unary      = ( "-" | "." ) Primary | Member;
-Member     = Call { "." Call };
-Call       = Primary "(" call_arg ")" | Primary;
-Primary    = "currentcolor"
-           | "nil"
-           | "_"
-           | bool
-           | Quoted_String
-           | keyword
-           | number
-           | size
-           | color_hex
-           | Ident
-           | Ident_Dash
-           | "(" or ")"
-           ;
-bool       = "true" | "false";
-keyword    = "'" Ident "'";
+Compound    = Line_String
+            | _slice_lit
+            | _map_lit
+            | _object_lit
+            | Expr
+            ;
+Expr        = _or;
+_or         = _and { "or" _and };
+_and        = _eq { "and" _eq };
+_eq         = _comparison { ( "!=" | "==" ) _comparison };
+_comparison = Term { ( ">" | ">=" | "<" | "<=" ) } Term;
+Term        = _factor { ( "-" | "+" ) _factor };
+_factor     = _unary { ( "*" | "/" | "%" ) _unary };
+_unary      = ( "-" | "." ) Primary | Member;
+Member      = Call { "." Call };
+Call        = Primary "(" _call_arg ")" | Primary;
+Primary     = "currentcolor"
+            | "nil"
+            | "_"
+            | _bool
+            | Quoted_String
+            | _keyword
+            | _number
+            | _size
+            | _color_hex
+            | Ident
+            | Ident_Dash
+            | "(" _or ")"
+            ;
+_bool       = "true" | "false";
+_keyword    = "'" Ident "'";
 
 // Slice & Map Literals
-slice_lit     = Slice_Type "{" [ expr_list [ "," ] ] "}";
-map_lit       = Map_Type "{" [ map_entries [ "," ] ] "}";
-map_entries   = map_entry { "," map_entry };
-map_entry     = Expr "=" Expr;
-object_lit    = Qual_Ident "{" { object_fields } "}";
-object_fields = entry;
-expr_list     = Expr { "," Expr };
+_slice_lit     = Slice_Type "{" [ _expr_list [ "," ] ] "}";
+_map_lit       = Map_Type "{" [ _map_entries [ "," ] ] "}";
+_map_entries   = _map_entry { "," _map_entry };
+_map_entry     = Expr "=" Expr;
+_object_lit    = Qual_Ident "{" { _object_fields } "}";
+_object_fields = _entry;
+_expr_list     = Expr { "," Expr };
 
 // Type
-type       = qual_ident
-           | slice_type
-           | map_type
-           ;
-slice_type = "[" "]" type;
-map_type   = "map" "[" type "]" type;
-qual_ident = Ident "." Ident
-           | Ident
-           ;
+_type       = _qual_ident
+            | _slice_type
+            | _map_type
+            ;
+_slice_type = "[" "]" _type;
+_map_type   = "map" "[" _type "]" _type;
+_qual_ident = Ident "." Ident
+            | Ident
+            ;
 
-call_arg   = arg_list | entry_list;
-arg_list   = Expr { [ "," ] Expr };
-entry_list = entry { [ "," ] entry };
+_call_arg   = _arg_list | _entry_list;
+_arg_list   = Expr { [ "," ] Expr };
+_entry_list = _entry { [ "," ] _entry };
 
 // Identifier
 Ident      = '[a-zA-Z_][a-zA-Z0-9_]*';
 Ident_Dash = '(--)?[a-zA-Z_-][a-zA-Z0-9_-]*';
 
 // Number
-digit_hex  = '[a-fA-F0-9]';
-digit_bin  = "0" | "1";
-integer    = '[1-9]';
-number_bin = ( "0b" | "0B" ) digit_bin { digit_bin };
-number_hex = ( "0x" | "0X" ) digit_hex { digit_hex };
-number_dec = "0" | integer [ "." ( "0" | integer ) ];
-number     = number_dec
-           | number_hex
-           | number_bin
-           ;
+_digit_hex  = '[a-fA-F0-9]';
+_digit_bin  = "0" | "1";
+_integer    = '[1-9]';
+_number_bin = ( "0b" | "0B" ) _digit_bin { _digit_bin };
+_number_hex = ( "0x" | "0X" ) _digit_hex { _digit_hex };
+_number_dec = "0" | _integer [ "." ( "0" | _integer ) ];
+_number     = _number_dec
+            | _number_hex
+            | _number_bin
+            ;
 
 // Size and color
-color_hex = "#" digit_hex { digit_hex };
-size      = number unit;
-unit      = "%" | "px" | "ch" | "em" | "rem";
+_color_hex = "#" _digit_hex { _digit_hex };
+_size      = _number _unit;
+_unit      = "%" | "px" | "ch" | "em" | "rem";
 
 // String & String line
-String          = Quoted_String | Line_String;
-Quoted_String   = "\"" { string_content } "\"";
-line_string     = "\\" { string_content };
-Line_String     = line_string { line_string };
-string_content  = escape_char
-                | string_template
-                | '[^\n"]'
-                ;
-string_template = "\\{" Expr "}";
-escape_char     = '\\["trsfvn]';
+String           = Quoted_String | Line_String;
+Quoted_String    = "\"" { _string_content } "\"";
+_line_string     = "\\" { _string_content };
+Line_String      = _line_string { _line_string };
+_string_content  = _escape_char
+                 | _string_template
+                 | '[^\n"]'
+                 ;
+_string_template = "\\{" Expr "}";
+_escape_char     = '\\["trsfvn]';
 
 Comment = '//[^\n]*[\n]?';
 
 // Tag
-Tag   = '.*';
-entry = Ident "=" Expr;
+Tag    = '.*';
+_entry = Ident "=" Expr;

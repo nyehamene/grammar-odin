@@ -1,30 +1,30 @@
 // css
-Rule       = "style" "(" [ params ] [ "," ] ")" block;
-params     = param { "," param };
-param      = Ident ( param_type | param_init ) [ Tag ];
-param_type = ":" Type;
-param_init = ( param_type | ":" ) "=" Expr;
+Rule        = "style" "(" [ _params ] [ "," ] ")" _block;
+_params     = _param { "," _param };
+_param      = Ident ( _param_type | _param_init ) [ Tag ];
+_param_type = ":" Type;
+_param_init = ( _param_type | ":" ) "=" Expr;
 
-block       = <Block stmts>;
-stmts       = stmt { stmt };
-stmt        = decl ";"
-            | if_stmt ";"
-            | cond_stmt ";"
-            | field_style ";"
-            ;
-decl        = property;
-property    = Ident ":" value [ "!important" ];
-field_style = "self" "." Member block;
+_block       = <Block _stmts>;
+_stmts       = _stmt { _stmt };
+_stmt        = _decl ";"
+             | _if_stmt ";"
+             | _cond_stmt ";"
+             | _field_style ";"
+             ;
+_decl        = _property;
+_property    = Ident ":" _value [ "!important" ];
+_field_style = "self" "." Member _block;
 
 // style value
-value      = list { list };
-list       = slash_list { slash_list };
-slash_list = comma_list { "/" comma_list };
-comma_list = term { "," term };
-term       = calc | Term;
-calc       = "calc" "(" list ")";
+_value      = _list { _list };
+_list       = _slash_list { _slash_list };
+_slash_list = _comma_list { "/" _comma_list };
+_comma_list = _term { "," _term };
+_term       = _calc | Term;
+_calc       = "calc" "(" _list ")";
 
-if_stmt     = <If expr stmt>;
-cond_stmt   = <Cond expr stmt>;
-Style_Block = block;
-expr        = Expr;
+_if_stmt    = <If _expr _stmt>;
+_cond_stmt  = <Cond _expr _stmt>;
+Style_Block = _block;
+_expr       = Expr;

@@ -4,6 +4,10 @@ declaration       = binding | Rule ;
 binding           = ident "=" "@import" "(" string ")" ";";
 Rule              = ident "=" production ";";
 
+// A Rule whose ident is "_" followed by a letter is local to the file that
+// declares it. Locality is a semantic rule, not a syntactic one, so a local
+// Rule is spelled exactly like any other Rule here.
+
 production  = sequence | alternative;
 alternative = sequence { "|" production };
 sequence    = basic { basic };

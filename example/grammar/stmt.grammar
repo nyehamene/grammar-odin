@@ -1,20 +1,20 @@
-Block stmt          = "{" <One_Or_More stmt> "}" Sep;
-If expr stmt        = "if" expr <Block stmt> [ <else expr stmt> ] Sep;
-else expr stmt      = "else" <If expr stmt>
-                    | "else" <Block stmt>
-                    ;
-Cond expr stmt      = "cond" expr "{"
-                    <case stmt> { <case stmt> } "}"
-                    [ <default stmt> ]
-                    Sep
-                    ;
-case stmt           = "case" Case_Selector "=" <One_Or_More stmt>;
-default stmt        = "case" "=" <One_Or_More stmt>;
-Case_Selector       = Ident ":" Qual_Ident
-                    | Primary
-                    ;
-Foreach expr stmt   = "foreach" <foreach_header expr> <Block stmt>;
-foreach_header expr = Ident [ "," Ident ] "in" expr;
+Block stmt           = "{" <One_Or_More stmt> "}" Sep;
+If expr stmt         = "if" expr <Block stmt> [ <_else expr stmt> ] Sep;
+_else expr stmt      = "else" <If expr stmt>
+                     | "else" <Block stmt>
+                     ;
+Cond expr stmt       = "cond" expr "{"
+                     <_case stmt> { <_case stmt> } "}"
+                     [ <_default stmt> ]
+                     Sep
+                     ;
+_case stmt           = "case" Case_Selector "=" <One_Or_More stmt>;
+_default stmt        = "case" "=" <One_Or_More stmt>;
+Case_Selector        = Ident ":" Qual_Ident
+                     | Primary
+                     ;
+Foreach expr stmt    = "foreach" <_foreach_header expr> <Block stmt>;
+_foreach_header expr = Ident [ "," Ident ] "in" expr;
 
 // function
 One_Or_More val = val { Sep val } Sep;

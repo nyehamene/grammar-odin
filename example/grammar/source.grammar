@@ -1,16 +1,16 @@
-Source    = template
-          | module
-          | workspace
-          ;
-template  = { decl Sep };
-decl      = Var
-          | Import
-          | Style
-          ;
-module    = { directive Sep };
-directive = Api
-          | Doc
-          | Var
-          | Require
-          ;
-workspace = { Include Sep };
+Source     = _template
+           | _module
+           | _workspace
+           ;
+_template  = { _decl Sep };
+_decl      = Var
+           | Import
+           | Style
+           ;
+_module    = { _directive Sep };
+_directive = Api
+           | Doc
+           | Var
+           | Require
+           ;
+_workspace = { Include Sep };

@@ -67,6 +67,25 @@ person = "John";
 fancy_greeting = <greet person "Mr">;
 ```
 
+### Local Rules
+
+A rule whose name is an underscore followed by a letter is private to the file
+that declares it. It is never added to the namespace, so two files in the same
+namespace may each declare their own `_helper`, and neither can see the other's.
+
+```grammar
+// A local rule: an underscore followed by a letter.
+_helper = "hello";
+
+// Local rules are used like any other rule, but only inside this file.
+greeting = _helper "!";
+```
+
+Names are not migrated: a rule named `helper` (no leading underscore) is an
+ordinary namespace rule, shared across every file in the namespace. `_`, `_1x`
+and `__x` are reported as malformed local rule names; they are registered as
+namespace rules instead, so the rest of the file keeps resolving.
+
 ### Bindings (Imports)
 
 ```grammar

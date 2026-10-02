@@ -1,41 +1,41 @@
-Var      = Ident ( var_type | var_init );
-var_init = ( var_type | ":" ) ( ":" | "=" ) expr ";";
-var_type = ":" Type;
-expr     = Enum
-         | Union
-         | Component | Rule
-         | Compound;
+Var       = Ident ( _var_type | _var_init );
+_var_init = ( _var_type | ":" ) ( ":" | "=" ) _expr ";";
+_var_type = ":" Type;
+_expr     = Enum
+          | Union
+          | Component | Rule
+          | Compound;
 
-Doc              = Ident ":" ( Quoted_String | Line_String );
-Api              = Ident ":" ( api_public | api_private );
-api_public       = "@public" [ "()" ];
-api_private      = "@private" [ "(" api_private_mode ")" ];
-api_private_mode = '"file"' | '"package"';
+Doc               = Ident ":" ( Quoted_String | Line_String );
+Api               = Ident ":" ( _api_public | _api_private );
+_api_public       = "@public" [ "()" ];
+_api_private      = "@private" [ "(" _api_private_mode ")" ];
+_api_private_mode = '"file"' | '"package"';
 
-Import  = Ident ":" import;
-import  = "@import" "(" Quoted_String ")";
+Import  = Ident ":" _import;
+_import = "@import" "(" Quoted_String ")";
 Require = "@require" "(" Quoted_String ")";
 Include = "@include" "(" Quoted_String ")";
 
 Style = Ident "::" Rule;
 
 // Union
-Union    = "union" "{" variants "}";
-variants = variant { variant };
-variant  = Qual_Ident Sep;
+Union     = "union" "{" _variants "}";
+_variants = _variant { _variant };
+_variant  = Qual_Ident Sep;
 
 // Enumeration
-Enum         = "enum" "{" [ enum_members ] "}";
-enum_members = enum_member { enum_member };
-enum_member  = Ident [ "=" Primary ] Sep;
+Enum          = "enum" "{" [ _enum_members ] "}";
+_enum_members = _enum_member { _enum_member };
+_enum_member  = Ident [ "=" Primary ] Sep;
 
 // Component
-Component       = "component" [ component_param ] component_body;
-component_param = "(" Ident ":" Type ")";
-component_body  = "{" { Field } [ Element_Children ] "}";
-Field           = field Sep;
-field           = Ident ( field_type | field_init ) [ field_tag ];
-field_init      = ( var_type | ":" ) ( ":" | "=" ) Primary;
-field_type      = var_type;
-field_tag       = Tag;
+Component        = "component" [ _component_param ] _component_body;
+_component_param = "(" Ident ":" Type ")";
+_component_body  = "{" { Field } [ Element_Children ] "}";
+Field            = _field Sep;
+_field           = Ident ( _field_type | _field_init ) [ _field_tag ];
+_field_init      = ( _var_type | ":" ) ( ":" | "=" ) Primary;
+_field_type      = _var_type;
+_field_tag       = Tag;
 
