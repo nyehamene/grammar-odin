@@ -86,6 +86,21 @@ test_combined_rule1_and_rule4 :: proc(t: ^testing.T) {
 	check_format(t, src, want)
 }
 
+// An external only needs its "__" prefix to scan, but the canonical spelling
+// closes it with another "__", so the formatter supplies one when missing.
+@(test)
+test_external_gets_trailing_delimiter :: proc(t: ^testing.T) {
+	check_format(t, "e = __name;\n", "e = __name__;\n")
+	check_format(t, "e = __bar_name;\n", "e = __bar_name__;\n")
+
+	// already closed, or containing a run of its own: left alone
+	check_format(t, "e = __name__;\n", "e = __name__;\n")
+	check_format(t, "e = __a__b__;\n", "e = __a__b__;\n")
+
+	// several externals on one line, each closed independently
+	check_format(t, "e = __one __two;\n", "e = __one__ __two__;\n")
+}
+
 @(test)
 test_doc_example_var_and_ast :: proc(t: ^testing.T) {
 	src := "/// @var\ndocument = @import(\"document.grammar\");\ncomponent = @import(\"component.grammar\");\n\n/// @ast\nSource = DocumentNamespace | ComponentNamespace;\nDocumentNamespace = document;\nComponentNamespace = component;\n"

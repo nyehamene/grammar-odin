@@ -440,7 +440,13 @@ render_tokens :: proc(line: []token.Token, src: string) -> string {
 				resize(&tight, len(tight) - 1)
 			}
 		}
-		strings.write_string(&b, token.lexeme(tok, src))
+		lex := token.lexeme(tok, src)
+		strings.write_string(&b, lex)
+		if tok.kind == .External && !strings.has_suffix(lex, "__") {
+			// Externals are canonically written with a trailing "__"; supply it
+			// when the source omits it.
+			strings.write_string(&b, "__")
+		}
 	}
 	res := strings.clone(strings.to_string(b))
 	strings.builder_destroy(&b)
