@@ -1,6 +1,7 @@
 package ast
 
 import "core:fmt"
+import "core:log"
 
 import "../token"
 
@@ -184,11 +185,20 @@ parse_basic :: proc(p: ^Parser) -> Expr {
 		return parse_terminal(p)
 	case .External:
 		t := next(p)
-		lex := token.lexeme(t, p.src)
-		name := lex
-		if len(lex) >= 4 {
-			name = lex[2:len(lex) - 2]
+
+		text := token.lexeme(t, p.src)
+		name_end := len(text) - 1
+
+		for i := len(text) - 1; i > 1; i -= 1 {
+			ch := text[i]
+			if ch != '_' {
+				name_end = i + 1
+				break
+			}
 		}
+
+		name := text[2:name_end]
+		log.debugf("text %s; name %s", text, name)
 		return External_Value{pos = t.start, name = name}
 	case .At:
 		return parse_directive(p)

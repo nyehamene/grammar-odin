@@ -37,6 +37,58 @@ test_scan_external_ident :: proc(t: ^testing.T) {
 	testing.expect(t, lexeme(tokens[2], src) == "__name__", "external lexeme should be __name__")
 }
 
+// An external is a "__" prefix plus a letter or underscore followed by any run
+// of alphanumerics and underscores. There is no closing delimiter, so an
+// embedded "__" belongs to the name instead of ending it.
+@(test)
+test_scan_external_without_closing_delimiter :: proc(t: ^testing.T) {
+	src := `e = __my_ext;`
+	tokens, errors := scan(src)
+	defer delete(tokens)
+	defer delete(errors)
+
+	expect_kinds(t, tokens[:], []Kind{.Ident, .Equal, .External, .Semicolon, .EOF})
+	testing.expect(t, len(errors) == 0, "no errors expected")
+	testing.expect(t, lexeme(tokens[2], src) == "__my_ext", "external lexeme should be __my_ext")
+}
+
+@(test)
+test_scan_external_keeps_embedded_delimiter :: proc(t: ^testing.T) {
+	// The scan is greedy to the end of the identifier, so "__a__b__" is a
+	// single external rather than an external followed by an ident.
+	src := `e = __a__b__;`
+	tokens, errors := scan(src)
+	defer delete(tokens)
+	defer delete(errors)
+
+	expect_kinds(t, tokens[:], []Kind{.Ident, .Equal, .External, .Semicolon, .EOF})
+	testing.expect(t, lexeme(tokens[2], src) == "__a__b__", "external lexeme should be __a__b__")
+}
+
+@(test)
+test_scan_external_requires_name_start :: proc(t: ^testing.T) {
+	// A digit may not start the name, so the "__" stays part of an ident.
+	src := `e = __1x;`
+	tokens, errors := scan(src)
+	defer delete(tokens)
+	defer delete(errors)
+
+	expect_kinds(t, tokens[:], []Kind{.Ident, .Equal, .Ident, .Semicolon, .EOF})
+	testing.expect(t, len(errors) == 0, "no errors expected")
+	testing.expect(t, lexeme(tokens[2], src) == "__1x", "lexeme should be __1x")
+}
+
+@(test)
+test_scan_bare_double_underscore_is_ident :: proc(t: ^testing.T) {
+	src := `e = __;`
+	tokens, errors := scan(src)
+	defer delete(tokens)
+	defer delete(errors)
+
+	expect_kinds(t, tokens[:], []Kind{.Ident, .Equal, .Ident, .Semicolon, .EOF})
+	testing.expect(t, len(errors) == 0, "no errors expected")
+}
+
 @(test)
 test_scan_member_access :: proc(t: ^testing.T) {
 	tokens, errors := scan(`m = foo.bar;`)

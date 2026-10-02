@@ -178,10 +178,12 @@ test_local_rules_do_not_collide_across_files :: proc(t: ^testing.T) {
 
 @(test)
 test_malformed_local_rule_names :: proc(t: ^testing.T) {
-	// A bare `_`, a name whose second character is not a letter, and a
-	// double-underscore name are all rejected. The rule is still registered in
-	// the namespace so the rest of the file keeps resolving.
-	src := "_ = \"a\";\n_1b = \"b\";\n__c = \"c\";\nd = _;\n"
+	// A bare `_` and a name whose second character is not a letter are both
+	// rejected. `__c` is no longer malformed-local territory: a "__" prefix
+	// followed by a letter scans as an external, so it cannot name a rule at
+	// all. The malformed rule is still registered in the namespace so the rest
+	// of the file keeps resolving.
+	src := "_ = \"a\";\n_1b = \"b\";\n__1c = \"c\";\nd = _;\n"
 	msgs := run_semantics([]Mem_File{test_src(t, "badlocal", "main.grammar", src)})
 	assert_messages(
 		t,
@@ -189,9 +191,17 @@ test_malformed_local_rule_names :: proc(t: ^testing.T) {
 		{
 			"main.grammar:1:1: malformed local rule name _. a local rule name is an underscore followed by a letter, as in _helper",
 			"main.grammar:2:1: malformed local rule name _1b. a local rule name is an underscore followed by a letter, as in _helper",
-			"main.grammar:3:1: malformed local rule name __c. a local rule name is an underscore followed by a letter, as in _helper",
+			"main.grammar:3:1: malformed local rule name __1c. a local rule name is an underscore followed by a letter, as in _helper",
 		},
 	)
+}
+
+// A "__"-prefixed name is an external, never a rule, so it cannot be declared.
+@(test)
+test_external_cannot_name_a_rule :: proc(t: ^testing.T) {
+	src := "__c = \"c\";\nOk = \"d\";\n"
+	msgs := run_semantics([]Mem_File{test_src(t, "extdecl", "main.grammar", src)})
+	assert_messages(t, msgs, {"main.grammar:1:1: expected IDENT, got External"})
 }
 
 @(test)

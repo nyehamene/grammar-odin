@@ -152,6 +152,20 @@ test_parse_group_repetition_optional :: proc(t: ^testing.T) {
 
 @(test)
 test_parse_external_value :: proc(t: ^testing.T) {
+	// An external has a "__" prefix and no closing delimiter, so the name is
+	// everything after the prefix.
+	file := must_parse(t, `e = __name;`)
+	defer destroy_file(&file)
+
+	rule, _ := file.decls[0].(Rule_Decl)
+	term, _ := rule.body[0].(Term_Expr)
+	ext, ok := term.x.(External_Value)
+	testing.expect(t, ok, "expected External_Value")
+	testing.expect(t, ext.name == "name", "external name should drop the leading __")
+}
+
+@(test)
+test_parse_external_value_removes_trailing_delimiter :: proc(t: ^testing.T) {
 	file := must_parse(t, `e = __name__;`)
 	defer destroy_file(&file)
 
@@ -159,7 +173,7 @@ test_parse_external_value :: proc(t: ^testing.T) {
 	term, _ := rule.body[0].(Term_Expr)
 	ext, ok := term.x.(External_Value)
 	testing.expect(t, ok, "expected External_Value")
-	testing.expect(t, ext.name == "name", "external name should be stripped of underscores")
+	testing.expect(t, ext.name == "name", "a trailing __ is not part of the name")
 }
 
 @(test)

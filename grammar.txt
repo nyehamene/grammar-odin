@@ -32,4 +32,4 @@ member_access    = ident "." ident { "." ident };
 string = '[^"\n]*';
 ident  = /[a-zA-Z_][a-zA-Z0-9_]*/;
 regexp = '\'[^\']*\'';
-external_value = '__[a-zA-Z_][a-zA-Z0-9]*__';
+external_value = '__[a-zA-Z_][a-zA-Z0-9_]*';

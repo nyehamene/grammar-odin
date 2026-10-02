@@ -165,7 +165,7 @@ scan_regexp :: proc(t: ^Tokenizer, errors: ^[dynamic]Error) -> Token {
 	return tok(t, .Regexp, start, t.offset)
 }
 
-// scan_ident_or_external scans an identifier, preferring the "__name__"
+// scan_ident_or_external scans an identifier, preferring the "__name"
 // external identifier form when it matches.
 scan_ident_or_external :: proc(t: ^Tokenizer) -> Token {
 	start := t.offset
@@ -182,8 +182,11 @@ scan_ident_or_external :: proc(t: ^Tokenizer) -> Token {
 	return tok(t, .Ident, start, t.offset)
 }
 
-// try_external attempts to scan an external identifier "__name__". On failure
-// the tokenizer position is left unchanged.
+// try_external attempts to scan an external identifier, which is a "__" prefix
+// followed by a letter or underscore and then any run of alphanumerics and
+// underscores: `__[a-zA-Z_][a-zA-Z0-9_]*`. There is no closing delimiter, so the
+// external runs to the end of the identifier and its name is everything after
+// the prefix. On failure the tokenizer position is left unchanged.
 try_external :: proc(t: ^Tokenizer) -> (Token, bool) {
 	start := t.offset
 	cursor := t.offset + 2
@@ -191,16 +194,14 @@ try_external :: proc(t: ^Tokenizer) -> (Token, bool) {
 	if cursor >= len(t.src) || !is_external_start(t.src[cursor]) {
 		return Token{}, false
 	}
-	cursor += 1
-	for cursor < len(t.src) && is_external_part(t.src[cursor]) {
+
+	// The first character is already validated as a letter or underscore, which
+	// is also an identifier body character, so the run starts here.
+	for cursor < len(t.src) && is_ident_part(t.src[cursor]) {
 		cursor += 1
 	}
 
-	if cursor + 1 >= len(t.src) || t.src[cursor] != '_' || t.src[cursor + 1] != '_' {
-		return Token{}, false
-	}
-
-	t.offset = cursor + 2
+	t.offset = cursor
 	return tok(t, .External, start, t.offset), true
 }
 
@@ -222,8 +223,4 @@ is_ident_part :: proc(ch: byte) -> bool {
 
 is_external_start :: proc(ch: byte) -> bool {
 	return is_alpha(ch) || ch == '_'
-}
-
-is_external_part :: proc(ch: byte) -> bool {
-	return is_alpha(ch) || (ch >= '0' && ch <= '9')
 }
