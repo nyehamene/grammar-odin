@@ -289,6 +289,97 @@ test_lsp_references :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(output, `"line":0,"character":14`))
 }
 
+// A local rule (`_name`) is only visible in the file that declares it, so
+// references, rename, hover and definition must all stay inside that file even
+// when a sibling file in the same namespace declares a rule with the same name.
+@(test)
+test_lsp_local_rule_is_file_scoped :: proc(t: ^testing.T) {
+	dir := ns_setup(t, "cmd/lsp/testdata/scratch/local_rule")
+	defer os.remove_all("cmd/lsp/testdata/scratch/local_rule")
+	defer delete(dir)
+
+	a_uri := strings.concatenate({"file://", dir, "/a.grammar"})
+	defer delete(a_uri)
+	a_open := doc_params(
+		a_uri,
+		`,"languageId":"grammar","version":1,"text":"_item = \"a\";\nuse = _item _item;"}}`,
+	)
+	defer delete(a_open)
+	a_use := doc_params(a_uri, `},"position":{"line":1,"character":6}}`)
+	defer delete(a_use)
+	a_refs := doc_params(
+		a_uri,
+		`},"position":{"line":1,"character":6},"context":{"includeDeclaration":true}}`,
+	)
+	defer delete(a_refs)
+	a_decl := doc_params(a_uri, `},"position":{"line":0,"character":0}}`)
+	defer delete(a_decl)
+	a_rename := doc_params(a_uri, `},"position":{"line":1,"character":6},"newName":"_thing"}`)
+	defer delete(a_rename)
+
+	b_uri := strings.concatenate({"file://", dir, "/b.grammar"})
+	defer delete(b_uri)
+	b_open := doc_params(
+		b_uri,
+		`,"languageId":"grammar","version":1,"text":"_item = \"b\";"}}`,
+	)
+	defer delete(b_open)
+
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(`textDocument/didOpen`, a_open),
+		make_notification(`textDocument/didOpen`, b_open),
+		// References on the first `_item` use (line 1, character 6).
+		make_request(`2`, `textDocument/references`, a_refs),
+		// Go to definition on the same use.
+		make_request(`3`, `textDocument/definition`, a_use),
+		// Hover on the local rule declaration (line 0, character 0).
+		make_request(`4`, `textDocument/hover`, a_decl),
+		// Rename the local rule; only a.grammar may be edited.
+		make_request(`5`, `textDocument/rename`, a_rename),
+		make_request(`6`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	log.debugf("output:\n%v", output)
+
+	// didOpen publishes diagnostics for the whole namespace, so both URIs
+	// appear in the output stream; every assertion below is scoped to a single
+	// response line.
+	refs := response_for(output, `2`)
+	testing.expect(t, refs != "")
+	// The declaration plus both uses, all in a.grammar.
+	testing.expect(t, strings.contains(refs, "/a.grammar"))
+	testing.expect(t, strings.contains(refs, `"line":0,"character":0`))
+	testing.expect(t, strings.contains(refs, `"line":1,"character":6`))
+	testing.expect(t, strings.contains(refs, `"line":1,"character":12`))
+	testing.expect(
+		t,
+		!strings.contains(refs, "/b.grammar"),
+		"a local rule must not pick up references from a sibling file",
+	)
+
+	// Definition resolves to the local declaration in the declaring file.
+	def := response_for(output, `3`)
+	testing.expect(t, strings.contains(def, "/a.grammar"))
+	testing.expect(t, strings.contains(def, `"line":0,"character":0`))
+
+	// Hover reports the local declaration as a bare line:column, which is what
+	// distinguishes a local rule from a namespace rule.
+	hover := response_for(output, `4`)
+	testing.expect(t, strings.contains(hover, "**`_item`**"))
+	testing.expect(t, strings.contains(hover, "**declared at:** `1:1`"))
+
+	// Rename rewrites the three occurrences in a.grammar and nothing in b.
+	renamed := response_for(output, `5`)
+	testing.expect(t, strings.count(renamed, `"newText":"_thing"`) == 3)
+	testing.expect(t, !strings.contains(renamed, "/b.grammar"))
+}
+
 @(test)
 test_lsp_document_symbol :: proc(t: ^testing.T) {
 	stdin := create_stream_reader(
@@ -687,6 +778,30 @@ test_lsp_document_link :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(output, `"target":"file:///tmp/base.grammar"`))
 	testing.expect(t, strings.contains(output, `"start":{"line":0,"character":13}`))
 	testing.expect(t, strings.contains(output, `"end":{"line":0,"character":21}`))
+}
+
+// doc_params builds a textDocument parameter object for uri, with rest appended
+// to close the uri value and supply the remaining members. The result is owned
+// by the caller.
+doc_params :: proc(uri, rest: string) -> string {
+	return strings.concatenate({`{"textDocument":{"uri":"`, uri, `"`, rest})
+}
+
+// response_for returns the single response line carrying the given request id,
+// or "" when the server wrote no such response. Notifications that share the
+// output stream (diagnostics, logs) are ignored, so a test can assert on one
+// response without tripping over the others. The result aliases `output` and
+// must not be deleted.
+response_for :: proc(output, id: string) -> string {
+	lines := strings.split_lines(output)
+	defer delete(lines)
+	prefix := strings.concatenate({`{"jsonrpc": "2.0", "id": `, id}, context.temp_allocator)
+	for line in lines {
+		if strings.has_prefix(line, prefix) {
+			return line
+		}
+	}
+	return ""
 }
 
 // make_request builds a single framed JSON-RPC request message.
