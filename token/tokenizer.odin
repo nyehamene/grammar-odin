@@ -159,6 +159,12 @@ scan_regexp :: proc(t: ^Tokenizer, errors: ^[dynamic]Error) -> Token {
 			t.offset += 1
 			return tok(t, .Regexp, start, t.offset)
 		}
+		if ch == '\n' {
+			// A literal may not span a line: the formatter buckets tokens by the
+			// line they start on and relies on none of them crossing a newline.
+			append(errors, Error{offset = start, message = "unterminated regexp literal"})
+			return tok(t, .Regexp, start, t.offset)
+		}
 		t.offset += 1
 	}
 	append(errors, Error{offset = start, message = "unterminated regexp literal"})

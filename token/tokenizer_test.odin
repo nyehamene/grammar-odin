@@ -165,6 +165,20 @@ test_scan_unterminated_regexp :: proc(t: ^testing.T) {
 	testing.expect(t, errors[0].message == "unterminated regexp literal", "wrong error message")
 }
 
+// A regexp may not span a newline: the formatter buckets tokens by the line
+// they start on and relies on none of them crossing a line boundary.
+@(test)
+test_scan_regexp_with_newline :: proc(t: ^testing.T) {
+	src := "r = 'a\nb"
+	tokens, errors := scan(src)
+	defer delete(tokens)
+	defer delete(errors)
+
+	testing.expect(t, len(errors) == 1, "expected one error")
+	testing.expect(t, errors[0].message == "unterminated regexp literal", "wrong error message")
+	testing.expect(t, lexeme(tokens[2], src) == "'a", "regexp should stop before the newline")
+}
+
 @(test)
 test_position_at :: proc(t: ^testing.T) {
 	src := "ab\ncd\nef"
