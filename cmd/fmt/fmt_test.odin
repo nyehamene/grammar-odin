@@ -31,6 +31,28 @@ format_ok :: proc(t: ^testing.T, src: string) -> string {
 	return text
 }
 
+// format_ok_sep is format_ok with an explicit --separator value.
+format_ok_sep :: proc(t: ^testing.T, src: string, separator: int) -> string {
+	errbuf: bytes.Buffer
+	bytes.buffer_init(&errbuf, {})
+	defer bytes.buffer_destroy(&errbuf)
+
+	text, ok := Format_Text(src, "<test>", bytes.buffer_to_stream(&errbuf), separator)
+	testing.expect(t, ok, "Format_Text should succeed")
+	testing.expect(t, len(bytes.buffer_to_bytes(&errbuf)) == 0, "no errors expected")
+	return text
+}
+
+// check_format_sep asserts that src formats to want at the given separator.
+check_format_sep :: proc(t: ^testing.T, src, want: string, separator: int) {
+	got := format_ok_sep(t, src, separator)
+	defer delete(got)
+	testing.expect(t, got == want, "formatted output mismatch")
+	if got != want {
+		testing.expectf(t, false, "separator %d\ngot:\n%s\nwant:\n%s", separator, got, want)
+	}
+}
+
 check_format :: proc(t: ^testing.T, src, want: string) {
 	got := format_ok(t, src)
 	defer delete(got)
@@ -69,13 +91,45 @@ test_rule4_vertical_alignment :: proc(t: ^testing.T) {
 	check_format(t, src, want)
 }
 
+// Rule 5: a continuation line carries no leading `|`, so it is indented one
+// column past the separator column. Without this it would sit flush with the
+// `|` lines and read as a sibling alternative.
 @(test)
-test_rule5_blank_line_collapse :: proc(t: ^testing.T) {
-	src := "foo = \"one\";\n\n\n\nbar = \"bar\";\n"
-	want := "foo = \"one\";\n\nbar = \"bar\";\n"
+test_rule5_continuation_indent :: proc(t: ^testing.T) {
+	src := "choice = one\n   other\n   | two\n   | three ;\n"
+	want := "choice = one\n         other\n       | two\n       | three;\n"
 	check_format(t, src, want)
+}
 
-	// a single blank line is preserved, not removed
+// Rule 6: only a run of at least `--separator` blank lines ends a group, so with
+// 2 the single blank between `a` and `bar` leaves them in one group while the
+// double blank before `b` starts a new one.
+@(test)
+test_rule6_separator_threshold :: proc(t: ^testing.T) {
+	src := "a = \"a\";\n\nbar = \"bar\";\n\n\nb = \"a\";\nname = \"name\";\n"
+	want := "a   = \"a\";\n\nbar = \"bar\";\n\n\nb    = \"a\";\nname = \"name\";\n"
+	check_format_sep(t, src, want, 2)
+
+	// At the default of 1 the single blank does split the groups.
+	check_format(t, src, "a = \"a\";\n\nbar = \"bar\";\n\n\nb    = \"a\";\nname = \"name\";\n")
+}
+
+// A boundary run longer than the threshold is a group boundary and is kept at
+// its original length rather than being trimmed down to `--separator`.
+@(test)
+test_rule6_boundary_longer_than_separator_preserved :: proc(t: ^testing.T) {
+	src := "a = \"a\";\n\n\n\n\nb = \"b\";\n"
+	check_format_sep(t, src, src, 2)
+	check_format_sep(t, src, src, 1)
+}
+
+// Blank lines are reproduced as written, including runs longer than the
+// separator threshold, so this source is already formatted.
+@(test)
+test_blank_lines_preserved :: proc(t: ^testing.T) {
+	src := "foo = \"one\";\n\n\n\nbar = \"bar\";\n"
+	check_format(t, src, src)
+
 	check_format(t, "a = \"a\";\n\nb = \"b\";\n", "a = \"a\";\n\nb = \"b\";\n")
 }
 
@@ -159,14 +213,15 @@ test_rule_call_tight_but_group_spaced :: proc(t: ^testing.T) {
 	check_format(t, src, want)
 }
 
+// Leading blank lines are kept exactly as written, while a run at the end of
+// the file collapses to a single blank line (golden rule).
 @(test)
-test_leading_and_trailing_single_blank_preserved :: proc(t: ^testing.T) {
-	// a single leading or trailing blank line must be kept (golden rule)
+test_leading_blanks_kept_and_trailing_collapsed :: proc(t: ^testing.T) {
 	check_format(t, "\na = \"a\";\n", "\na = \"a\";\n")
 	check_format(t, "a = \"a\";\n\n", "a = \"a\";\n\n")
 
-	// runs collapse to one blank line at both ends
-	check_format(t, "\n\n\na = \"a\";\n", "\na = \"a\";\n")
+	// leading runs survive verbatim, trailing runs collapse to one
+	check_format(t, "\n\n\na = \"a\";\n", "\n\n\na = \"a\";\n")
 	check_format(t, "a = \"a\";\n\n\n\n", "a = \"a\";\n\n")
 }
 
@@ -243,6 +298,80 @@ test_stdin_mode :: proc(t: ^testing.T) {
 	want := "a   = ( foo );\nbar = [ baz ];\n"
 	testing.expect(t, string(bytes.buffer_to_bytes(&stdout)) == want, "stdin output mismatch")
 	testing.expect(t, len(bytes.buffer_to_bytes(&stderr)) == 0, "no errors on stderr")
+}
+
+// `-s`/`--separator` sets the group threshold and combines with `--stdin`.
+@(test)
+test_separator_flag_with_stdin :: proc(t: ^testing.T) {
+	stdout, stderr: bytes.Buffer
+	bytes.buffer_init(&stdout, {})
+	bytes.buffer_init(&stderr, {})
+	defer bytes.buffer_destroy(&stdout)
+	defer bytes.buffer_destroy(&stderr)
+
+	// One blank line does not separate the groups at separator 2, so `a` and
+	// `bar` are aligned as a pair.
+	code := run(
+		{"--stdin", "-s", "2"},
+		stdin_from("a = \"a\";\n\nbar = \"bar\";\n"),
+		bytes.buffer_to_stream(&stdout),
+		bytes.buffer_to_stream(&stderr),
+	)
+	testing.expect(t, code == 0, "stdin formatting should succeed")
+	testing.expect(
+		t,
+		string(bytes.buffer_to_bytes(&stdout)) == "a   = \"a\";\n\nbar = \"bar\";\n",
+		"separator output mismatch",
+	)
+	testing.expect(t, len(bytes.buffer_to_bytes(&stderr)) == 0, "no errors on stderr")
+}
+
+// The `--separator=N` form is accepted, and a value below 1 is ignored.
+@(test)
+test_separator_equals_form_and_clamping :: proc(t: ^testing.T) {
+	src := "a = \"a\";\n\n\n\n\nb = \"b\";\n"
+	// separator 3 still treats the 4-blank run as a boundary, kept verbatim.
+	check_format_sep(t, src, src, 3)
+
+	for sep, i in ([]int{0, -1, -7}) {
+		got := format_ok_sep(t, "a = \"a\";\n\nbar = \"bar\";\n", sep)
+		testing.expectf(t, got == "a = \"a\";\n\nbar = \"bar\";\n", "separator %d should clamp to 1", i)
+		delete(got)
+	}
+}
+
+// Formatting is idempotent at a non-default separator too.
+@(test)
+test_separator_idempotent :: proc(t: ^testing.T) {
+	src := "a = \"a\";\n\nbar = \"bar\";\n\n\nb = \"a\";\nname = \"name\";\n"
+	once := format_ok_sep(t, src, 2)
+	defer delete(once)
+	twice := format_ok_sep(t, once, 2)
+	defer delete(twice)
+	testing.expect(t, once == twice, "formatting must be idempotent at separator 2")
+}
+
+@(test)
+test_separator_invalid_values :: proc(t: ^testing.T) {
+	cases := [][]string {
+		{"--stdin", "-s"},
+		{"--stdin", "-s", "abc"},
+		{"--stdin", "--separator"},
+		{"--stdin", "--separator=xyz"},
+	}
+	for args, i in cases {
+		stdout, stderr: bytes.Buffer
+		bytes.buffer_init(&stdout, {})
+		bytes.buffer_init(&stderr, {})
+
+		code := run(args, stdin_unused(), bytes.buffer_to_stream(&stdout), bytes.buffer_to_stream(&stderr))
+		testing.expectf(t, code == 1, "invalid separator must fail (case %d)", i)
+		err := string(bytes.buffer_to_bytes(&stderr))
+		testing.expectf(t, strings.contains(err, "invalid arguments"), "expected invalid arguments (case %d)", i)
+
+		bytes.buffer_destroy(&stdout)
+		bytes.buffer_destroy(&stderr)
+	}
 }
 
 @(test)

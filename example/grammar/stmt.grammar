@@ -4,9 +4,9 @@ _else expr stmt      = "else" <If expr stmt>
                      | "else" <Block stmt>
                      ;
 Cond expr stmt       = "cond" expr "{"
-                     <_case stmt> { <_case stmt> } "}"
-                     [ <_default stmt> ]
-                     Sep
+                       <_case stmt> { <_case stmt> } "}"
+                       [ <_default stmt> ]
+                       Sep
                      ;
 _case stmt           = "case" Case_Selector "=" <One_Or_More stmt>;
 _default stmt        = "case" "=" <One_Or_More stmt>;

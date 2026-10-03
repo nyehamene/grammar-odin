@@ -7,4 +7,5 @@ Argument:
 PATH                PATH is a file, Format code inplace,
     --stdout PATH   Print formatted output to stdout. Do not modify input file.
     --stdin         Format code from stdin, output to stdout.
+-s  --separator N   The number of blank lines (N) that terminates a group. Defaults to 1. This flag is ignored if less than 1.
 -h, --help          Print this message.

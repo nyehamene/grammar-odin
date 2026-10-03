@@ -1,16 +1,19 @@
 // Package fmtcmd implements `grammar fmt`, the grammar source formatter.
 //
-// Formatting is driven entirely by the token stream so that line boundaries
-// are preserved: the formatter never adds or removes newlines (the golden rule
-// in implementation/08-fmt.md). The only exception is rule 5, which collapses a
-// run of blank lines down to a single blank line. The source is parsed only to
-// validate it: on a lexical or syntax error the file is left untouched and the
-// errors are reported on stderr.
+// Formatting is driven entirely by the token stream, so line boundaries are
+// preserved: blank lines are emitted exactly as written, with the one exception
+// that a run of blank lines at the end of the file collapses to a single blank
+// line (the golden rule in implementation/08-fmt.md). A run of at least
+// `separator` blank lines ends an alignment group; a shorter run is interior
+// whitespace inside a group and does not break the alignment (rule 6). The
+// source is parsed only to validate it: on a lexical or syntax error the file is
+// left untouched and the errors are reported on stderr.
 package fmtcmd
 
 import "core:fmt"
 import "core:io"
 import "core:os"
+import "core:strconv"
 import "core:strings"
 
 import "../../ast"
@@ -33,7 +36,7 @@ Fmt_Item :: struct {
 // fails to parse is reported on stderr and left unmodified, and the process
 // exits non-zero after the remaining files have been formatted anyway.
 run :: proc(args: []string, stdin: io.Reader, stdout, stderr: io.Writer) -> int {
-	items, use_stdin, ok := parse_args(args)
+	items, use_stdin, separator, ok := parse_args(args)
 	if !ok {
 		io.write_string(stderr, "error: invalid arguments for 'grammar fmt'\n")
 		return 1
@@ -48,7 +51,7 @@ run :: proc(args: []string, stdin: io.Reader, stdout, stderr: io.Writer) -> int 
 		}
 		defer delete(data)
 
-		text, ok := Format_Text(string(data), "<stdin>", stderr)
+		text, ok := Format_Text(string(data), "<stdin>", stderr, separator)
 		if !ok do return 1
 		defer delete(text)
 		io.write_string(stdout, text)
@@ -82,7 +85,7 @@ run :: proc(args: []string, stdin: io.Reader, stdout, stderr: io.Writer) -> int 
 		}
 		src := string(data)
 
-		text, ok := Format_Text(src, item.path, stderr)
+		text, ok := Format_Text(src, item.path, stderr, separator)
 		if !ok {
 			delete(data)
 			failed = true
@@ -110,37 +113,59 @@ run :: proc(args: []string, stdin: io.Reader, stdout, stderr: io.Writer) -> int 
 }
 
 // parse_args parses the fmt arguments. `--stdout` applies to the path that
-// follows it; `--stdin` cannot be combined with anything else.
-parse_args :: proc(args: []string) -> (items: [dynamic]Fmt_Item, use_stdin: bool, ok: bool) {
+// follows it; `--stdin` cannot be combined with a path or `--stdout`, but it
+// accepts `-s`/`--separator`. A separator below 1 is ignored, leaving the
+// default of 1.
+parse_args :: proc(args: []string) -> (items: [dynamic]Fmt_Item, use_stdin: bool, separator: int, ok: bool) {
 	items = make([dynamic]Fmt_Item)
 	mode := Fmt_Mode.In_Place
+	separator = 1
 
-	for arg in args {
-		switch arg {
-		case "--stdin":
+	i := 0
+	for i < len(args) {
+		arg := args[i]
+		switch {
+		case arg == "--stdin":
 			if use_stdin || len(items) > 0 || mode == .Stdout {
-				return {}, {}, false
+				return {}, {}, 0, false
 			}
 			use_stdin = true
-		case "--stdout":
+		case arg == "--stdout":
 			mode = .Stdout
-		case:
-			if strings.has_prefix(arg, "-") {
-				return {}, {}, false
+		case arg == "-s" || arg == "--separator":
+			i += 1
+			if i >= len(args) {
+				return {}, {}, 0, false
 			}
+			n, parsed := strconv.parse_int(args[i])
+			if !parsed {
+				return {}, {}, 0, false
+			}
+			separator = max(n, 1)
+		case strings.has_prefix(arg, "--separator="):
+			n, parsed := strconv.parse_int(arg[len("--separator="):])
+			if !parsed {
+				return {}, {}, 0, false
+			}
+			separator = max(n, 1)
+		case strings.has_prefix(arg, "-"):
+			return {}, {}, 0, false
+		case:
 			append(&items, Fmt_Item{mode = mode, path = arg})
 			mode = .In_Place
 		}
+		i += 1
 	}
 
-	if mode == .Stdout do return {}, {}, false
-	return items, use_stdin, true
+	if mode == .Stdout do return {}, {}, 0, false
+	return items, use_stdin, separator, true
 }
 
 // Format_Text validates src and returns its formatted text. On a lexical or
 // syntax error, the diagnostics are reported on stderr and ok is false. The
 // returned string is owned by the caller and must be freed with delete.
-Format_Text :: proc(src, name: string, stderr: io.Writer) -> (text: string, ok: bool) {
+// separator is the number of blank lines that ends an alignment group.
+Format_Text :: proc(src, name: string, stderr: io.Writer, separator: int = 1) -> (text: string, ok: bool) {
 	tokens, lex_errors := token.scan(src)
 	defer delete(tokens)
 	defer delete(lex_errors)
@@ -168,7 +193,7 @@ Format_Text :: proc(src, name: string, stderr: io.Writer) -> (text: string, ok: 
 	}
 	if failed do return "", false
 
-	return layout(src, tokens[:]), true
+	return layout(src, tokens[:], separator), true
 }
 
 // Line_Kind describes how a source line is laid out.
@@ -195,9 +220,10 @@ classify :: proc(line: []token.Token) -> Line_Kind {
 
 // layout reformats src line by line. Tokens never span lines, so bucketing them
 // by their start line and emitting one output line per input line guarantees
-// the golden rule: no newline is ever added or removed (except rule 5's
-// collapse of consecutive blank lines).
-layout :: proc(src: string, tokens: []token.Token) -> string {
+// the golden rule: blank lines are reproduced verbatim and no newline is ever
+// added, with the single exception that a run of blank lines at the end of the
+// file collapses to one.
+layout :: proc(src: string, tokens: []token.Token, separator: int) -> string {
 	offsets := line_offsets(src)
 	defer delete(offsets)
 	n_lines := len(offsets)
@@ -220,40 +246,44 @@ layout :: proc(src: string, tokens: []token.Token) -> string {
 		kinds[i] = classify(groups[i][:])
 	}
 
-	// align[line] is the column that `=`, `|`, `;` and continuations of a block
-	// are aligned to. A block is a maximal run of lines not separated by a blank
-	// line; the column is the widest rule name in the block.
+	// align[line] is the column that `=`, `|`, `;` and continuations of a group
+	// are aligned to. A group is a maximal run of lines not ended by a blank
+	// line run of at least `separator` lines; the column is the widest rule name
+	// in the group.
 	align := make([dynamic]int, n_lines)
 	defer delete(align)
-	compute_align(kinds[:], groups[:], src, align[:])
+	compute_align(kinds[:], groups[:], src, align[:], separator)
 
 	nl := newline_style(src)
 	b := strings.builder_make()
 	first := true
-	prev_blank := false
 
 	// The final fragment after a trailing newline is a terminator, not a blank
-	// line, so it never participates in block or blank-line handling.
+	// line, so it never participates in group or blank-line handling.
 	eff_n := n_lines
 	if strings.has_suffix(src, "\n") do eff_n -= 1
 
+	// Blank lines are reproduced as written, except that a run at the end of the
+	// file collapses to a single blank line (golden rule). Count that run so it
+	// can be emitted separately.
+	trailing := 0
+	for i := eff_n - 1; i >= 0; i -= 1 {
+		if kinds[i] != .Blank do break
+		trailing += 1
+	}
+	cut := eff_n - trailing
+
 	for i in 0 ..< eff_n {
 		if kinds[i] == .Blank {
-			prev_blank = true
+			if i < cut do write_line(&b, "", &first, nl)
 			continue
-		}
-		// A run of blanks collapses to at most one blank line (rule 5).
-		if prev_blank {
-			write_line(&b, "", &first, nl)
-			prev_blank = false
 		}
 		line := render_line(groups[i][:], kinds[i], align[i], i, src, offsets[:], nl)
 		write_line(&b, line, &first, nl)
 		delete(line)
 	}
 
-	// Preserve a single trailing blank line, collapsing longer runs.
-	if prev_blank {
+	if trailing > 0 {
 		write_line(&b, "", &first, nl)
 	}
 
@@ -295,24 +325,32 @@ newline_style :: proc(src: string) -> string {
 	return "\n"
 }
 
-// compute_align fills align with the alignment column of the block each line
-// belongs to. Blank lines split blocks and get no column.
-compute_align :: proc(kinds: []Line_Kind, groups: [][dynamic]token.Token, src: string, align: []int) {
+// compute_align fills align with the alignment column of the group each line
+// belongs to. A run of at least `separator` blank lines ends a group; a shorter
+// run is interior whitespace inside a group and does not end it. Blank lines
+// get no column.
+compute_align :: proc(kinds: []Line_Kind, groups: [][dynamic]token.Token, src: string, align: []int, separator: int) {
 	n_lines := len(kinds)
 	block_start := 0
 	in_block := false
 	col := 0
+	blank_run := 0
+	run_start := 0
 	for i in 0 ..< n_lines {
 		if kinds[i] == .Blank {
-			if in_block {
-				for j in block_start ..< i {
+			if blank_run == 0 do run_start = i
+			blank_run += 1
+			// Only a run that reaches the threshold ends the group (rule 6).
+			if blank_run >= separator && in_block {
+				for j in block_start ..< run_start {
 					align[j] = col + 1
 				}
 				in_block = false
+				col = 0
 			}
-			col = 0
 			continue
 		}
+		blank_run = 0
 		if !in_block {
 			block_start = i
 			in_block = true
@@ -385,17 +423,15 @@ render_line :: proc(
 		strings.builder_destroy(&b)
 		return res
 
-	case .Pipe, .Body:
-		b := strings.builder_make()
-		for _ in 0 ..< col {
-			strings.write_string(&b, " ")
-		}
-		body := render_tokens(line, src)
-		strings.write_string(&b, body)
-		delete(body)
-		res := strings.clone(strings.to_string(b))
-		strings.builder_destroy(&b)
-		return res
+	case .Pipe:
+		return pad_and_render(line, col, src)
+
+	case .Body:
+		// Rule 5: a continuation line carries no leading `|`, so it is indented
+		// one column past the separator column. That makes it read as a
+		// continuation of the alternative above it instead of as a sibling of
+		// the `|` lines.
+		return pad_and_render(line, col + 2, src)
 
 	case .Lone_Semicolon:
 		b := strings.builder_make()
@@ -411,6 +447,21 @@ render_line :: proc(
 		return ""
 	}
 	return ""
+}
+
+// pad_and_render indents a line to col and appends its rendered tokens. The
+// returned string is owned by the caller.
+pad_and_render :: proc(line: []token.Token, col: int, src: string) -> string {
+	b := strings.builder_make()
+	for _ in 0 ..< col {
+		strings.write_string(&b, " ")
+	}
+	body := render_tokens(line, src)
+	strings.write_string(&b, body)
+	delete(body)
+	res := strings.clone(strings.to_string(b))
+	strings.builder_destroy(&b)
+	return res
 }
 
 // render_tokens reconstructs the source text of a run of tokens. A single space
