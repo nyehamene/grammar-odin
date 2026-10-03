@@ -16,7 +16,7 @@ The language server protocol implementation code and API should be placed in 'se
 
 - [x] **2. `textDocument/definition` (Go to Definition)** (implemented in `cmd/lsp/definition.odin`)
     - [x] **Types**: `Location` added in `cmd/lsp/definition.odin`.
-    - [x] **Definition Logic**: `definition_for` resolves the identified symbol (rule, import binding, or namespace member) to its declaration file and offset using the `CompilationUnit` name/binding tables.
+    - [x] **Definition Logic**: `definition_for` resolves the identified symbol (rule, import binding, or namespace member) to its declaration file and offset using the `CompilationUnit` name/binding tables. A namespace member is only resolved when it is exported, matching the checker.
     - [x] **Handler**: `handleDefinition` uses `find_hit` for the AST position logic.
     - [x] **Dispatcher**: `textDocument/definition` is wired in `cmd/lsp/server.odin`.
     - [x] **Test**: `test_lsp_definition` in `cmd/lsp/lsp_test.odin`.
@@ -54,14 +54,14 @@ The language server protocol implementation code and API should be placed in 'se
 - [x] **7. `textDocument/completion`** (implemented in `cmd/lsp/completion.odin`)
     - [x] **Types**: `Completion_Item`, `Completion_Item_Kind`, `Completion_List` added in `cmd/lsp/completion.odin`.
     - [x] **Handler**: `handle_completion` implemented in `cmd/lsp/completion.odin`.
-    - [x] **Logic**: `completion_prefix` extracts the identifier being typed (and an optional `binding.` receiver); suggestions are the shared namespace rules, file-local imports, and the members of an imported namespace.
+    - [x] **Logic**: `completion_prefix` extracts the identifier being typed (and an optional `binding.` receiver); suggestions are the shared namespace rules, file-local imports, and the exported members of an imported namespace. A local or private rule of another namespace is not offered, since the checker would reject a use of it.
     - [x] **Dispatcher**: `textDocument/completion` is wired in `cmd/lsp/server.odin`.
-    - [x] **Test**: `test_lsp_completion` and `test_lsp_completion_member` in `cmd/lsp/lsp_test.odin`.
+    - [x] **Test**: `test_lsp_completion` and `test_lsp_completion_member_offers_only_exported_rules` in `cmd/lsp/lsp_test.odin`.
 
 - [x] **8. `textDocument/diagnostic` (Pull Diagnostics)** (implemented in `cmd/lsp/diagnostic.odin`)
     - [x] **Types**: `Diagnostic`, `Publish_Diagnostics_Params`, `Pull_Diagnostic_Result` in `cmd/lsp/diagnostic.odin`.
     - [x] **Handler**: `handle_text_document_diagnostic` implemented in `cmd/lsp/diagnostic.odin`.
-    - [x] **Logic**: Runs the checker over the open documents through `index_documents` and returns the diagnostics.
+    - [x] **Logic**: Runs the checker over the open documents through `index_documents` and returns the diagnostics. `severity_code` maps a checker `Error` to LSP `1` and a `Warning` to `2`, so an unused rule arrives as a warning rather than a failure.
     - [x] **Dispatcher**: `textDocument/diagnostic` is wired in `cmd/lsp/server.odin`.
     - [x] **Test**: `test_lsp_pull_diagnostic` and `test_lsp_did_open_publishes_diagnostics` in `cmd/lsp/lsp_test.odin`.
 

@@ -1,3 +1,7 @@
-f = @import("../foo");
+F = @import("../foo");
 
-ident = f.foo baz;
+// A local rule: any rule in this namespace may name it, but another
+// namespace cannot reach it. `Ident` names `tag`, so it is used.
+tag = "grammar";
+
+Ident = F.Foo Baz tag;

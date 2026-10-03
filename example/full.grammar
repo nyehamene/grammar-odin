@@ -1,12 +1,12 @@
 // A rule defines a named production.
-greeting = "Hello" | "Hi";
+Greeting = "Hello" | "Hi";
 
 // Rules can reference other rules.
-full_greeting = greeting " World";
+Full_Greeting = Greeting " World";
 
 // A rule can have parameters.
-greet name title = "hello" name title;
+Greet name title = "hello" name title;
 
 // Pass arguments to a rule with a parameterized call.
-person = "John";
-fancy_greeting = <greet person "Mr">;
+Person = "John";
+Fancy_Greeting = <Greet Person "Mr">;

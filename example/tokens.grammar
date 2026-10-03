@@ -1,14 +1,14 @@
 // Exercises every token kind from grammar.txt.
-string_lit = "hello";
+String_Lit = "hello";
 
-regexp_lit = '[a-z]+';
+Regexp_Lit = '[a-z]+';
 
-grouped = ( "a" "b" );
+Grouped = ( "a" "b" );
 
-repeated = { "a" };
+Repeated = { "a" };
 
-optional = [ "b" ];
+Optional = [ "b" ];
 
-member = foo.bar;
+Member = foo.bar;
 
-external = __name__;
+External = __name__;

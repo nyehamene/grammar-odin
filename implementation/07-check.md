@@ -66,23 +66,43 @@ The check follows these steps to load a directory.
 
 ## Symatic Analysis
 
-### Member access
+### Rule visibility
+
+A rule name determines how far it reaches.
+
+| Name starts with | Tier       | Reachable from                        | Reported unused |
+|------------------|------------|---------------------------------------|-----------------|
+| uppercase        | exported   | its own namespace, and any that imports it | no          |
+| lowercase        | local      | every file of its own namespace        | yes, if nothing in the namespace names it |
+| `_`             | private    | the file it was declared in           | yes, if nothing in the file names it |
 
 A member access expression has a receiver and an object: `receiver.object`.
 
 - The receiver must resolve to a value of type `Namespace`.
 - The object must resolve to a value of type `Production` in the receiver namespace.
+- The object must be exported. A local or private rule of the receiver namespace
+  is not reachable through a binding, and this is reported separately from a
+  rule that does not exist, because the rule is there and merely out of reach:
+
+  ```
+  ns.helper is not exported. only a rule whose name starts with an uppercase letter is accessible from another namespace
+  ```
+
+  The server follows the checker here: definition, hover and signature help do
+  not resolve a non-exported member, and member completion does not offer one.
 
 ## Implementation
 
 - Every directory is a namespace. All the grammar files in the directory are in the same namespace.
 - A rule must have a value. It is an error if no value is provided.
-- Rules are exported and are accessible from external namespaces via binding variables.
+- Exported rules are accessible from external namespaces via binding variables.
+  Local and private rules are not, even when they live in an imported namespace.
 - The `@import` directive is used to import a namespace and bind it to a variable.
 - The import path is resolved relative to the directory containing the importing namespace.
 - It is an error if the imported directory does not exist.
-- Rules defined in an imported namespace are accessible through the binding variable.
+- Exported rules defined in an imported namespace are accessible through the binding variable.
 - It is an error to access a non-existent rule.
+- It is an error to access a non-exported rule through a binding variable.
 - It is an error if 2 or more declarations in a namespace have the same name (identifier).
   A rule cannot have the same name as another rule in the same namespace.
   A rule cannot have the same name as a binding variable in the same file.
@@ -102,24 +122,54 @@ A member access expression has a receiver and an object: `receiver.object`.
   Where pkg/foo.grammar has the following content:
   ```
   // pkg/foo/foo.grammar
-  foo = "i am foo";
+  Foo = "i am foo";
   ```
 
   And, baz.grammar has the following content:
   ```
   // pkg/bar/baz.grammar
-  baz = "i am baz";
+  Baz = "i am baz";
   ```
 
   And, bar.grammar has content.
   ```
   // pkg/bar/bar.grammar
-  f = @import("pkg/foo");
-  x = @import("pkg/xxx"); // error: "namespace xxx does not exist"
+  F = @import("pkg/foo");
+  X = @import("pkg/xxx"); // error: "namespace xxx does not exist"
 
-  ident = f.foo baz;
+  // `tag` is a local rule: usable anywhere in this namespace, not from another
+  // one, and reported only when nothing here names it.
+  tag = "grammar";
 
-  x1 = f.other; // error: "f.other is undefined. namespace foo has no field other"
+  Ident = F.Foo Baz tag;
+
+  x1 = F.Other; // error: "F.Other is undefined. namespace foo has no field Other"
   ident = "foo"; // error: "field ident redeclared in this namespace. (see other declaration at <INSERT LINE:COLUMN HERE>)"
   ```
 
+## Warnings
+
+Not everything the checker finds should fail the build. A declaration that
+nothing refers to is usually leftover rather than broken, so it is reported as a
+warning, alongside the errors, and `check` still exits `0`:
+
+```sh
+$ cat main.grammar
+used = "a";
+unused = "b";
+Start = used;
+
+$ grammar check main.grammar --file
+main.grammar:2:1: warning: unused local rule: unused
+$ echo $?
+0
+```
+
+The rules that decide what gets reported are in
+[10-unused-warning.md](10-unused-warning.md). In short: a private rule unused
+within its file, a local rule unused within its namespace, and a binding nothing
+in its file names are warnings; an exported rule is never reported unused; and
+an unused parameter is an error.
+
+The server publishes these with severity `2` so a client can render them without
+treating them as failures.

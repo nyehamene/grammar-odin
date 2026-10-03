@@ -14,4 +14,20 @@ OPTION:
 Option defaults to -p (--package) if no option is given.
 
 If PATH is a directory, all the grammar files inside it is checked.
-If any error is found, the program exits with a non-zero exit code.
+
+Findings are reported in two strengths. An error is a mistake that makes a rule
+unusable, and it prints without a prefix:
+
+    path:line:column: unused proc parameter: x
+
+A warning is something worth cleaning up but not necessarily wrong, such as a
+rule or binding that nothing refers to. It prints with a warning: prefix:
+
+    path:line:column: warning: unused local rule: helper
+
+If any error is found, the program exits with a non-zero exit code. Warnings
+alone still exit 0, so an unused rule does not fail a build that only cares
+about correctness. Use the exit code, not the presence of output, to decide.
+
+Checking from stdin lexes and parses only, so it reports neither errors nor
+warnings that need name resolution.

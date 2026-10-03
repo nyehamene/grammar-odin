@@ -98,13 +98,16 @@ registered as namespace rules instead, so the rest of the file keeps resolving.
 
 ```grammar
 // Import another grammar namespace
-mylang = @import("base");
+Base = @import("base");
 
-// Reference rules from imported namespace
-base_rule = mylang.identifier;
+// Reference exported rules from the imported namespace
+Base_Rule = Base.Identifier;
 ```
 
 ### Expressions
+
+These snippets show the forms rather than a working grammar, so nothing refers
+to them and `grammar check` would report each one as an unused local rule.
 
 ```grammar
 // String literals
@@ -133,17 +136,34 @@ external = __name__;
 pkg = @import("mylib");
 ```
 
+A binding whose namespace is never named is reported as unused.
+
 ## Commands
 
 ### `grammar check`
 
-Validate grammar files and report errors:
+Validate grammar files and report errors and warnings:
 
 ```bash
 grammar check path/to/file.grammar --file
 grammar check path/to/directory --package
 grammar check path/to/directory
 ```
+
+A rule or binding that nothing refers to is reported as a warning, not an
+error:
+
+```console
+$ grammar check main.grammar --file
+main.grammar:2:1: warning: unused local rule: helper
+$ echo $?
+0
+```
+
+Warnings are printed with a `warning:` prefix and never affect the exit code, so
+a leftover rule will not fail a build that only cares about correctness. Judge
+by the exit code, not by whether there was output. An unused proc parameter is
+still an error, since it usually means the rule body is wrong.
 
 ### `grammar fmt`
 
