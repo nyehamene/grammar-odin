@@ -127,7 +127,7 @@ handle_rename :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok: bo
 			if f == target.origin_file {
 				collect_binding_refs(f, target.name, true, uris, &refs)
 			}
-		case .Local_Rule:
+		case .Private_Rule:
 			if f == target.origin_file {
 				collect_rule_refs(f, "", target.name, true, uris, &refs, true)
 			}

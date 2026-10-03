@@ -113,7 +113,7 @@ symbol_hover :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, name: 
 			location_string(ref.file, ref.offset),
 		)
 	}
-	if r, is_local := fi.local_rules[name]; is_local {
+	if r, is_private := fi.private_rules[name]; is_private {
 		pos := token.position_at(fi.src, r.offset)
 		return fmt.tprintf(
 			"**`%s`**\n\n**type:** %s\n**declared at:** `%d:%d`",

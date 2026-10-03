@@ -31,7 +31,7 @@ load_source :: proc(cu: ^Compilation_Unit, abs: string, display: string, src: st
 	fi.file = file
 	fi.namespace_path = strings.clone(filepath.dir(abs))
 	fi.bindings = make(map[string]string)
-	fi.local_rules = make(map[string]Rule_Ref)
+	fi.private_rules = make(map[string]Rule_Ref)
 	fi.binding_offsets = make(map[string]int)
 
 	for e in lex_errors {

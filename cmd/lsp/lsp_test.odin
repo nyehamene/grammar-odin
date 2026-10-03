@@ -289,13 +289,13 @@ test_lsp_references :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(output, `"line":0,"character":14`))
 }
 
-// A local rule (`_name`) is only visible in the file that declares it, so
+// A private rule (`_name`) is only visible in the file that declares it, so
 // references, rename, hover and definition must all stay inside that file even
 // when a sibling file in the same namespace declares a rule with the same name.
 @(test)
-test_lsp_local_rule_is_file_scoped :: proc(t: ^testing.T) {
-	dir := ns_setup(t, "cmd/lsp/testdata/scratch/local_rule")
-	defer os.remove_all("cmd/lsp/testdata/scratch/local_rule")
+test_lsp_private_rule_is_file_scoped :: proc(t: ^testing.T) {
+	dir := ns_setup(t, "cmd/lsp/testdata/scratch/private_rule")
+	defer os.remove_all("cmd/lsp/testdata/scratch/private_rule")
 	defer delete(dir)
 
 	a_uri := strings.concatenate({"file://", dir, "/a.grammar"})
@@ -337,9 +337,9 @@ test_lsp_local_rule_is_file_scoped :: proc(t: ^testing.T) {
 		make_request(`2`, `textDocument/references`, a_refs),
 		// Go to definition on the same use.
 		make_request(`3`, `textDocument/definition`, a_use),
-		// Hover on the local rule declaration (line 0, character 0).
+		// Hover on the private rule declaration (line 0, character 0).
 		make_request(`4`, `textDocument/hover`, a_decl),
-		// Rename the local rule; only a.grammar may be edited.
+		// Rename the private rule; only a.grammar may be edited.
 		make_request(`5`, `textDocument/rename`, a_rename),
 		make_request(`6`, `shutdown`, `null`),
 	)
@@ -360,16 +360,16 @@ test_lsp_local_rule_is_file_scoped :: proc(t: ^testing.T) {
 	testing.expect(
 		t,
 		!strings.contains(refs, "/b.grammar"),
-		"a local rule must not pick up references from a sibling file",
+		"a private rule must not pick up references from a sibling file",
 	)
 
-	// Definition resolves to the local declaration in the declaring file.
+	// Definition resolves to the private declaration in the declaring file.
 	def := response_for(output, `3`)
 	testing.expect(t, strings.contains(def, "/a.grammar"))
 	testing.expect(t, strings.contains(def, `"line":0,"character":0`))
 
-	// Hover reports the local declaration as a bare line:column, which is what
-	// distinguishes a local rule from a namespace rule.
+	// Hover reports the private declaration as a bare line:column, which is what
+	// distinguishes a private rule from a namespace rule.
 	hover := response_for(output, `4`)
 	testing.expect(t, strings.contains(hover, "**`_item`**"))
 	testing.expect(t, strings.contains(hover, "**declared at:** `1:1`"))

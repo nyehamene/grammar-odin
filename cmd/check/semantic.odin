@@ -96,7 +96,7 @@ Loaded_File :: struct {
 	file:            ast.File,
 	namespace_path:  string, // absolute path of the containing directory, owned
 	bindings:        map[string]string, // binding name -> absolute directory of the imported namespace
-	local_rules:     map[string]Rule_Ref,
+	private_rules:     map[string]Rule_Ref,
 	binding_offsets: map[string]int, // binding name -> offset of the binding's name
 	broken:          bool, // file had lexical or syntax errors
 }
@@ -134,7 +134,7 @@ destroy_compilation_unit :: proc(cu: ^Compilation_Unit) {
 			delete(dir)
 		}
 		delete(f.bindings)
-		delete(f.local_rules)
+		delete(f.private_rules)
 		delete(f.binding_offsets)
 		free(f)
 	}
@@ -227,7 +227,7 @@ load :: proc(cu: ^Compilation_Unit, path: string) -> ^Loaded_File {
 	fi.file = file
 	fi.namespace_path = strings.clone(filepath.dir(abs))
 	fi.bindings = make(map[string]string)
-	fi.local_rules = make(map[string]Rule_Ref)
+	fi.private_rules = make(map[string]Rule_Ref)
 	fi.binding_offsets = make(map[string]int)
 
 	for e in lex_errors {
@@ -337,7 +337,7 @@ list_grammar_files :: proc(dir: string) -> [dynamic]string {
 
 // bind_all registers every rule in its file's namespace and reports duplicate
 // declarations. Names that collide within a single file (a rule and a binding,
-// or two bindings) are reported as well. Local rules (`_name`) are registered
+// or two bindings) are reported as well. Private rules (`_name`) are registered
 // in the declaring file instead of the namespace, so they never collide across
 // files.
 bind_all :: proc(cu: ^Compilation_Unit) {
@@ -350,14 +350,14 @@ bind_all :: proc(cu: ^Compilation_Unit) {
 		for decl in fi.file.decls {
 			#partial switch d in decl {
 			case ast.Rule_Decl:
-				if is_malformed_local_name(d.name.name) {
+				if is_malformed_private_name(d.name.name) {
 					add_error(
 						cu,
 						fi.display,
 						fi.src,
 						d.name.pos,
 						fmt.tprintf(
-							"malformed local rule name %s. a local rule name is an underscore followed by a letter, as in _helper",
+							"malformed private rule name %s. a private rule name is an underscore followed by a letter, as in _helper",
 							d.name.name,
 						),
 					)
@@ -387,8 +387,8 @@ bind_all :: proc(cu: ^Compilation_Unit) {
 						rule.type = .Proc
 					}
 
-					if is_local_rule(d.name.name) {
-						fi.local_rules[d.name.name] = rule
+					if is_private_rule(d.name.name) {
+						fi.private_rules[d.name.name] = rule
 					} else {
 						ns.rules[d.name.name] = rule
 					}
@@ -763,8 +763,8 @@ is_binding :: proc(fi: ^Loaded_File, name: string) -> bool {
 }
 
 resolve_rule :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, name: string) -> (Rule_Ref, bool) {
-	if l_rule, ok := fi.local_rules[name]; ok {
-		return l_rule, true
+	if priv_rule, ok := fi.private_rules[name]; ok {
+		return priv_rule, true
 	}
 	ns := cu.namespaces[fi.namespace_path]
 	if ns == nil do return {}, false
@@ -871,10 +871,10 @@ unquote :: proc(s: string) -> string {
 	return s
 }
 
-// is_local_rule reports whether name declares a file-local rule: an underscore
+// is_private_rule reports whether name declares a private rule: an underscore
 // followed by a letter, as in `_helper`. Such a rule is visible only inside the
 // file that declares it.
-is_local_rule :: proc(name: string) -> bool {
+is_private_rule :: proc(name: string) -> bool {
 	if len(name) < 2 {
 		return false
 	}
@@ -884,14 +884,14 @@ is_local_rule :: proc(name: string) -> bool {
 	return is_alpha_byte(name[1])
 }
 
-// is_malformed_local_name reports whether name starts like a local rule name but
-// is not one: a bare `_`, a name whose second character is not a letter, or a
-// double-underscore name, which is reserved for `__extern__` values.
-is_malformed_local_name :: proc(name: string) -> bool {
+// is_malformed_private_name reports whether name starts like a private rule name
+// but is not one: a bare `_`, a name whose second character is not a letter, or
+// a double-underscore name, which is reserved for `__extern__` values.
+is_malformed_private_name :: proc(name: string) -> bool {
 	if len(name) == 0 || name[0] != '_' {
 		return false
 	}
-	return !is_local_rule(name)
+	return !is_private_rule(name)
 }
 
 is_alpha_byte :: proc(ch: byte) -> bool {

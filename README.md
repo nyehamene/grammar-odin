@@ -54,37 +54,45 @@ A grammar file (`.grammar`) defines language syntax using rules and bindings.
 
 ```grammar
 // A rule defines a named production
-greeting = "Hello" | "Hi";
+Greeting = "Hello" | "Hi";
 
 // Rules can reference other rules
-full_greeting = greeting " World";
+Full_Greeting = Greeting " World";
 
 // A rule can have parameters
-greet name title = "hello" name title;
+Greet name title = "hello" name title;
 
 // Pass arguments to a rule
-person = "John";
-fancy_greeting = <greet person "Mr">;
+Person = "John";
+Fancy_Greeting = <Greet Person "Mr">;
 ```
 
-### Local Rules
+### Rule Visibility
 
-A rule whose name is an underscore followed by a letter is private to the file
-that declares it. It is never added to the namespace, so two files in the same
-namespace may each declare their own `_helper`, and neither can see the other's.
+A rule's first letter decides how far it is visible.
+
+| Name | Kind | Visible in |
+| --- | --- | --- |
+| `Greeting` | exported | its own namespace, and any namespace that imports it |
+| `greeting` | local | every file of its own namespace |
+| `_helper` | private | only the file that declares it |
 
 ```grammar
-// A local rule: an underscore followed by a letter.
+// A private rule: an underscore followed by a letter.
 _helper = "hello";
 
-// Local rules are used like any other rule, but only inside this file.
-greeting = _helper "!";
+// Private rules are used like any other rule, but only inside this file.
+Greeting = _helper "!";
 ```
 
-Names are not migrated: a rule named `helper` (no leading underscore) is an
-ordinary namespace rule, shared across every file in the namespace. `_`, `_1x`
-and `__x` are reported as malformed local rule names; they are registered as
-namespace rules instead, so the rest of the file keeps resolving.
+A private rule is never added to the namespace, so two files in the same
+namespace may each declare their own `_helper`, and neither can see the other's.
+
+Only an exported rule is reachable through an import: `mylang.helper` is an
+error when `helper` is declared with a lowercase name or an underscore.
+
+`_`, `_1x` and `__x` are reported as malformed private rule names; they are
+registered as namespace rules instead, so the rest of the file keeps resolving.
 
 ### Bindings (Imports)
 

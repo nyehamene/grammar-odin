@@ -71,7 +71,7 @@ handle_document_highlight :: proc(srv: ^Server, id: Request_Id, obj: json.Object
 		collect_rule_refs(fi, target.ns_dir, target.name, true, uris, &refs)
 	case .Binding:
 		collect_binding_refs(fi, target.name, true, uris, &refs)
-	case .Local_Rule:
+	case .Private_Rule:
 		collect_rule_refs(fi, target.ns_dir, target.name, true, uris, &refs, true)
 	case .Param:
 		collect_param_refs(fi, target.decl, target.name, true, uris, &refs)

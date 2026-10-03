@@ -305,7 +305,7 @@ resolve_named :: proc(
 	return name, {}, false
 }
 
-// resolve_rule_ref finds the rule name in the file's local rules or namespace.
+// resolve_rule_ref finds the rule name in the file's private rules or namespace.
 resolve_rule_ref :: proc(
 	cu: ^check.Compilation_Unit,
 	fi: ^check.Loaded_File,
@@ -314,8 +314,8 @@ resolve_rule_ref :: proc(
 	check.Rule_Ref,
 	bool,
 ) {
-	if l_rule, ok := fi.local_rules[name]; ok {
-		return l_rule, true
+	if priv_rule, ok := fi.private_rules[name]; ok {
+		return priv_rule, true
 	}
 	ns := cu.namespaces[fi.namespace_path]
 	if ns == nil {

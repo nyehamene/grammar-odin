@@ -144,12 +144,12 @@ test_undefined_identifier :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_local_rule_visible_only_in_its_file :: proc(t: ^testing.T) {
-	// `_axe` is a local rule declared in a.grammar; b.grammar in the same
+test_private_rule_visible_only_in_its_file :: proc(t: ^testing.T) {
+	// `_axe` is a private rule declared in a.grammar; b.grammar in the same
 	// namespace cannot see it.
 	files := []Mem_File {
-		test_src(t, "locals", "a.grammar", "_axe = \"x\";\n"),
-		test_src(t, "locals", "b.grammar", "use = _axe;\n"),
+		test_src(t, "privates", "a.grammar", "_axe = \"x\";\n"),
+		test_src(t, "privates", "b.grammar", "use = _axe;\n"),
 	}
 	msgs := run_semantics(files)
 	assert_messages(t, msgs, {"b.grammar:1:7: undefined identifier: _axe"})
@@ -157,8 +157,8 @@ test_local_rule_visible_only_in_its_file :: proc(t: ^testing.T) {
 
 @(test)
 test_lowercase_rule_is_shared_across_files :: proc(t: ^testing.T) {
-	// Only an underscore prefix makes a rule local; a lowercase name is an
-	// ordinary namespace rule and is visible in sibling files.
+	// Only an underscore prefix makes a rule private; a lowercase name declares
+	// a local rule, which is shared across the files of its namespace.
 	files := []Mem_File {
 		test_src(t, "shared", "a.grammar", "expr = \"x\";\n"),
 		test_src(t, "shared", "b.grammar", "use = expr;\n"),
@@ -167,8 +167,8 @@ test_lowercase_rule_is_shared_across_files :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_local_rules_do_not_collide_across_files :: proc(t: ^testing.T) {
-	// Two files may each declare a local rule with the same name.
+test_private_rules_do_not_collide_across_files :: proc(t: ^testing.T) {
+	// Two files may each declare a private rule with the same name.
 	files := []Mem_File {
 		test_src(t, "collide", "a.grammar", "_item = \"a\";\n"),
 		test_src(t, "collide", "b.grammar", "_item = \"b\";\n"),
@@ -177,21 +177,21 @@ test_local_rules_do_not_collide_across_files :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_malformed_local_rule_names :: proc(t: ^testing.T) {
+test_malformed_private_rule_names :: proc(t: ^testing.T) {
 	// A bare `_` and a name whose second character is not a letter are both
-	// rejected. `__c` is no longer malformed-local territory: a "__" prefix
+	// rejected. `__c` is no longer malformed-private territory: a "__" prefix
 	// followed by a letter scans as an external, so it cannot name a rule at
 	// all. The malformed rule is still registered in the namespace so the rest
 	// of the file keeps resolving.
 	src := "_ = \"a\";\n_1b = \"b\";\n__1c = \"c\";\nd = _;\n"
-	msgs := run_semantics([]Mem_File{test_src(t, "badlocal", "main.grammar", src)})
+	msgs := run_semantics([]Mem_File{test_src(t, "badprivate", "main.grammar", src)})
 	assert_messages(
 		t,
 		msgs,
 		{
-			"main.grammar:1:1: malformed local rule name _. a local rule name is an underscore followed by a letter, as in _helper",
-			"main.grammar:2:1: malformed local rule name _1b. a local rule name is an underscore followed by a letter, as in _helper",
-			"main.grammar:3:1: malformed local rule name __1c. a local rule name is an underscore followed by a letter, as in _helper",
+			"main.grammar:1:1: malformed private rule name _. a private rule name is an underscore followed by a letter, as in _helper",
+			"main.grammar:2:1: malformed private rule name _1b. a private rule name is an underscore followed by a letter, as in _helper",
+			"main.grammar:3:1: malformed private rule name __1c. a private rule name is an underscore followed by a letter, as in _helper",
 		},
 	)
 }

@@ -91,7 +91,7 @@ definition_for :: proc(
 				target_offset = off
 				name_len = len(hit.ident.name)
 			}
-		} else if r, is_local := fi.local_rules[hit.ident.name]; is_local {
+		} else if r, is_private := fi.private_rules[hit.ident.name]; is_private {
 			target = fi
 			target_offset = r.offset
 			name_len = len(hit.ident.name)

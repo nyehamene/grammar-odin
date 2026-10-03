@@ -4,9 +4,12 @@ declaration       = binding | Rule ;
 binding           = ident "=" "@import" "(" string ")" ";";
 Rule              = ident "=" production ";";
 
-// A Rule whose ident is "_" followed by a letter is local to the file that
-// declares it. Locality is a semantic rule, not a syntactic one, so a local
-// Rule is spelled exactly like any other Rule here.
+// A Rule whose ident starts with an uppercase letter is exported and reachable
+// from an importing namespace. A lowercase ident declares a local Rule, shared
+// by every file of its own namespace. An ident that is "_" followed by a letter
+// is a private Rule, visible only in the file that declares it. Visibility is a
+// semantic rule, not a syntactic one, so each kind is spelled exactly like any
+// other Rule here.
 
 production  = sequence | alternative;
 alternative = sequence { "|" production };
