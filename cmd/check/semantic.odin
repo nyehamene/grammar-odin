@@ -64,13 +64,22 @@ Operand_ns :: proc(o: ^Operand, pos: int, name := "") {
 	o.name = name
 }
 
+// Severity classifies how urgent a diagnostic is. Only errors make `grammar
+// check` exit non-zero; a warning is advisory and never changes the exit
+// status.
+Severity :: enum {
+	Error,
+	Warning,
+}
+
 // Semantic_Error is a single diagnostic reported by the checker.
 Semantic_Error :: struct {
-	path:    string, // display path, owned
-	offset:  int, // source offset of the diagnostic
-	line:    int,
-	col:     int,
-	message: string, // owned
+	path:     string, // display path, owned
+	offset:   int, // source offset of the diagnostic
+	line:     int,
+	col:      int,
+	severity: Severity,
+	message:  string, // owned
 }
 
 // Rule_Ref identifies the first declaration of a rule in a namespace.
@@ -166,8 +175,9 @@ destroy_compilation_unit :: proc(cu: ^Compilation_Unit) {
 
 // check loads path (or, for a directory, every grammar file in it) along with
 // all imported namespaces into a compilation unit, resolves names and checks
-// types, then reports every diagnostic to stderr. It returns 0 when nothing
-// was wrong and a non-zero value otherwise.
+// types, then reports every diagnostic to stderr. Warnings are printed with a
+// `warning: ` prefix and do not affect the exit status, which is non-zero only
+// when at least one error was found.
 check :: proc(path: string, mode: Mode, stderr: io.Writer) -> int {
 	cu := new_compilation_unit()
 	defer destroy_compilation_unit(&cu)
@@ -188,10 +198,17 @@ check :: proc(path: string, mode: Mode, stderr: io.Writer) -> int {
 	sort.quick_sort_proc(cu.errors[:], cmp_errors)
 
 	for e in cu.errors {
+		if e.severity == .Warning {
+			io.write_string(
+				stderr,
+				fmt.tprintf("%s:%d:%d: warning: %s\n", e.path, e.line, e.col, e.message),
+			)
+			continue
+		}
 		io.write_string(stderr, fmt.tprintf("%s:%d:%d: %s\n", e.path, e.line, e.col, e.message))
 	}
 
-	if len(cu.errors) > 0 {
+	if has_errors(&cu) {
 		return 1
 	}
 	return 0
@@ -815,10 +832,36 @@ cmp_errors :: proc(a, b: Semantic_Error) -> int {
 	return 0
 }
 
-// add_error appends a diagnostic located at offset within src. Both the path
+// add_error appends an error diagnostic located at offset within src. The path
 // and the message are cloned onto the heap so the unit can free them.
 add_error :: proc(
 	cu: ^Compilation_Unit,
+	display_path: string,
+	src: string,
+	offset: int,
+	message: string,
+) {
+	add_diag(cu, .Error, display_path, src, offset, message)
+}
+
+// add_warning appends a warning diagnostic located at offset within src.
+// Warnings are advisory: they are reported like errors but never make a check
+// run fail.
+add_warning :: proc(
+	cu: ^Compilation_Unit,
+	display_path: string,
+	src: string,
+	offset: int,
+	message: string,
+) {
+	add_diag(cu, .Warning, display_path, src, offset, message)
+}
+
+// add_diag appends a diagnostic of the given severity located at offset within
+// src.
+add_diag :: proc(
+	cu: ^Compilation_Unit,
+	severity: Severity,
 	display_path: string,
 	src: string,
 	offset: int,
@@ -832,13 +875,23 @@ add_error :: proc(
 	append(
 		&cu.errors,
 		Semantic_Error {
-			path = strings.clone(display_path),
-			offset = offset,
-			line = line,
-			col = col,
-			message = strings.clone(message),
+			path     = strings.clone(display_path),
+			offset   = offset,
+			line     = line,
+			col      = col,
+			severity = severity,
+			message  = strings.clone(message),
 		},
 	)
+}
+
+// has_errors reports whether the unit holds at least one diagnostic of severity
+// .Error.
+has_errors :: proc(cu: ^Compilation_Unit) -> bool {
+	for e in cu.errors {
+		if e.severity == .Error do return true
+	}
+	return false
 }
 
 // abs_path returns the cleaned absolute form of path.

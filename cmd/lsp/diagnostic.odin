@@ -155,7 +155,7 @@ file_diagnostics :: proc(
 		}
 		diags[index] = Diagnostic {
 			range    = Range{start = start, end = end},
-			severity = 1, // Error
+			severity = severity_code(e.severity),
 			source   = "grammar",
 			message  = clone_string(&srv.arena, e.message),
 		}
@@ -163,6 +163,12 @@ file_diagnostics :: proc(
 	}
 
 	return diags
+}
+
+// severity_code maps a checker severity to the LSP DiagnosticSeverity value the
+// protocol defines: 1 = Error, 2 = Warning.
+severity_code :: proc(severity: check.Severity) -> int {
+	return 2 if severity == .Warning else 1
 }
 
 // publish_diagnostics sends the textDocument/publishDiagnostics notification.
