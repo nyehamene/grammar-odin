@@ -133,6 +133,37 @@ test_blank_lines_preserved :: proc(t: ^testing.T) {
 	check_format(t, "a = \"a\";\n\nb = \"b\";\n", "a = \"a\";\n\nb = \"b\";\n")
 }
 
+// Rule 6: within a group the name of every rule starts on the same column, and
+// so does each of its parameters, so the parameters line up in a column.
+@(test)
+test_rule6_param_alignment :: proc(t: ^testing.T) {
+	src := "foo x y = x y;\nf x = x;\n\nbar xx y = xx y;\nb x y = x y;\n"
+	want := "foo x y = x y;\nf   x   = x;\n\nbar xx y = xx y;\nb   x  y = x y;\n"
+	check_format(t, src, want)
+
+	// A rule with no parameters still has its name aligned, and a rule with more
+	// parameters than its neighbour widens the column for the whole group.
+	src2 := "a x = a;\nbb y z = b;\n"
+	want2 := "a  x   = a;\nbb y z = b;\n"
+	check_format(t, src2, want2)
+
+	// A single rule in a group pads nothing, so it comes back unchanged.
+	check_format(t, "solo x y = x;\n", "solo x y = x;\n")
+}
+
+// Rule 6 is scoped by the group, so a blank line at the default threshold ends
+// the alignment just like it ends the value separator column.
+@(test)
+test_rule6_respects_group_boundary :: proc(t: ^testing.T) {
+	src := "foo x y = x y;\n\nbar x = x;\n"
+	// The blank ends the group, so `bar` aligns against itself alone.
+	check_format(t, src, src)
+
+	// With a threshold of 2 the single blank is interior, so the two rules share
+	// one group and `bar` pads its missing second parameter out to match `foo`.
+	check_format_sep(t, src, "foo x y = x y;\n\nbar x   = x;\n", 2)
+}
+
 @(test)
 test_combined_rule1_and_rule4 :: proc(t: ^testing.T) {
 	src := "x = \"one\";\nxxxx = \"one\"\n  | \"two\"\n  | \"three\"\n  ;\nxx = \"two\";\n"
@@ -236,6 +267,27 @@ test_comment_lines_kept_verbatim :: proc(t: ^testing.T) {
 	check_format(t, src2, want2)
 }
 
+// A comment inside a rule body is trivia to the parser, so the formatter must
+// accept it and keep it on the line it was written on, aligned like any other
+// trailing comment.
+@(test)
+test_comments_inside_rule_body :: proc(t: ^testing.T) {
+	src := "rule1 = a // comment\n      | b // comment\n      ;\n"
+	want := "rule1 = a // comment\n      | b // comment\n      ;\n"
+	check_format(t, src, want)
+
+	// A trailing comment does not turn the rule terminator into a continuation
+	// line: `;`, `|` and `=` stay on one column (rules 4 and 5).
+	src2 := "choice = one // one\n   two // two\n   | three // three\n   ; // done\n"
+	want2 := "choice = one // one\n         two // two\n       | three // three\n       ; // done\n"
+	check_format(t, src2, want2)
+
+	// A comment inside a grouping symbol or a call argument list is kept too.
+	src3 := "g = ( a // one\n   b );\nq = <f a // two\n   b>;\n"
+	want3 := "g = ( a // one\n    b );\nq = <f a // two\n    b>;\n"
+	check_format(t, src3, want3)
+}
+
 @(test)
 test_empty_input :: proc(t: ^testing.T) {
 	check_format(t, "", "")
@@ -254,6 +306,10 @@ test_idempotent :: proc(t: ^testing.T) {
 		"x = \"one\";\nxxxx = \"one\"\n  | \"two\"\n  | \"three\";\nxx = \"two\";\n",
 		"/// @var\ndocument = @import(\"document.grammar\");\ncomponent = @import(\"component.grammar\");\n\n/// @ast\nSource = DocumentNamespace | ComponentNamespace;\n",
 		"choice = one\n   | two\n   | three\n   ;\n",
+		"rule1 = a // comment\n      | b // comment\n      ;\n",
+		"choice = one // one\n   | two // two\n   ; // done\n",
+		"foo x y = x y;\nf x = x;\n\nbar xx y = xx y;\nb x y = x y;\n",
+		"a = \"a\";\nfoo = a `name=\"a\"; other=\"b\"`;\nbar = a b `n = \"1\"`;\nbaz = ( a ) `n=\"2\"`;\n",
 	}
 	for src_ in inputs {
 		once := format_ok(t, src_)
@@ -262,6 +318,40 @@ test_idempotent :: proc(t: ^testing.T) {
 		defer delete(twice)
 		testing.expect(t, once == twice, "formatting must be idempotent")
 	}
+}
+
+// A tag is rewritten in one canonical spelling: no space around `=`, one space
+// after each `;`, and the string values keep their quotes.
+@(test)
+test_tag_is_written_canonically :: proc(t: ^testing.T) {
+	check_format(t, "foo = x `name = \"a\"`;\n", "foo = x `name=\"a\"`;\n")
+	check_format(
+		t,
+		"foo = x `name=\"a\";other=\"b\"`;\n",
+		"foo = x `name=\"a\"; other=\"b\"`;\n",
+	)
+	check_format(
+		t,
+		"foo = x `  name=\"a\"  ;  other  =  \"b\"  `;\n",
+		"foo = x `name=\"a\"; other=\"b\"`;\n",
+	)
+}
+
+// The value is a string literal, so a `;` or a quote inside it is not a
+// separator and survives untouched.
+@(test)
+test_tag_value_keeps_separators_inside_it :: proc(t: ^testing.T) {
+	check_format(
+		t,
+		"foo = x `note=\"a; b\"; other=\"q\\\"r\"`;\n",
+		"foo = x `note=\"a; b\"; other=\"q\\\"r\"`;\n",
+	)
+}
+
+@(test)
+test_tag_on_a_group_is_written_outside_it :: proc(t: ^testing.T) {
+	check_format(t, "foo = ( x ) `name=\"a\"`;\n", "foo = ( x ) `name=\"a\"`;\n")
+	check_format(t, "foo = [ x ] { y } `name=\"a\"`;\n", "foo = [ x ] { y } `name=\"a\"`;\n")
 }
 
 @(test)

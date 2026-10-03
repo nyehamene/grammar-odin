@@ -136,6 +136,122 @@ test_scan_import_directive :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_scan_tag :: proc(t: ^testing.T) {
+	src := "x = a `name=\"value\"`;"
+	tokens, errors := scan(src)
+	defer delete(tokens)
+	defer delete(errors)
+
+	expect_kinds(t, tokens[:], []Kind{.Ident, .Equal, .Ident, .Tag, .Semicolon, .EOF})
+	testing.expect(t, len(errors) == 0, "no errors expected")
+	testing.expect(t, lexeme(tokens[3], src) == "`name=\"value\"`", "the whole tag is one token")
+}
+
+// A tag may carry several `name="value"` pairs, separated by semicolons.
+@(test)
+test_scan_tag_with_several_pairs :: proc(t: ^testing.T) {
+	src := "x = a `name=\"a\"; other=\"100\"`;"
+	tokens, errors := scan(src)
+	defer delete(tokens)
+	defer delete(errors)
+
+	expect_kinds(t, tokens[:], []Kind{.Ident, .Equal, .Ident, .Tag, .Semicolon, .EOF})
+	testing.expect(t, len(errors) == 0, "no errors expected")
+	testing.expect(
+		t,
+		lexeme(tokens[3], src) == "`name=\"a\"; other=\"100\"`",
+		"the whole tag is one token",
+	)
+
+	pairs, ok := parse_tag("name=\"a\"; other=\"100\"")
+	defer delete(pairs)
+	testing.expect(t, ok, "tag body should split into pairs")
+	testing.expect(t, len(pairs) == 2, "expected two pairs")
+	testing.expect(t, pairs[0].name == "name", "wrong first name")
+	testing.expect(t, pairs[0].value == `"a"`, "wrong first value")
+	testing.expect(t, pairs[1].name == "other", "wrong second name")
+	testing.expect(t, pairs[1].value == `"100"`, "wrong second value")
+}
+
+// Spaces around `=` and after `;` are accepted, and a value may hold anything a
+// string literal may, including a `;` and a quote.
+@(test)
+test_parse_tag_accepts_spaces_and_separators_in_values :: proc(t: ^testing.T) {
+	src := "x = a ` name = \"a; b\" ; other = \"q\\\"r\" `;"
+	tokens, errors := scan(src)
+	defer delete(tokens)
+	defer delete(errors)
+
+	expect_kinds(t, tokens[:], []Kind{.Ident, .Equal, .Ident, .Tag, .Semicolon, .EOF})
+	testing.expect(t, len(errors) == 0, "no errors expected")
+
+	pairs, ok := parse_tag(lexeme(tokens[3], src)[1:len(lexeme(tokens[3], src)) - 1])
+	defer delete(pairs)
+	testing.expect(t, ok, "tag body should split into pairs")
+	testing.expect(t, len(pairs) == 2, "expected two pairs")
+	testing.expect(t, pairs[0].value == `"a; b"`, "a `;` inside a value is not a separator")
+	testing.expect(t, pairs[1].value == `"q\"r"`, "an escaped quote ends the value")
+}
+
+@(test)
+test_scan_malformed_tag :: proc(t: ^testing.T) {
+	// A tag must hold at least one `name="value"` pair, and only that.
+	bad := []string{
+		"x = a ``;",
+		"x = a `name`;",
+		"x = a `name=`;",
+		"x = a `= \"v\"`;",
+		"x = a `name = 1`;",
+		"x = a `name=\"a\";`;",
+		"x = a `name=\"a\"; other`;",
+		"x = a `name=\"a\" other=\"b\"`;",
+	}
+	for src in bad {
+		expect_malformed_tag(t, src)
+	}
+}
+
+// expect_malformed_tag asserts that src holds exactly one malformed tag, and
+// that the tag is still scanned as a single token so the parser keeps its place.
+expect_malformed_tag :: proc(t: ^testing.T, src: string) {
+	tokens, errors := scan(src)
+	defer delete(tokens)
+	defer delete(errors)
+
+	testing.expect(t, len(errors) == 1, src)
+	testing.expect(t, errors[0].message == "invalid tag literal", src)
+	testing.expect(t, tokens[3].kind == .Tag, "a malformed tag is still a Tag token")
+}
+
+@(test)
+test_scan_unterminated_tag :: proc(t: ^testing.T) {
+	tokens, errors := scan("x = a `name=\"a\"")
+	defer delete(tokens)
+	defer delete(errors)
+
+	testing.expect(t, len(errors) == 1, "expected one error")
+	testing.expect(t, errors[0].message == "unterminated tag literal", "wrong error message")
+	testing.expect(t, tokens[3].kind == .Tag, "an unterminated tag is still a Tag token")
+}
+
+// Like the other literals a tag may not span a line: the formatter buckets
+// tokens by the line they start on.
+@(test)
+test_scan_tag_may_not_span_a_newline :: proc(t: ^testing.T) {
+	tokens, errors := scan("x = a `name=\"a\"\nother=b;")
+	defer delete(tokens)
+	defer delete(errors)
+
+	expect_kinds(
+		t,
+		tokens[:],
+		[]Kind{.Ident, .Equal, .Ident, .Tag, .Ident, .Equal, .Ident, .Semicolon, .EOF},
+	)
+	testing.expect(t, len(errors) == 1, "expected one error")
+	testing.expect(t, errors[0].message == "unterminated tag literal", "wrong error message")
+}
+
+@(test)
 test_scan_unsupported_number_is_illegal :: proc(t: ^testing.T) {
 	tokens, errors := scan(`x = "1"; y = 42;`)
 	defer delete(tokens)

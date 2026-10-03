@@ -7,11 +7,12 @@ import "../token"
 
 // Parser is a recursive descent parser over a tokenized grammar source.
 Parser :: struct {
-	src:        string,
-	tokens:     []token.Token,
-	pos:        int,
-	errors:     [dynamic]Error,
-	recovering: bool,
+	src:           string,
+	tokens:        []token.Token,
+	pos:           int,
+	errors:        [dynamic]Error,
+	recovering:    bool,
+	skip_comments: bool,
 }
 
 // parse_file parses the tokenized source into a File. Syntax diagnostics are
@@ -51,6 +52,15 @@ parse_decl :: proc(p: ^Parser) -> (Decl, bool) {
 	err_count := len(p.errors)
 
 	name := expect(p, .Ident)
+
+	// From here to the end of the declaration a comment is trivia: it may sit
+	// between the parameters, inside the body, or between any two tokens of it.
+	// The flag is restored on the way out so the next declaration can still see
+	// a comment that introduces it.
+	outer_skip := p.skip_comments
+	p.skip_comments = true
+	defer p.skip_comments = outer_skip
+
 	params := make([dynamic]Ident)
 	defer delete(params)
 	for peek(p).kind == .Ident {
@@ -146,8 +156,22 @@ parse_production :: proc(p: ^Parser) -> Expr {
 	return expr
 }
 
-// parse_sequence parses `basic { basic }`.
+// parse_sequence parses `basic { basic } [ tag ]`. A tag annotates the production
+// it follows rather than standing on its own, so it wraps the whole sequence: in
+// `a b c `name="value"`` the annotated production is `a b c`, not `c` alone. A
+// sequence that carries on after a tag rejects it, since a tag must be the last
+// element of its production or alternative, and a production carries one tag at
+// most.
 parse_sequence :: proc(p: ^Parser) -> Expr {
+	// A tag annotates what came before it, so a production may not start with
+	// one: `foo = `name="value"`;` would name no production at all.
+	if peek(p).kind == .Tag {
+		t := next(p)
+		delete(parse_tag_pairs(p, t))
+		error_at(p, t.start, "a tag must annotate a production element")
+		return Ident{}
+	}
+
 	first := parse_basic(p)
 
 	if is_sequence_end(peek(p)) {
@@ -156,15 +180,104 @@ parse_sequence :: proc(p: ^Parser) -> Expr {
 
 	terms := make([dynamic]Expr)
 	append(&terms, first)
+	tag_seen := false
 	for !is_sequence_end(peek(p)) {
+		if peek(p).kind == .Tag {
+			t := next(p)
+			pairs := parse_tag_pairs(p, t)
+			if tag_seen {
+				// The production is already annotated, so a second tag has
+				// nothing left to annotate. Drop it and keep the first one.
+				delete(pairs)
+				error_at(p, t.start, "a production may carry only one tag")
+				continue
+			}
+			tag_seen = true
+			// Everything parsed so far becomes the annotated production, so a tag
+			// over `a b c` wraps the sequence and not just its last element.
+			annotated := sequence_or_single(terms)
+			terms = make([dynamic]Expr)
+			append(
+				&terms,
+				Tagged_Expr {
+					expr = alloc_expr(annotated),
+					tag  = pairs,
+					pos  = expr_pos(annotated),
+				},
+			)
+			// A further tag is reported on its own above, so only an element
+			// here is the tag standing in the wrong place.
+			if peek(p).kind != .Tag && !is_sequence_end(peek(p)) {
+				error_at(p, t.start, "a tag must be the last element in a production")
+			}
+			continue
+		}
 		append(&terms, parse_basic(p))
 	}
 
+	return sequence_or_single(terms)
+}
+
+// sequence_or_single turns the elements collected for a sequence into the
+// production they describe: a single element stands alone, several make a
+// Sequence_Expr. The list is handed over to the result rather than copied, and
+// freed when there is nothing to keep.
+sequence_or_single :: proc(terms: [dynamic]Expr) -> Expr {
 	if len(terms) == 1 {
+		only := terms[0]
 		delete(terms)
-		return first
+		return only
 	}
-	return Sequence_Expr{exprs = terms, pos = expr_pos(first)}
+	return Sequence_Expr{exprs = terms, pos = expr_pos(terms[0])}
+}
+
+// parse_tag_pairs splits the scanned tag into its pairs, one per `name="value"`
+// entry. The tokenizer has already reported a malformed tag, so a body it
+// rejected yields no pairs here rather than a second diagnostic for the same
+// offset. The returned list is owned by the caller.
+parse_tag_pairs :: proc(p: ^Parser, t: token.Token) -> [dynamic]Tag_Pair {
+	lex := token.lexeme(t, p.src)
+	// Strip the backticks: the first opens the tag and the last closes it.
+	scanned, ok := token.parse_tag(lex[1:len(lex) - 1])
+	defer delete(scanned)
+
+	pairs := make([dynamic]Tag_Pair, 0, len(scanned))
+	if !ok {
+		return pairs
+	}
+	for pair in scanned {
+		// The opening backtick sits between the token start and the body.
+		pos := t.start + 1 + pair.pos
+		append(
+			&pairs,
+			Tag_Pair {
+				name  = Ident{pos = pos, name = pair.name},
+				value = String_Lit{pos = pos, value = pair.value},
+				pos   = pos,
+			},
+		)
+	}
+	return pairs
+}
+
+// trailing_tag_pos returns the offset of the tag that closes expr when expr is a
+// production annotated by one, and reports false otherwise. It descends into a
+// sequence or an alternative so it finds the tag of a nested production, which is
+// how a tag written inside a group, a repetition or an optional is found.
+trailing_tag_pos :: proc(expr: Expr) -> (int, bool) {
+	#partial switch v in expr {
+	case Tagged_Expr:
+		if len(v.tag) > 0 do return v.tag[0].pos, true
+	case Sequence_Expr:
+		if len(v.exprs) > 0 {
+			return trailing_tag_pos(v.exprs[len(v.exprs) - 1])
+		}
+	case Alternative_Expr:
+		if len(v.exprs) > 0 {
+			return trailing_tag_pos(v.exprs[len(v.exprs) - 1])
+		}
+	}
+	return 0, false
 }
 
 is_sequence_end :: proc(t: token.Token) -> bool {
@@ -210,6 +323,13 @@ parse_basic :: proc(p: ^Parser) -> Expr {
 		return parse_repetition(p)
 	case .LParen:
 		return parse_group(p)
+	case .Tag:
+		// parse_sequence consumes a tag and attaches it to the element before it,
+		// so reaching one here means it annotates nothing.
+		t := next(p)
+		delete(parse_tag_pairs(p, t))
+		error_at(p, t.start, "a tag must annotate a production element")
+		return Ident{}
 	case:
 		t := next(p)
 		error_at(p, t.start, fmt.tprintf("unexpected token %s", token.kind_name(t.kind)))
@@ -275,6 +395,12 @@ parse_call :: proc(p: ^Parser) -> Expr {
 			error_at(p, lt.start, "unterminated rule call")
 			break
 		}
+		if peek(p).kind == .Tag {
+			t := next(p)
+			delete(parse_tag_pairs(p, t))
+			error_at(p, t.start, "a tag may not appear inside a group, repetition, optional or call")
+			continue
+		}
 		append(&args, parse_basic(p))
 	}
 	expect(p, .Gt)
@@ -290,6 +416,7 @@ parse_call :: proc(p: ^Parser) -> Expr {
 parse_optional :: proc(p: ^Parser) -> Expr {
 	start := expect(p, .LBrack)
 	inner := parse_production(p)
+	reject_inner_tag(p, inner)
 	expect(p, .RBrack)
 	return Optional_Expr{exprs = unpack_sequence(inner), pos = start.start}
 }
@@ -298,6 +425,7 @@ parse_optional :: proc(p: ^Parser) -> Expr {
 parse_repetition :: proc(p: ^Parser) -> Expr {
 	start := expect(p, .LBrace)
 	inner := parse_production(p)
+	reject_inner_tag(p, inner)
 	expect(p, .RBrace)
 	return Repetition_Expr{exprs = unpack_sequence(inner), pos = start.start}
 }
@@ -306,8 +434,19 @@ parse_repetition :: proc(p: ^Parser) -> Expr {
 parse_group :: proc(p: ^Parser) -> Expr {
 	start := expect(p, .LParen)
 	inner := parse_production(p)
+	reject_inner_tag(p, inner)
 	expect(p, .RParen)
 	return Group_Expr{exprs = unpack_sequence(inner), pos = start.start}
+}
+
+// reject_inner_tag reports a tag found at the end of a production nested inside
+// a grouping symbol or a call. A tag annotates the last element of a production
+// or an alternative, and an element inside one of these is neither, so
+// `( a x `name="value"` )` must be written `( a x ) `name="value"``.
+reject_inner_tag :: proc(p: ^Parser, inner: Expr) {
+	if pos, tagged := trailing_tag_pos(inner); tagged {
+		error_at(p, pos, "a tag may not appear inside a group, repetition, optional or call")
+	}
 }
 
 // unpack_sequence converts a production into a list of expressions. If the
@@ -322,12 +461,25 @@ unpack_sequence :: proc(expr: Expr) -> [dynamic]Expr {
 	return list
 }
 
+// skip_trivia advances past the comment tokens that stand in for whitespace.
+// Comments are trivia only inside a declaration: at the top level a comment is a
+// declaration of its own, so the skip stays off until parse_decl has consumed a
+// name.
+skip_trivia :: proc(p: ^Parser) {
+	if !p.skip_comments do return
+	for p.pos < len(p.tokens) && p.tokens[p.pos].kind == .Comment {
+		p.pos += 1
+	}
+}
+
 peek :: proc(p: ^Parser) -> token.Token {
+	skip_trivia(p)
 	if p.pos >= len(p.tokens) do return p.tokens[len(p.tokens) - 1]
 	return p.tokens[p.pos]
 }
 
 next :: proc(p: ^Parser) -> token.Token {
+	skip_trivia(p)
 	if p.pos >= len(p.tokens) do return p.tokens[len(p.tokens) - 1]
 	t := p.tokens[p.pos]
 	p.pos += 1

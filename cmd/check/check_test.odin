@@ -179,6 +179,85 @@ test_valid_program_has_no_errors :: proc(t: ^testing.T) {
 	assert_messages(t, run_semantics([]Mem_File{test_src(t, "valid", "main.grammar", src)}), {})
 }
 
+// A comment inside a rule body is trivia, so it must not resolve as a name, count
+// as a call argument, or hide the rule it sits in.
+@(test)
+test_comments_inside_rule_body_are_ignored :: proc(t: ^testing.T) {
+	src :=
+		"a = \"x\";\n" +
+		"// b is documented here\n" +
+		"b = a // use a\n" +
+		"  | a a // twice\n" +
+		"  ; // end\n" +
+		"p x = x;\n" +
+		"c = <p a // one arg\n" +
+		"    >;\n"
+	assert_messages(t, run_semantics([]Mem_File{test_src(t, "comments", "main.grammar", src)}), {})
+}
+
+// A tag annotates a production, so it changes nothing about which operands the
+// rule produces: a tagged element resolves, is passed, and expands as usual. It
+// is written outside a repetition, an optional or a group, since it annotates a
+// whole production.
+@(test)
+test_tagged_expressions_are_checked_like_their_element :: proc(t: ^testing.T) {
+	src :=
+		"a = \"x\";\n" +
+		"b = a `name=\"b\"`;\n" +
+		"p x = x;\n" +
+		"c = <p a> `name=\"c\"`;\n" +
+		"d = a b `name=\"d\"`;\n" +
+		"e = { a } `name=\"e\"`;\n" +
+		"f = [ a ] `name=\"f\"`;\n" +
+		"g = a | b `name=\"g\"`;\n" +
+		// A tag over a longer sequence must check every element of it.
+		"h = a a a `name=\"h\"`;\n" +
+		"i = a a `name=\"i\"`\n" +
+		"  | a\n" +
+		"  ;\n" +
+		// A param used only by a tagged element is still used.
+		"j x = x x `name=\"j\"`;\n" +
+		"k = <j a> `name=\"k\"`;\n"
+	assert_messages(t, run_semantics([]Mem_File{test_src(t, "tags", "main.grammar", src)}), {})
+}
+
+// A tag does not make its production resolvable on its own: every element of an
+// annotated sequence is still resolved.
+@(test)
+test_tagged_sequence_still_resolves_each_element :: proc(t: ^testing.T) {
+	src := "a = \"x\";\nb = a missing `name=\"b\"`;\n"
+	assert_messages(
+		t,
+		run_semantics([]Mem_File{test_src(t, "tag_resolve", "main.grammar", src)}),
+		{"main.grammar:2:7: undefined identifier: missing"},
+	)
+}
+
+// A tag inside a repetition, an optional, a group or a call annotates an element
+// that is not the last of its production, so the parser rejects it there.
+@(test)
+test_tag_inside_a_nested_production_is_rejected :: proc(t: ^testing.T) {
+	src :=
+		"a = \"x\";\n" +
+		"e = { a `name=\"e\"` };\n"
+	assert_messages(
+		t,
+		run_semantics([]Mem_File{test_src(t, "tag_nested", "main.grammar", src)}),
+		{"main.grammar:2:10: a tag may not appear inside a group, repetition, optional or call"},
+	)
+}
+
+// A production is annotated once, so a second tag is rejected.
+@(test)
+test_two_tags_on_one_production_is_rejected :: proc(t: ^testing.T) {
+	src := "a = \"x\";\nb = a a `name=\"a\"` `age=\"100\"`;\n"
+	assert_messages(
+		t,
+		run_semantics([]Mem_File{test_src(t, "tag_two", "main.grammar", src)}),
+		{"main.grammar:2:20: a production may carry only one tag"},
+	)
+}
+
 @(test)
 test_undefined_identifier :: proc(t: ^testing.T) {
 	src := "a = \"x\";\nb = c;\n"

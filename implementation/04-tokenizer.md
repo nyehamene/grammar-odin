@@ -23,3 +23,12 @@ See ../grammar.txt for the valid tokens in the grammar.
 - Lt - Ex `<`
 - Gt - Ex '>'
 - Comment - Ex `// a comment`
+- Tag - backtick delimited. Ex `` `name="Value"; another_name="100"` ``
+
+A tag is scanned as one token: the whole run between the backticks, including
+them. It holds one or more `ident "=" string` pairs separated by `;`, so a `;`
+or a quote inside a value is part of that value rather than a separator. Like a
+string it may not span a line, since the formatter buckets tokens by the line
+they start on. A tag that does not hold that shape is reported as an invalid tag
+literal, and one that is never closed as an unterminated tag literal; either way
+a tag token is still produced so the parser keeps its place.

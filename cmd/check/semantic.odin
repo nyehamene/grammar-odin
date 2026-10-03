@@ -615,6 +615,8 @@ uses_param :: proc(expr: ast.Expr, param: string) -> bool {
 		return exprs_use_param(v.exprs[:], param)
 	case ast.Group_Expr:
 		return exprs_use_param(v.exprs[:], param)
+	case ast.Tagged_Expr:
+		return uses_param(v.expr^, param)
 	}
 	return false
 }
@@ -808,6 +810,11 @@ check_expr_scoped :: proc(
 
 	case ast.Group_Expr:
 		check_expr_group(cu, fi, params, v.pos, v.exprs[:], o)
+
+	case ast.Tagged_Expr:
+		// A tag annotates the production it follows, so it is checked, and
+		// yields an operand, exactly as the untagged production would.
+		check_expr_scoped(cu, fi, params, v.expr^, o)
 
 	case ast.String_Lit:
 		Operand_lvalue(o, .String, v.pos, v.value)

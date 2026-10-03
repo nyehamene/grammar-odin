@@ -303,6 +303,8 @@ rule_ref_in_expr :: proc(
 		for arg in v.args {
 			rule_ref_in_expr(f, target_ns_dir, name, arg, uris, out, private)
 		}
+	case ast.Tagged_Expr:
+		rule_ref_in_expr(f, target_ns_dir, name, v.expr^, uris, out, private)
 	case ast.String_Lit, ast.Regex_Lit, ast.External_Value:
 	}
 }
@@ -358,6 +360,8 @@ binding_ref_in_expr :: proc(
 		for arg in v.args {
 			binding_ref_in_expr(f, name, arg, uris, out)
 		}
+	case ast.Tagged_Expr:
+		binding_ref_in_expr(f, name, v.expr^, uris, out)
 	case ast.String_Lit, ast.Regex_Lit, ast.External_Value:
 	}
 }

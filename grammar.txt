@@ -13,7 +13,12 @@ Rule              = ident "=" production ";";
 
 production  = sequence | alternative;
 alternative = sequence { "|" production };
-sequence    = basic { basic };
+// A tag annotates the sequence it closes rather than standing on its own, so
+// `a b c `t`` is a tagged `a b c` and not a tagged `c`. A production carries one
+// tag at most, since it is annotated once. Since a tag annotates a whole
+// production, a group, a repetition or an optional holds no tag of its own:
+// write `( a b ) `t`` rather than `( a b `t` )`.
+sequence    = basic { basic } [ tag ];
 basic       = group
             | repetition
             | optional
@@ -36,3 +41,9 @@ string = '[^"\n]*';
 ident  = /[a-zA-Z_][a-zA-Z0-9_]*/;
 regexp = '\'[^\']*\'';
 external_value = '__[a-zA-Z_][a-zA-Z0-9_]*';
+
+// A tag annotates the element it follows, so it may only close a sequence. Its
+// value is a string literal, which is why a `;` or a quote inside one is not a
+// separator. A tag may not span a line, for the same reason a string may not.
+tag        = '`' tag_pair { ";" tag_pair } '`';
+tag_pair   = ident "=" string;

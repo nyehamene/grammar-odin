@@ -113,6 +113,10 @@ semantic_token_type :: proc(tok: token.Token, src: string, types: map[int]Sem_To
 		return int(Sem_Token_Type.Variable)
 	case .Comment:
 		return -1
+	case .Tag:
+		// A tag is scanned as one token, so there is nothing inside it to
+		// highlight.
+		return -1
 	case .At:
 		if has_ident_after(src, tok.end) {
 			return -1
@@ -188,6 +192,8 @@ classify_expr :: proc(expr: ast.Expr, types: ^map[int]Sem_Token_Type) {
 		for arg in v.args {
 			classify_expr(arg, types)
 		}
+	case ast.Tagged_Expr:
+		classify_expr(v.expr^, types)
 	case ast.String_Lit, ast.Regex_Lit, ast.External_Value:
 	}
 }

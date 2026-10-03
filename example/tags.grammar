@@ -1,0 +1,39 @@
+// A tag is a backtick delimited run of `name="value"` pairs that annotates the
+// production it follows. It carries no meaning of its own: the production it
+// annotates is checked, printed and resolved exactly as if it stood alone.
+Name = "grammar";
+
+Regex = '[a-z]+';
+
+// A tag may follow a single element, which is then the whole production.
+Grammar = Name `name="grammar"`;
+
+// A tag annotates the whole sequence, not just the element it follows, and adds
+// no element of its own: here the annotated production is `Name Name`.
+Tagged_Grammar = Name Name `name="tagged"; version="1"`;
+
+// A longer sequence is annotated just the same.
+Long_Tagged_Grammar = Name Name Name `name="long"`;
+
+// Each alternative of a production is a production of its own, so each carries
+// its own tag.
+Grammar_Or_Tokens = Name `name="grammar"`
+                  | Regex '[a-z]+' `name="tokens"`
+                  ;
+
+// A tag annotates a whole production, so it is written outside a repetition, an
+// optional or a group. `{ Name } `name="a"`` tags the repeated production, while
+// `{ Name `name="a"` }` is an error: that tag sits inside the braces.
+Repeated = { Name } `name="repeated"`;
+
+Optional = [ Name ] `name="optional"`;
+
+Grouped = ( Name Name ) `name="grouped"`;
+
+// A production is annotated once, so a second tag is rejected: use several pairs
+// in one tag instead, as `Tagged_Grammar` above does.
+Annotated_Once = Name Name `name="once"; note="only one tag"`;
+
+// A tag may not be the only element of a production, since it would annotate
+// nothing: `Grammar = `name="orphan"`;` is an error.
+

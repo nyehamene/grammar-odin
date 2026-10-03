@@ -12,6 +12,7 @@ Kind :: enum {
 	Regexp,
 	External,
 	Comment,
+	Tag,
 	At,
 	LParen,
 	RParen,
@@ -44,6 +45,8 @@ kind_name :: proc(kind: Kind) -> string {
 		return "External"
 	case .Comment:
 		return "Comment"
+	case .Tag:
+		return "Tag"
 	case .At:
 		return "At"
 	case .LParen:

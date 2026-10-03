@@ -31,6 +31,8 @@ scan :: proc(src: string) -> (tokens: [dynamic]Token, errors: [dynamic]Error) {
 			t.offset += 1
 		case ch == '/' && peek(t) == '/':
 			append(&tokens, scan_comment(&t))
+		case ch == '`':
+			append(&tokens, scan_tag(&t, &errors))
 		case ch == '"':
 			append(&tokens, scan_string(&t, &errors))
 		case ch == '\'':
@@ -103,6 +105,39 @@ scan_comment :: proc(t: ^Tokenizer) -> Token {
 		t.offset += 1
 	}
 	return tok(t, .Comment, start, t.offset)
+}
+
+// scan_tag consumes a backtick delimited tag, ex `` `name="value"` ``. The body
+// must be a list of `ident "=" string` pairs separated by `;`, which parse_tag
+// checks. Like the other literals a tag may not span a line: the formatter
+// buckets tokens by the line they start on and relies on none of them crossing a
+// newline. A malformed tag is reported and still yields a token so the parser
+// keeps its place.
+scan_tag :: proc(t: ^Tokenizer, errors: ^[dynamic]Error) -> Token {
+	start := t.offset
+	t.offset += 1
+	body_start := t.offset
+
+	for t.offset < len(t.src) && t.src[t.offset] != '`' {
+		if t.src[t.offset] == '\n' {
+			append(errors, Error{offset = start, message = "unterminated tag literal"})
+			return tok(t, .Tag, start, t.offset)
+		}
+		t.offset += 1
+	}
+	if t.offset >= len(t.src) {
+		append(errors, Error{offset = start, message = "unterminated tag literal"})
+		return tok(t, .Tag, start, t.offset)
+	}
+	body := t.src[body_start:t.offset]
+	t.offset += 1
+
+	pairs, ok := parse_tag(body)
+	defer delete(pairs)
+	if !ok {
+		append(errors, Error{offset = start, message = "invalid tag literal"})
+	}
+	return tok(t, .Tag, start, t.offset)
 }
 
 // scan_string consumes a double-quoted string literal.

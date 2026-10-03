@@ -15,6 +15,7 @@ Expr :: union {
 	Member_Expr,
 	^Call_Expr,
 	Directive_Expr,
+	Tagged_Expr,
 }
 
 // Decl is any top-level declaration in a grammar file.
@@ -142,6 +143,24 @@ Directive_Expr :: struct {
 	pos:  int,
 }
 
+// Tagged_Expr is a production annotated with one or more tags, e.g.
+// `a b `name="value"``. pos is the offset of the annotated production, so the
+// expression reports the position of the element it wraps rather than that of
+// the tag written after it.
+Tagged_Expr :: struct {
+	expr: ^Expr,
+	tag:  [dynamic]Tag_Pair,
+	pos:  int,
+}
+
+// Tag_Pair is one `name="value"` entry of a tag. value keeps its quotes, like
+// String_Lit.
+Tag_Pair :: struct {
+	name:  Ident,
+	value: String_Lit,
+	pos:   int,
+}
+
 // Error is a syntax diagnostic produced by the parser.
 Error :: struct {
 	offset:  int,
@@ -176,6 +195,8 @@ expr_pos :: proc(expr: Expr) -> int {
 	case ^Call_Expr:
 		return v.pos
 	case Directive_Expr:
+		return v.pos
+	case Tagged_Expr:
 		return v.pos
 	}
 	return 0
@@ -262,5 +283,9 @@ destroy_expr :: proc(expr: Expr) {
 			destroy_expr(e)
 		}
 		delete(v.args)
+	case Tagged_Expr:
+		destroy_expr(v.expr^)
+		free(v.expr)
+		delete(v.tag)
 	}
 }

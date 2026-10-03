@@ -129,6 +129,18 @@ print_expr :: proc(p: ^Printer, expr: Expr) {
 			print_expr(p, e)
 		}
 		p.indent -= 1
+	case Tagged_Expr:
+		print_header(p, v.pos, "TaggedExpr")
+		p.indent += 1
+		print_expr(p, v.expr^)
+		for pair in v.tag {
+			print_header(
+				p,
+				pair.pos,
+				fmt.tprintf("TagPair: %s=%s", pair.name.name, pair.value.value),
+			)
+		}
+		p.indent -= 1
 	}
 }
 

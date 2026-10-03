@@ -159,6 +159,10 @@ find_hit_expr :: proc(expr: ast.Expr, offset: int) -> Hit {
 		if offset >= v.pos && offset < v.pos + len(v.name) {
 			return Hit{kind = .External, literal = v.name}
 		}
+	case ast.Tagged_Expr:
+		// A tag annotates the production it follows, so the annotation itself
+		// names nothing: look inside it.
+		return find_hit_expr(v.expr^, offset)
 	}
 	return Hit{kind = .None}
 }

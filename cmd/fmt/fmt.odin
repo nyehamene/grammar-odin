@@ -211,11 +211,23 @@ classify :: proc(line: []token.Token) -> Line_Kind {
 	if len(line) == 0 do return .Blank
 	if line[0].kind == .Comment do return .Comment
 	if line[0].kind == .Pipe do return .Pipe
-	if len(line) == 1 && line[0].kind == .Semicolon do return .Lone_Semicolon
+	if is_lone_semicolon(line) do return .Lone_Semicolon
 	for t in line {
 		if t.kind == .Equal do return .Header
 	}
 	return .Body
+}
+
+// is_lone_semicolon reports whether line is a rule terminator, optionally
+// followed by a trailing comment. The comment does not change what the line is,
+// so it must not push the line out of the separator column and into the
+// continuation indent.
+is_lone_semicolon :: proc(line: []token.Token) -> bool {
+	if len(line) == 0 || line[0].kind != .Semicolon do return false
+	for t in line[1:] {
+		if t.kind != .Comment do return false
+	}
+	return true
 }
 
 // layout reformats src line by line. Tokens never span lines, so bucketing them
@@ -249,10 +261,15 @@ layout :: proc(src: string, tokens: []token.Token, separator: int) -> string {
 	// align[line] is the column that `=`, `|`, `;` and continuations of a group
 	// are aligned to. A group is a maximal run of lines not ended by a blank
 	// line run of at least `separator` lines; the column is the widest rule name
-	// in the group.
+	// in the group. header_lhs[line] holds the left hand side of a rule header
+	// with its name and parameters padded to the group's columns (rule 6); it is
+	// empty for every other line.
 	align := make([dynamic]int, n_lines)
 	defer delete(align)
-	compute_align(kinds[:], groups[:], src, align[:], separator)
+	header_lhs := make([dynamic]string, n_lines)
+	defer delete(header_lhs)
+	defer for h in header_lhs do if len(h) > 0 do delete(h)
+	compute_align(kinds[:], groups[:], src, align[:], header_lhs[:], separator)
 
 	nl := newline_style(src)
 	b := strings.builder_make()
@@ -278,7 +295,7 @@ layout :: proc(src: string, tokens: []token.Token, separator: int) -> string {
 			if i < cut do write_line(&b, "", &first, nl)
 			continue
 		}
-		line := render_line(groups[i][:], kinds[i], align[i], i, src, offsets[:], nl)
+		line := render_line(groups[i][:], kinds[i], align[i], header_lhs[i], i, src, offsets[:], nl)
 		write_line(&b, line, &first, nl)
 		delete(line)
 	}
@@ -326,14 +343,21 @@ newline_style :: proc(src: string) -> string {
 }
 
 // compute_align fills align with the alignment column of the group each line
-// belongs to. A run of at least `separator` blank lines ends a group; a shorter
-// run is interior whitespace inside a group and does not end it. Blank lines
-// get no column.
-compute_align :: proc(kinds: []Line_Kind, groups: [][dynamic]token.Token, src: string, align: []int, separator: int) {
+// belongs to, and header_lhs with the padded left hand side of every rule
+// header. A run of at least `separator` blank lines ends a group; a shorter run
+// is interior whitespace inside a group and does not end it. Blank lines get no
+// column.
+compute_align :: proc(
+	kinds: []Line_Kind,
+	groups: [][dynamic]token.Token,
+	src: string,
+	align: []int,
+	header_lhs: []string,
+	separator: int,
+) {
 	n_lines := len(kinds)
 	block_start := 0
 	in_block := false
-	col := 0
 	blank_run := 0
 	run_start := 0
 	for i in 0 ..< n_lines {
@@ -342,11 +366,8 @@ compute_align :: proc(kinds: []Line_Kind, groups: [][dynamic]token.Token, src: s
 			blank_run += 1
 			// Only a run that reaches the threshold ends the group (rule 1).
 			if blank_run >= separator && in_block {
-				for j in block_start ..< run_start {
-					align[j] = col + 1
-				}
+				close_group(kinds[:], groups[:], src, align[:], header_lhs[:], block_start, run_start)
 				in_block = false
-				col = 0
 			}
 			continue
 		}
@@ -354,22 +375,94 @@ compute_align :: proc(kinds: []Line_Kind, groups: [][dynamic]token.Token, src: s
 		if !in_block {
 			block_start = i
 			in_block = true
-			col = 0
-		}
-		if kinds[i] == .Header {
-			eq := first_equal(groups[i][:])
-			lhs := render_tokens(groups[i][:eq], src)
-			width := len(lhs)
-			delete(lhs)
-			col = max(col, width)
 		}
 	}
 	if in_block {
-		// The `=`, `|` and `;` of a block sit one column past the widest rule
-		// name, so every separator is preceded by at least one space.
-		for j in block_start ..< n_lines {
-			align[j] = col + 1
+		close_group(kinds[:], groups[:], src, align[:], header_lhs[:], block_start, n_lines)
+	}
+}
+
+// close_group lays out the header lines of the group spanning [start, end) and
+// gives every line of it its alignment column. The column is one past the
+// widest header, so every separator is preceded by at least one space.
+close_group :: proc(
+	kinds: []Line_Kind,
+	groups: [][dynamic]token.Token,
+	src: string,
+	align: []int,
+	header_lhs: []string,
+	start, end: int,
+) {
+	// Rule 6: the name of every header in the group starts on the same column,
+	// and so does each parameter, so the parameters line up vertically. A header
+	// left hand side is a rule name followed by its parameters: the source is
+	// parsed before it is laid out, so nothing else can reach this point.
+	name_w := 0
+	param_w: [dynamic]int
+	defer delete(param_w)
+
+	for i in start ..< end {
+		if kinds[i] != .Header do continue
+		lhs := header_tokens(groups[i][:])
+		name_w = max(name_w, len(token.lexeme(lhs[0], src)))
+		for j in 1 ..< len(lhs) {
+			w := len(token.lexeme(lhs[j], src))
+			if j - 1 >= len(param_w) {
+				append(&param_w, w)
+			} else {
+				param_w[j - 1] = max(param_w[j - 1], w)
+			}
 		}
+	}
+
+	col := name_w
+	for w in param_w {
+		col += 1 + w
+	}
+
+	for i in start ..< end {
+		if kinds[i] != .Header do continue
+		header_lhs[i] = pad_header(header_tokens(groups[i][:]), src, name_w, param_w[:])
+	}
+
+	for j in start ..< end {
+		align[j] = col + 1
+	}
+}
+
+// header_tokens returns the tokens before the `=` of a header line, which is its
+// left hand side: a rule name followed by the parameters it declares. The result
+// aliases the line and must not be freed.
+header_tokens :: proc(line: []token.Token) -> []token.Token {
+	return line[:first_equal(line)]
+}
+
+// pad_header renders a left hand side with its name padded to name_w and each of
+// its parameters padded to the matching entry of param_w. A rule with fewer
+// parameters than the group pads the missing ones, so its value separator still
+// lands on the group column. The result is owned by the caller.
+pad_header :: proc(lhs: []token.Token, src: string, name_w: int, param_w: []int) -> string {
+	b := strings.builder_make()
+	defer strings.builder_destroy(&b)
+
+	write_padded(&b, token.lexeme(lhs[0], src), name_w)
+	for j in 0 ..< len(param_w) {
+		strings.write_string(&b, " ")
+		if j + 1 < len(lhs) {
+			write_padded(&b, token.lexeme(lhs[j + 1], src), param_w[j])
+		} else {
+			write_padded(&b, "", param_w[j])
+		}
+	}
+
+	return strings.clone(strings.to_string(b))
+}
+
+// write_padded writes s followed by enough spaces to fill width columns.
+write_padded :: proc(b: ^strings.Builder, s: string, width: int) {
+	strings.write_string(b, s)
+	for _ in len(s) ..< width {
+		strings.write_string(b, " ")
 	}
 }
 
@@ -383,11 +476,14 @@ first_equal :: proc(line: []token.Token) -> int {
 
 // render_line renders a single source line into a string. Comment lines are
 // copied verbatim; every other line is reconstructed from its tokens and
-// aligned to col.
+// aligned to col. lhs is the padded left hand side compute_align prepared for a
+// rule header, and is empty for every other kind.
 render_line :: proc(
 	line: []token.Token,
 	kind: Line_Kind,
-	col, i: int,
+	col: int,
+	lhs: string,
+	i: int,
 	src: string,
 	offsets: []int,
 	nl: string,
@@ -404,11 +500,14 @@ render_line :: proc(
 
 	case .Header:
 		eq := first_equal(line)
+		head := lhs
+		if len(head) == 0 {
+			head = render_tokens(line[:eq], src)
+			defer delete(head)
+		}
+		w := len(head)
 		b := strings.builder_make()
-		lhs := render_tokens(line[:eq], src)
-		w := len(lhs)
-		strings.write_string(&b, lhs)
-		delete(lhs)
+		strings.write_string(&b, head)
 		for _ in 0 ..< max(col - w, 0) {
 			strings.write_string(&b, " ")
 		}
@@ -434,14 +533,9 @@ render_line :: proc(
 		return pad_and_render(line, col + 2, src)
 
 	case .Lone_Semicolon:
-		b := strings.builder_make()
-		for _ in 0 ..< col {
-			strings.write_string(&b, " ")
-		}
-		strings.write_string(&b, ";")
-		res := strings.clone(strings.to_string(b))
-		strings.builder_destroy(&b)
-		return res
+		// The terminator lands on the alignment column and anything trailing it,
+		// a comment in practice, renders after it.
+		return pad_and_render(line, col, src)
 
 	case .Blank:
 		return ""
@@ -492,6 +586,12 @@ render_tokens :: proc(line: []token.Token, src: string) -> string {
 			}
 		}
 		lex := token.lexeme(tok, src)
+		if tok.kind == .Tag {
+			// A tag is rewritten in its canonical spelling: no space around `=`
+			// and one space after each `;`.
+			write_tag(&b, tok, src)
+			continue
+		}
 		strings.write_string(&b, lex)
 		if tok.kind == .External && !strings.has_suffix(lex, "__") {
 			// Externals are canonically written with a trailing "__"; supply it
@@ -502,6 +602,20 @@ render_tokens :: proc(line: []token.Token, src: string) -> string {
 	res := strings.clone(strings.to_string(b))
 	strings.builder_destroy(&b)
 	return res
+}
+
+// write_tag writes the canonical form of a tag: the pairs with no space around
+// their `=`, separated by "; ". The scanner already validated the shape, so a
+// lexeme it rejects is written back untouched rather than mangled.
+write_tag :: proc(b: ^strings.Builder, tok: token.Token, src: string) {
+	lex := token.lexeme(tok, src)
+	pairs, ok := token.parse_tag(lex[1:len(lex) - 1])
+	defer delete(pairs)
+	if !ok {
+		strings.write_string(b, lex)
+		return
+	}
+	token.write_tag(b, pairs[:])
 }
 
 // space_between reports whether a space separates the token immediately before

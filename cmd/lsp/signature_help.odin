@@ -303,6 +303,8 @@ resolve_named :: proc(
 			}
 		}
 		name = v.member.name
+	case ast.Tagged_Expr:
+		return resolve_named(cu, fi, v.expr^)
 	}
 	return name, {}, false
 }
@@ -420,6 +422,8 @@ expr_containing_call :: proc(expr: ast.Expr, src: string, offset: int) -> ^ast.C
 				return call
 			}
 		}
+	case ast.Tagged_Expr:
+		return expr_containing_call(v.expr^, src, offset)
 	case ast.Ident, ast.String_Lit, ast.Regex_Lit, ast.External_Value:
 	}
 	return nil

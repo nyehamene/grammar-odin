@@ -12,3 +12,5 @@ Optional = [ "b" ];
 Member = foo.bar;
 
 External = __name__;
+
+Tagged = String_Lit `name="tokens"`;

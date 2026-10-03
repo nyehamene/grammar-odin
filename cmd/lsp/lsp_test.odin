@@ -289,6 +289,59 @@ test_lsp_references :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(output, `"line":0,"character":14`))
 }
 
+// A tag annotates the production before it and names nothing itself, so every
+// feature must look straight through it into that production, however many
+// elements the production has.
+@(test)
+test_lsp_references_through_a_tag :: proc(t: ^testing.T) {
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}}`,
+		),
+		make_notification(
+			`textDocument/didOpen`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar","languageId":"grammar","version":1,"text":"expr = other term `+"`"+`name=\"a\"`+"`"+` | term;\nother = \"b\";\nterm = \"a\";"}}`,
+		),
+		// References on `term`, the second element of the tagged production
+		// (line 0, character 13).
+		make_request(
+			`2`,
+			`textDocument/references`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar"},"position":{"line":0,"character":13},"context":{"includeDeclaration":true}}`,
+		),
+		// Hover on that same element.
+		make_request(
+			`3`,
+			`textDocument/hover`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar"},"position":{"line":0,"character":13}}`,
+		),
+		// Definition of the first element of the tagged production.
+		make_request(
+			`4`,
+			`textDocument/definition`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar"},"position":{"line":0,"character":7}}`,
+		),
+		make_request(`5`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	log.debugf("output:\n%v", output)
+	// The declaration and both usages of `term` come back, the one inside the
+	// tagged production included.
+	testing.expect(t, strings.contains(output, `"id": 2`))
+	testing.expect(t, strings.contains(output, `"line":2,"character":0`))
+	testing.expect(t, strings.contains(output, `"line":0,"character":13`))
+	testing.expect(t, strings.contains(output, `"line":0,"character":35`))
+	// Hover resolves inside the tagged production rather than reporting nothing.
+	testing.expect(t, strings.contains(output, `"id": 3`))
+	testing.expect(t, strings.contains(output, `**` + "`term`" + `**`))
+	// So does definition, for every element of it.
+	testing.expect(t, strings.contains(output, `"id": 4`))
+	testing.expect(t, strings.contains(output, `"line":1,"character":0`))
+}
+
 // A private rule (`_name`) is only visible in the file that declares it, so
 // references, rename, hover and definition must all stay inside that file even
 // when a sibling file in the same namespace declares a rule with the same name.
@@ -811,6 +864,74 @@ test_lsp_semantic_tokens :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(output, `,0,1,4,0,0`))
 	testing.expect(t, strings.contains(output, `,1,0,4,0,0`))
 	testing.expect(t, strings.contains(output, `,0,1,3,4,0,0,0,1,6,0]`))
+}
+
+// A tag is one token that names nothing, so it contributes no semantic token:
+// the same file with and without a tag highlights the same number of tokens. Only
+// the columns after it move, since it takes up source text.
+@(test)
+test_lsp_semantic_tokens_skip_a_tag :: proc(t: ^testing.T) {
+	plain := semantic_token_data(t, "tag_plain.grammar", `expr = term;\nterm = \"a\";`)
+	defer delete(plain)
+	tagged := semantic_token_data(t, "tag_tagged.grammar", `expr = term `+"`"+`name=\"a\"`+"`"+`;\nterm = \"a\";`)
+	defer delete(tagged)
+
+	testing.expect(t, len(plain) > 0, "expected semantic tokens for the plain file")
+	// Each token is five numbers: line delta, column delta, length, type, mods.
+	testing.expectf(
+		t,
+		strings.count(plain, ",") == strings.count(tagged, ","),
+		"a tag should add no semantic tokens: %d entries with it, %d without",
+		strings.count(tagged, ",") + 1,
+		strings.count(plain, ",") + 1,
+	)
+}
+
+// semantic_token_data opens a document whose text is the JSON escaped text under
+// the given name, asks for its full semantic tokens and returns the encoded data
+// array. The caller must delete the result.
+semantic_token_data :: proc(t: ^testing.T, name, json_text: string) -> string {
+	uri := strings.concatenate({"file:///tmp/", name})
+	defer delete(uri)
+	did_open := strings.concatenate(
+		{
+			`{"textDocument":{"uri":"`,
+			uri,
+			`","languageId":"grammar","version":1,"text":"`,
+			json_text,
+			`"}}`,
+		},
+	)
+	defer delete(did_open)
+	params := strings.concatenate({`{"textDocument":{"uri":"`, uri, `"}}`})
+	defer delete(params)
+
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{"textDocument":{"semanticTokens":{}}}}`,
+		),
+		make_notification(`textDocument/didOpen`, did_open),
+		make_request(`2`, `textDocument/semanticTokens/full`, params),
+		make_request(`3`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	log.debugf("output:\n%v", output)
+
+	start := strings.index(output, `"data":[`)
+	if start < 0 {
+		testing.expectf(t, false, "no semantic tokens for %s", name)
+		return ""
+	}
+	start += len(`"data":[`)
+	end := strings.index(output[start:], `]`)
+	if end < 0 {
+		testing.expectf(t, false, "unterminated semantic tokens for %s", name)
+		return ""
+	}
+	return strings.clone(output[start:start + end])
 }
 
 @(test)

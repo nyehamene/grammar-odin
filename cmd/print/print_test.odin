@@ -59,6 +59,37 @@ test_print_ast_output :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(out, "StringLit: \"Hi\""), "should contain second alternative")
 }
 
+// A tag annotates a whole production, so the tree nests the sequence under the
+// wrapper rather than hanging the tag off the last element.
+@(test)
+test_print_ast_tagged_sequence :: proc(t: ^testing.T) {
+	src := "greeting = hello world `name=\"a\"; other=\"b\"`;\n"
+	buf: bytes.Buffer
+	bytes.buffer_init(&buf, {})
+	defer bytes.buffer_destroy(&buf)
+	errbuf: bytes.Buffer
+	bytes.buffer_init(&errbuf, {})
+	defer bytes.buffer_destroy(&errbuf)
+
+	code := print_ast(src, "<test>", bytes.buffer_to_stream(&buf), bytes.buffer_to_stream(&errbuf))
+	testing.expect(t, code == 0, "no errors expected")
+
+	out := string(bytes.buffer_to_bytes(&buf))
+	tagged_at := strings.index(out, "TaggedExpr")
+	testing.expect(t, tagged_at >= 0, "should print TaggedExpr")
+	seq_at := strings.index(out, "SequenceExpr")
+	testing.expect(t, seq_at > tagged_at, "the sequence should be nested under the tag")
+	testing.expect(t, strings.contains(out, "TagPair: name=\"a\""), "should print the first pair")
+	testing.expect(t, strings.contains(out, "TagPair: other=\"b\""), "should print the second pair")
+
+	// The whole sequence is annotated, so no element is wrapped on its own.
+	testing.expect(
+		t,
+		strings.count(out, "TaggedExpr") == 1,
+		"a tag should annotate one production",
+	)
+}
+
 @(test)
 test_print_ast_error_partial :: proc(t: ^testing.T) {
 	src := "ok = \"x\";\nbad = (\"a\" \"b\";\n"

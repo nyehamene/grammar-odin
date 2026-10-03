@@ -186,6 +186,52 @@ alignment before it spans multiple lines.
          | three;
   ```
 
+6. Align the parameters of all the functions in a group
+
+  With `--separator 1`
+
+  Before:
+  ```grammar
+  foo x y = x y;
+  f x = x;
+
+  bar xx y = xx y
+  b x y = x y
+  ```
+
+  After:
+  ```grammar
+  foo x y = x y;
+  f   x   = x;
+
+  bar xx y = xx y
+  b   x  y = x y
+  ```
+
+7. Write a tag in one canonical spelling.
+
+  A tag holds `name="value"` pairs (see ../implementation/11-tag.md). The spaces
+  a source may put around `=` and after `;` are not kept: no space around `=`,
+  one space after each `;`. The values are string literals, so their quotes and
+  any `;` or quote inside them are left exactly as written. The tag itself is
+  never split, and it sits outside a group, a repetition or an optional that it
+  annotates, since that is the only place the parser accepts it.
+
+  Before:
+  ```grammar
+  foo = a `name = "a";other="b"`;
+  bar = a b `  note = "x; y" ;  n="100"  `;
+  baz = ( a ) `n="1"`;
+  ```
+
+  After:
+  ```grammar
+  foo = a `name="a"; other="b"`;
+  bar = a b `note="x; y"; n="100"`;
+  baz = ( a ) `n="1"`;
+  ```
+
+
 ## Example
 
 Formatting the following text:
