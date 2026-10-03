@@ -309,6 +309,62 @@ test_proc_call_arity :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_local_rule_is_not_reachable_from_another_namespace :: proc(t: ^testing.T) {
+	root := scratch_dir(t, "cmd/check/testdata/scratch/xns_local")
+	defer os.remove_all("cmd/check/testdata/scratch/xns_local")
+	defer delete(root)
+
+	base := cat(root, "/base")
+	defer delete(base)
+	os.make_directory_all(base)
+	rgram := cat(base, "/r.grammar")
+	defer delete(rgram)
+	// `helper` is a local rule of `base`: it is in the namespace, but not
+	// exported, so another namespace cannot reach it.
+	write_test_file(t, rgram, "helper = \"x\";\nExported = \"y\";\n")
+
+	abs := cat(root, "/main.grammar")
+	defer delete(abs)
+	src := "ns = @import(\"./base\");\nA = ns.helper;\n"
+	files := []Mem_File{{abs = abs, display = "main.grammar", src = src}}
+	assert_messages(
+		t,
+		run_semantics(files),
+		{
+			"main.grammar:2:8: ns.helper is not exported. only a rule whose name starts with an uppercase letter is accessible from another namespace",
+		},
+	)
+	// The rejected member access does not count as a use, but `helper` is a
+	// local rule that nothing else names either, so it is still reported.
+	assert_warnings(
+		t,
+		files,
+		{"cmd/check/testdata/scratch/xns_local/base/r.grammar:1:1: warning: unused local rule: helper"},
+	)
+}
+
+@(test)
+test_exported_rule_is_reachable_from_another_namespace :: proc(t: ^testing.T) {
+	root := scratch_dir(t, "cmd/check/testdata/scratch/xns_exported")
+	defer os.remove_all("cmd/check/testdata/scratch/xns_exported")
+	defer delete(root)
+
+	base := cat(root, "/base")
+	defer delete(base)
+	os.make_directory_all(base)
+	rgram := cat(base, "/r.grammar")
+	defer delete(rgram)
+	write_test_file(t, rgram, "Exported = \"x\";\n")
+
+	abs := cat(root, "/main.grammar")
+	defer delete(abs)
+	src := "ns = @import(\"./base\");\nA = ns.Exported;\n"
+	files := []Mem_File{{abs = abs, display = "main.grammar", src = src}}
+	assert_messages(t, run_semantics(files), {})
+	assert_warnings(t, files, {})
+}
+
+@(test)
 test_unused_proc_parameter :: proc(t: ^testing.T) {
 	// `N` is exported, so the parameter is the only thing to report.
 	src := "N x y = x;\n"

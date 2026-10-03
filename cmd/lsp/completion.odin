@@ -95,6 +95,11 @@ handle_completion :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok
 					for decl in f.file.decls {
 						#partial switch d in decl {
 						case ast.Rule_Decl:
+							// Only an exported rule is reachable through a
+							// binding, so offering a local or private one from
+							// another namespace would suggest a name that cannot
+							// be used there.
+							if !check.is_exported_rule(d.name.name) do continue
 							if strings.has_prefix(d.name.name, prefix) {
 								append(&items, Completion_Item{label = d.name.name, kind = .Function})
 							}

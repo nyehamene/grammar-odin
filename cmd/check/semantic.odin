@@ -881,6 +881,23 @@ check_member :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, m: ast.Member_Expr
 		mark_binding_used(fi, obj_name)
 		ns := cu.namespaces[target_dir]
 		if ns == nil do return
+		if !is_exported_rule(m.member.name) {
+			// Only an exported rule crosses a namespace boundary. A local or
+			// private rule of the target namespace is present but unreachable,
+			// which is a different mistake from naming a rule that is not there.
+			add_error(
+				cu,
+				fi.display,
+				fi.src,
+				m.member.pos,
+				fmt.tprintf(
+					"%s.%s is not exported. only a rule whose name starts with an uppercase letter is accessible from another namespace",
+					obj_name,
+					m.member.name,
+				),
+			)
+			return
+		}
 		if _, has := ns.rules[m.member.name]; !has {
 			ns_name := filepath.base(target_dir)
 			add_error(

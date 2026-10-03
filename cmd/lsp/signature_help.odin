@@ -293,7 +293,9 @@ resolve_named :: proc(
 	case ast.Member_Expr:
 		if obj, is_ident := v.object^.(ast.Ident); is_ident {
 			if dir, bound := fi.bindings[obj.name]; bound {
-				if ns := cu.namespaces[dir]; ns != nil {
+				// Only an exported rule is reachable through a binding.
+				if ns := cu.namespaces[dir]; ns != nil &&
+					check.is_exported_rule(v.member.name) {
 					if r, r_ok := ns.rules[v.member.name]; r_ok {
 						return v.member.name, r, true
 					}

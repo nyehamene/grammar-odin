@@ -167,6 +167,14 @@ member_hover :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, hit: H
 	if ns == nil {
 		return fmt.tprintf("**member** `%s`\n\n**type:** member", hit.ident.name)
 	}
+	// Only an exported rule is reachable through a binding.
+	if !check.is_exported_rule(hit.ident.name) {
+		return fmt.tprintf(
+			"**member** `%s`\n\n**type:** member\n**namespace:** `%s`",
+			hit.ident.name,
+			filepath.base(target_dir),
+		)
+	}
 	ref, rule_found := ns.rules[hit.ident.name]
 	if !rule_found {
 		return fmt.tprintf(

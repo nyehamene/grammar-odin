@@ -517,35 +517,100 @@ test_lsp_completion :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_lsp_completion_member :: proc(t: ^testing.T) {
+test_lsp_completion_member_offers_only_exported_rules :: proc(t: ^testing.T) {
+	// `helper` is a local rule of ./base: it is in that namespace, but it is not
+	// exported, so completing a member of ./base must not offer it.
+	dir := ns_setup(t, "cmd/lsp/testdata/scratch/completion_member")
+	defer os.remove_all("cmd/lsp/testdata/scratch/completion_member")
+	defer delete(dir)
+
+	base_dir := strings.concatenate({dir, "/base"})
+	defer delete(base_dir)
+	os.make_directory_all(base_dir)
+	rgram := strings.concatenate({base_dir, "/r.grammar"})
+	defer delete(rgram)
+	if err := os.write_entire_file(rgram, "Exported = \"x\";\nhelper = \"y\";\n"); err != nil {
+		testing.fail_now(t, "failed to write the imported namespace")
+	}
+
+	a_uri := strings.concatenate({"file://", dir, "/a.grammar"})
+	defer delete(a_uri)
+	a_open := doc_params(
+		a_uri,
+		`,"languageId":"grammar","version":1,"text":"ns = @import(\"./base\");\nexpr = ns.Exported;"}}`,
+	)
+	defer delete(a_open)
+	// The cursor sits just after the dot, so the prefix is empty and every rule
+	// of ./base is a candidate for the filter to reject.
+	a_pos := doc_params(a_uri, `},"position":{"line":1,"character":10}}`)
+	defer delete(a_pos)
+
 	stdin := create_stream_reader(
 		make_request(
 			`1`,
 			`initialize`,
 			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
 		),
-		make_notification(
-			`textDocument/didOpen`,
-			`{"textDocument":{"uri":"file:///tmp/a.grammar","languageId":"grammar","version":1,"text":"ns = @import(\"./base\");\nexpr = ns.b;"}}`,
-		),
-		make_notification(
-			`textDocument/didOpen`,
-			`{"textDocument":{"uri":"file:///tmp/base.grammar","languageId":"grammar","version":1,"text":"bye = \"x\";"}}`,
-		),
-		// Complete `ns.b` (line 1, character 12) -> member `bye` of ./base.
-		make_request(
-			`2`,
-			`textDocument/completion`,
-			`{"textDocument":{"uri":"file:///tmp/a.grammar"},"position":{"line":1,"character":12}}`,
-		),
+		make_notification(`textDocument/didOpen`, a_open),
+		make_request(`2`, `textDocument/completion`, a_pos),
 		make_request(`3`, `shutdown`, `null`),
 	)
 
 	output := send_request(stdin)
 	log.debugf("output:\n%v", output)
-	testing.expect(t, strings.contains(output, `"id": 2`))
-	testing.expect(t, strings.contains(output, `"label":"bye"`))
-	testing.expect(t, strings.contains(output, `"kind":3`))
+	testing.expect(t, strings.contains(output, `"label":"Exported"`))
+	testing.expect(
+		t,
+		!strings.contains(output, `"label":"helper"`),
+		"a local rule of another namespace must not be offered",
+	)
+}
+
+@(test)
+test_lsp_definition_skips_a_non_exported_member :: proc(t: ^testing.T) {
+	dir := ns_setup(t, "cmd/lsp/testdata/scratch/definition_xns")
+	defer os.remove_all("cmd/lsp/testdata/scratch/definition_xns")
+	defer delete(dir)
+
+	base_dir := strings.concatenate({dir, "/base"})
+	defer delete(base_dir)
+	os.make_directory_all(base_dir)
+	rgram := strings.concatenate({base_dir, "/r.grammar"})
+	defer delete(rgram)
+	if err := os.write_entire_file(rgram, "helper = \"x\";\n"); err != nil {
+		testing.fail_now(t, "failed to write the imported namespace")
+	}
+
+	a_uri := strings.concatenate({"file://", dir, "/a.grammar"})
+	defer delete(a_uri)
+	a_open := doc_params(
+		a_uri,
+		`,"languageId":"grammar","version":1,"text":"ns = @import(\"./base\");\nexpr = ns.helper;"}}`,
+	)
+	defer delete(a_open)
+	// Definition on `helper` in `ns.helper` (line 1, character 11).
+	a_pos := doc_params(a_uri, `},"position":{"line":1,"character":11}}`)
+	defer delete(a_pos)
+
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(`textDocument/didOpen`, a_open),
+		make_request(`2`, `textDocument/definition`, a_pos),
+		make_request(`3`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	log.debugf("output:\n%v", output)
+	def := response_for(output, `2`)
+	testing.expect(
+		t,
+		!strings.contains(def, "r.grammar"),
+		"a local rule of another namespace has no definition to jump to",
+	)
 }
 
 @(test)

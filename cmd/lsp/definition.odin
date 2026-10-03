@@ -164,6 +164,11 @@ member_ref_at :: proc(
 	if ns == nil {
 		return nil, 0, false
 	}
+	// Only an exported rule is reachable through a binding, so a local or
+	// private rule of the target namespace has no definition to jump to.
+	if !check.is_exported_rule(hit.ident.name) {
+		return nil, 0, false
+	}
 	ref, rule_found := ns.rules[hit.ident.name]
 	if !rule_found {
 		return nil, 0, false
