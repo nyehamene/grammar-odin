@@ -32,6 +32,8 @@ load_source :: proc(cu: ^Compilation_Unit, abs: string, display: string, src: st
 	fi.namespace_path = strings.clone(filepath.dir(abs))
 	fi.bindings = make(map[string]string)
 	fi.private_rules = make(map[string]Rule_Ref)
+	fi.private_uses = make(map[string]Use_Counts)
+	fi.used_bindings = make(map[string]bool)
 	fi.binding_offsets = make(map[string]int)
 
 	for e in lex_errors {
@@ -57,7 +59,15 @@ load_source :: proc(cu: ^Compilation_Unit, abs: string, display: string, src: st
 // printing the results.
 run_checks :: proc(cu: ^Compilation_Unit) {
 	bind_all(cu)
+	// Namespace use sets accumulate across the files of a namespace, so they
+	// are cleared once for the whole run rather than per file.
+	for _, ns in cu.namespaces {
+		clear(&ns.rule_uses)
+	}
 	for i in 0 ..< len(cu.files_order) {
 		check_file(cu, cu.files_order[i])
 	}
+	// Local rules are shared across a namespace, so they can only be judged once
+	// every file of every namespace has contributed its references.
+	check_unused_local_rules(cu)
 }

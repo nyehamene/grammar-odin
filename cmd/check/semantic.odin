@@ -91,10 +91,34 @@ Rule_Ref :: struct {
 	decl_index: int,
 }
 
+// Use_Counts tallies the references made to one declared name. self counts the
+// references made by the declaration's own rule body, because a rule that
+// references nothing but itself is still unused: reachability is judged by
+// whether some *other* rule names it.
+Use_Counts :: struct {
+	total: int,
+	self:  int,
+}
+
+// used_by_other reports whether some rule other than referrer named this
+// declaration.
+used_by_other :: proc(counts: Use_Counts, referrer: string) -> bool {
+	return counts.total > counts.self
+}
+
+// record_use notes one reference to name made from the rule body referrer.
+record_use :: proc(uses: ^map[string]Use_Counts, name, referrer: string) {
+	counts := uses[name]
+	counts.total += 1
+	if referrer == name do counts.self += 1
+	uses[name] = counts
+}
+
 // Namespace is the collection of rules declared in a directory. Every grammar
 // file in the same directory contributes its rules to the same namespace.
 Namespace :: struct {
-	rules: map[string]Rule_Ref,
+	rules:     map[string]Rule_Ref,
+	rule_uses: map[string]Use_Counts, // rule name -> references to it
 }
 
 // Loaded_File is a grammar file loaded into the compilation unit.
@@ -105,8 +129,11 @@ Loaded_File :: struct {
 	file:            ast.File,
 	namespace_path:  string, // absolute path of the containing directory, owned
 	bindings:        map[string]string, // binding name -> absolute directory of the imported namespace
-	private_rules:     map[string]Rule_Ref,
+	private_rules:   map[string]Rule_Ref,
+	private_uses:    map[string]Use_Counts, // private rule name -> references to it
+	used_bindings:   map[string]bool, // binding name -> referenced in this file
 	binding_offsets: map[string]int, // binding name -> offset of the binding's name
+	enclosing_rule:  string, // name of the rule whose body is being walked
 	broken:          bool, // file had lexical or syntax errors
 }
 
@@ -144,6 +171,8 @@ destroy_compilation_unit :: proc(cu: ^Compilation_Unit) {
 		}
 		delete(f.bindings)
 		delete(f.private_rules)
+		delete(f.private_uses)
+		delete(f.used_bindings)
 		delete(f.binding_offsets)
 		free(f)
 	}
@@ -158,6 +187,7 @@ destroy_compilation_unit :: proc(cu: ^Compilation_Unit) {
 	delete(cu.loading_ns)
 	for _, ns in cu.namespaces {
 		delete(ns.rules)
+		delete(ns.rule_uses)
 		free(ns)
 	}
 	for path, _ in cu.namespaces {
@@ -190,10 +220,7 @@ check :: proc(path: string, mode: Mode, stderr: io.Writer) -> int {
 		delete(abs)
 	}
 
-	bind_all(&cu)
-	for i in 0 ..< len(cu.files_order) {
-		check_file(&cu, cu.files_order[i])
-	}
+	run_checks(&cu)
 
 	sort.quick_sort_proc(cu.errors[:], cmp_errors)
 
@@ -245,6 +272,8 @@ load :: proc(cu: ^Compilation_Unit, path: string) -> ^Loaded_File {
 	fi.namespace_path = strings.clone(filepath.dir(abs))
 	fi.bindings = make(map[string]string)
 	fi.private_rules = make(map[string]Rule_Ref)
+	fi.private_uses = make(map[string]Use_Counts)
+	fi.used_bindings = make(map[string]bool)
 	fi.binding_offsets = make(map[string]int)
 
 	for e in lex_errors {
@@ -426,21 +455,115 @@ get_namespace :: proc(cu: ^Compilation_Unit, dir: string) -> ^Namespace {
 	if ns, ok := cu.namespaces[dir]; ok do return ns
 	ns := new(Namespace)
 	ns.rules = make(map[string]Rule_Ref)
+	ns.rule_uses = make(map[string]Use_Counts)
 	cu.namespaces[strings.clone(dir)] = ns
 	return ns
 }
 
-// check_file performs expression analysis on every rule body in fi.
+// check_file performs expression analysis on every rule body in fi. The per-file
+// use sets are cleared first: the server re-runs this on every keystroke, and
+// `check` may run the phase more than once over a unit.
 check_file :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File) {
 	if fi.broken do return
+	clear(&fi.private_uses)
+	clear(&fi.used_bindings)
 	for decl in fi.file.decls {
 		#partial switch d in decl {
 		case ast.Rule_Decl:
+			// Record which rule is being walked so that a reference can tell
+			// whether it came from the declaring rule itself.
+			fi.enclosing_rule = d.name.name
 			for body in d.body {
 				check_body(cu, fi, d.params[:], body)
 			}
+			fi.enclosing_rule = ""
 			if len(d.params) > 0 {
 				check_unused_params(cu, fi, d.params[:], d.body[:])
+			}
+		}
+	}
+	check_unused_private_rules(cu, fi)
+	check_unused_bindings(cu, fi)
+}
+
+// check_unused_private_rules warns about every private rule of fi that no other
+// rule in the same file references. A declaration that was rejected as a
+// redeclaration is not registered, and is already reported as an error, so it is
+// skipped here. The declarations are walked in source order so the warnings come
+// out deterministically.
+check_unused_private_rules :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File) {
+	for decl in fi.file.decls {
+		#partial switch d in decl {
+		case ast.Rule_Decl:
+			if !is_private_rule(d.name.name) do continue
+			// A declaration that lost a redeclaration contest was never
+			// registered; the one that won was, and its offset tells them apart.
+			if ref, ok := fi.private_rules[d.name.name]; !ok || ref.offset != d.name.pos {
+				continue
+			}
+			if used_by_other(fi.private_uses[d.name.name], d.name.name) do continue
+			add_warning(
+				cu,
+				fi.display,
+				fi.src,
+				d.name.pos,
+				fmt.tprintf("unused private rule: %s", d.name.name),
+			)
+		}
+	}
+}
+
+// check_unused_bindings warns about every import binding of fi that no rule
+// body references. A binding whose import failed is skipped: it is already an
+// error, and it was never registered, so nothing could have referenced it.
+check_unused_bindings :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File) {
+	for decl in fi.file.decls {
+		#partial switch d in decl {
+		case ast.Binding_Decl:
+			if _, ok := fi.bindings[d.name.name]; !ok do continue
+			if fi.used_bindings[d.name.name] do continue
+			add_warning(
+				cu,
+				fi.display,
+				fi.src,
+				d.name.pos,
+				fmt.tprintf("unused binding: %s", d.name.name),
+			)
+		}
+	}
+}
+
+// check_unused_local_rules warns about every local rule of every loaded file
+// that no other rule in its namespace references. Exported rules are never
+// reported: an importing namespace may reference one that nothing inside its own
+// namespace does.
+//
+// Local rules are counted per namespace rather than per file, so this runs once
+// over the whole unit after every file body has been walked.
+check_unused_local_rules :: proc(cu: ^Compilation_Unit) {
+	for i in 0 ..< len(cu.files_order) {
+		fi := cu.files_order[i]
+		if fi.broken do continue
+		ns := cu.namespaces[fi.namespace_path]
+		if ns == nil do continue
+
+		for decl in fi.file.decls {
+			#partial switch d in decl {
+			case ast.Rule_Decl:
+				if !is_local_rule(d.name.name) do continue
+				// As with private rules, only the declaration that was actually
+				// registered can be reported; Rule_Ref.offset says which it was.
+				if ref, ok := ns.rules[d.name.name]; !ok || ref.offset != d.name.pos {
+					continue
+				}
+				if used_by_other(ns.rule_uses[d.name.name], d.name.name) do continue
+				add_warning(
+					cu,
+					fi.display,
+					fi.src,
+					d.name.pos,
+					fmt.tprintf("unused local rule: %s", d.name.name),
+				)
 			}
 		}
 	}
@@ -534,7 +657,10 @@ check_expr_scoped :: proc(
 			Operand_rvalue(o, .Production, v.pos, v.name)
 			break
 		}
+		// A parameter shadows a rule or binding of the same name, so the tests
+		// below only see references that really are rule or binding uses.
 		if is_binding(fi, v.name) {
+			mark_binding_used(fi, v.name)
 			Operand_ns(o, v.pos, v.name)
 			break
 		}
@@ -551,6 +677,7 @@ check_expr_scoped :: proc(
 			)
 			break
 		}
+		mark_rule_used(cu, fi, v.name)
 		Operand_lvalue(o, rule.type, v.pos, v.name)
 		o.arity = rule.arity
 
@@ -749,6 +876,9 @@ check_member :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, m: ast.Member_Expr
 	obj_name := obj_op.name
 
 	if target_dir, found := fi.bindings[obj_name]; found {
+		// The receiver names a binding whether or not the member resolves, so
+		// the binding counts as used either way.
+		mark_binding_used(fi, obj_name)
 		ns := cu.namespaces[target_dir]
 		if ns == nil do return
 		if _, has := ns.rules[m.member.name]; !has {
@@ -766,7 +896,11 @@ check_member :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, m: ast.Member_Expr
 					m.member.name,
 				),
 			)
+			return
 		}
+		// The member resolves in another namespace, which is not where the
+		// referencing file's rules live, so mark the target namespace directly.
+		mark_namespace_rule_used(ns, m.member.name)
 		return
 	}
 
@@ -777,6 +911,34 @@ is_binding :: proc(fi: ^Loaded_File, name: string) -> bool {
 		return true
 	}
 	return false
+}
+
+// mark_binding_used records that fi referenced the binding name. Bindings are
+// declared outside any rule body, so there is no self-reference to discount and
+// a plain flag is enough.
+mark_binding_used :: proc(fi: ^Loaded_File, name: string) {
+	fi.used_bindings[name] = true
+}
+
+// mark_rule_used records a reference to name made from the body of
+// fi.enclosing_rule, routing it to the private or the namespace use set as
+// appropriate. It is called only after the name resolves, so a failed lookup
+// records nothing.
+mark_rule_used :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, name: string) {
+	if _, ok := fi.private_rules[name]; ok {
+		record_use(&fi.private_uses, name, fi.enclosing_rule)
+		return
+	}
+	if ns := cu.namespaces[fi.namespace_path]; ns != nil {
+		record_use(&ns.rule_uses, name, fi.enclosing_rule)
+	}
+}
+
+// mark_namespace_rule_used records a reference to a rule of ns made from another
+// namespace, through an import. There is no enclosing rule on the other side of
+// the boundary, so the reference cannot be a self-reference.
+mark_namespace_rule_used :: proc(ns: ^Namespace, name: string) {
+	record_use(&ns.rule_uses, name, "")
 }
 
 resolve_rule :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, name: string) -> (Rule_Ref, bool) {
@@ -922,6 +1084,22 @@ unquote :: proc(s: string) -> string {
 		return s[1:len(s) - 1]
 	}
 	return s
+}
+
+// is_exported_rule reports whether name declares an exported rule: a name
+// starting with an uppercase letter. An exported rule is reachable from an
+// importing namespace.
+is_exported_rule :: proc(name: string) -> bool {
+	if len(name) == 0 do return false
+	return name[0] >= 'A' && name[0] <= 'Z'
+}
+
+// is_local_rule reports whether name declares a local rule: a name starting with
+// a lowercase letter. A local rule is shared by every file of its namespace but
+// is not exported, so it can only be named from inside that namespace.
+is_local_rule :: proc(name: string) -> bool {
+	if len(name) == 0 do return false
+	return name[0] >= 'a' && name[0] <= 'z'
 }
 
 // is_private_rule reports whether name declares a private rule: an underscore

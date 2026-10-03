@@ -22,9 +22,11 @@ cat :: proc(a, b: string) -> string {
 }
 
 // run_semantics loads the given in-memory files into a fresh compilation unit,
-// runs the binding and type-checking phases, and returns the diagnostics as
-// "path:line:col: message" strings. The returned strings are owned by the
-// caller; the compilation unit is destroyed.
+// runs the binding and type-checking phases, and returns the *errors* as
+// "path:line:col: message" strings. Warnings are reported separately by
+// run_warnings, so a test that cares only about errors does not have to list
+// them. The returned strings are owned by the caller; the compilation unit is
+// destroyed.
 run_semantics :: proc(files: []Mem_File) -> [dynamic]string {
 	cu := new_compilation_unit()
 	defer destroy_compilation_unit(&cu)
@@ -36,12 +38,32 @@ run_semantics :: proc(files: []Mem_File) -> [dynamic]string {
 	return collect_messages(&cu)
 }
 
-// collect_messages formats every diagnostic in cu as "path:line:col: message",
-// sorted by path, line and column. The returned strings are owned by the
-// caller.
+// run_warnings is run_semantics for the warnings, formatted the way `grammar
+// check` prints them: "path:line:col: warning: message".
+run_warnings :: proc(files: []Mem_File) -> [dynamic]string {
+	cu := new_compilation_unit()
+	defer destroy_compilation_unit(&cu)
+
+	for f in files {
+		load_source(&cu, strings.clone(f.abs), strings.clone(f.display), f.src)
+	}
+	run_checks(&cu)
+	return collect_diagnostics(&cu, .Warning)
+}
+
+// collect_messages formats every error diagnostic in cu as
+// "path:line:col: message", sorted by path, line and column. The returned
+// strings are owned by the caller.
 collect_messages :: proc(cu: ^Compilation_Unit) -> [dynamic]string {
+	return collect_diagnostics(cu, .Error)
+}
+
+// collect_diagnostics formats every diagnostic of the given severity in cu,
+// sorted by path, line and column, and returns the strings owned by the caller.
+collect_diagnostics :: proc(cu: ^Compilation_Unit, severity: Severity) -> [dynamic]string {
 	messages := make([dynamic]string, len(cu.errors))
 	for e, i in cu.errors {
+		if e.severity != severity do continue
 		b := strings.builder_make()
 		strings.write_string(&b, e.path)
 		strings.write_rune(&b, ':')
@@ -49,16 +71,37 @@ collect_messages :: proc(cu: ^Compilation_Unit) -> [dynamic]string {
 		strings.write_rune(&b, ':')
 		strings.write_int(&b, e.col)
 		strings.write_string(&b, ": ")
+		if severity == .Warning {
+			strings.write_string(&b, "warning: ")
+		}
 		strings.write_string(&b, e.message)
 		messages[i] = strings.clone(strings.to_string(b))
 		strings.builder_destroy(&b)
 	}
+	// Entries skipped by the severity filter are left as empty strings; drop them
+	// so the result holds exactly the matching diagnostics.
+	n := 0
+	for m in messages {
+		if m == "" do continue
+		messages[n] = m
+		n += 1
+	}
+	resize(&messages, n)
 	sort.quick_sort_proc(messages[:], cmp_string)
 	return messages
 }
 
 // assert_messages checks that got matches the expected diagnostics.
 assert_messages :: proc(t: ^testing.T, got: [dynamic]string, want: []string) {
+	assert_diagnostics(t, got, want)
+}
+
+// assert_warnings checks the warnings reported for the given files.
+assert_warnings :: proc(t: ^testing.T, files: []Mem_File, want: []string) {
+	assert_diagnostics(t, run_warnings(files), want)
+}
+
+assert_diagnostics :: proc(t: ^testing.T, got: [dynamic]string, want: []string) {
 	defer {
 		for m in got do delete(m)
 		delete(got)
@@ -267,9 +310,173 @@ test_proc_call_arity :: proc(t: ^testing.T) {
 
 @(test)
 test_unused_proc_parameter :: proc(t: ^testing.T) {
-	src := "n x y = x;\n"
-	msgs := run_semantics([]Mem_File{test_src(t, "unusedparam", "main.grammar", src)})
+	// `N` is exported, so the parameter is the only thing to report.
+	src := "N x y = x;\n"
+	files := []Mem_File{test_src(t, "unusedparam", "main.grammar", src)}
+	msgs := run_semantics(files)
 	assert_messages(t, msgs, {"main.grammar:1:5: unused proc parameter: y"})
+	// An unused parameter is an error, not one of the unused warnings: it fails
+	// the run rather than being advisory.
+	assert_warnings(t, files, {})
+}
+
+@(test)
+test_unused_private_rule_warns :: proc(t: ^testing.T) {
+	src := "_used = \"x\";\n_unused = \"y\";\nA = _used;\n"
+	files := []Mem_File{test_src(t, "warnpriv", "main.grammar", src)}
+	assert_messages(t, run_semantics(files), {})
+	assert_warnings(
+		t,
+		files,
+		{"main.grammar:2:1: warning: unused private rule: _unused"},
+	)
+}
+
+@(test)
+test_private_rule_referencing_only_itself_warns :: proc(t: ^testing.T) {
+	// Reachability is judged by whether another rule names it, so a rule that
+	// only feeds itself is still dead.
+	src := "_loop = _loop \"x\";\nA = \"y\";\n"
+	files := []Mem_File{test_src(t, "warnself", "main.grammar", src)}
+	assert_warnings(
+		t,
+		files,
+		{"main.grammar:1:1: warning: unused private rule: _loop"},
+	)
+}
+
+@(test)
+test_unused_local_rule_warns :: proc(t: ^testing.T) {
+	src := "used = \"x\";\nunused = \"y\";\nA = used;\n"
+	files := []Mem_File{test_src(t, "warnlocal", "main.grammar", src)}
+	assert_messages(t, run_semantics(files), {})
+	assert_warnings(
+		t,
+		files,
+		{"main.grammar:2:1: warning: unused local rule: unused"},
+	)
+}
+
+@(test)
+test_local_rule_used_from_a_sibling_file_does_not_warn :: proc(t: ^testing.T) {
+	// A local rule is shared across its namespace, so a reference from any file
+	// in that namespace counts.
+	files := []Mem_File {
+		test_src(t, "warnlocalns", "a.grammar", "helper = \"x\";\n"),
+		test_src(t, "warnlocalns", "b.grammar", "A = helper;\n"),
+	}
+	assert_warnings(t, files, {})
+}
+
+@(test)
+test_local_rules_used_only_by_each_other_do_not_warn :: proc(t: ^testing.T) {
+	// Each of these is named by the other, so both count as used. Reachability
+	// is judged by direct references, not by a search for an entry point, so a
+	// mutually recursive pair of local rules is not reported. A rule that only
+	// ever names *itself* is reported; see the self-reference test above.
+	src := "ping = pong;\npong = ping;\n"
+	files := []Mem_File{test_src(t, "warncycle", "main.grammar", src)}
+	assert_warnings(t, files, {})
+}
+
+@(test)
+test_exported_rule_is_never_reported_unused :: proc(t: ^testing.T) {
+	// Nothing inside this namespace references Exported, but an importing
+	// namespace may, so it is never reported.
+	src := "Exported = \"x\";\n_helper = \"y\";\n"
+	files := []Mem_File{test_src(t, "warnexport", "main.grammar", src)}
+	assert_warnings(t, files, {"main.grammar:2:1: warning: unused private rule: _helper"})
+}
+
+@(test)
+test_unused_binding_warns :: proc(t: ^testing.T) {
+	root := scratch_dir(t, "cmd/check/testdata/scratch/warn_bind_unused")
+	defer os.remove_all("cmd/check/testdata/scratch/warn_bind_unused")
+	defer delete(root)
+
+	base := cat(root, "/base")
+	defer delete(base)
+	os.make_directory_all(base)
+	rgram := cat(base, "/r.grammar")
+	defer delete(rgram)
+	write_test_file(t, rgram, "R = \"x\";\n")
+
+	abs := cat(root, "/main.grammar")
+	defer delete(abs)
+	// `unused` is imported but never named; `used` is named by a member access.
+	src := "unused = @import(\"./base\");\nused = @import(\"./base\");\nA = used.R;\n"
+	files := []Mem_File{{abs = abs, display = "main.grammar", src = src}}
+	assert_messages(t, run_semantics(files), {})
+	assert_warnings(t, files, {"main.grammar:1:1: warning: unused binding: unused"})
+}
+
+@(test)
+test_binding_named_without_a_member_access_does_not_warn :: proc(t: ^testing.T) {
+	root := scratch_dir(t, "cmd/check/testdata/scratch/warn_bind_bare")
+	defer os.remove_all("cmd/check/testdata/scratch/warn_bind_bare")
+	defer delete(root)
+
+	base := cat(root, "/base")
+	defer delete(base)
+	os.make_directory_all(base)
+	rgram := cat(base, "/r.grammar")
+	defer delete(rgram)
+	write_test_file(t, rgram, "R = \"x\";\n")
+
+	abs := cat(root, "/main.grammar")
+	defer delete(abs)
+	src := "ns = @import(\"./base\");\np x = ns;\nA = <p ns>;\n"
+	files := []Mem_File{{abs = abs, display = "main.grammar", src = src}}
+	assert_warnings(t, files, {})
+}
+
+@(test)
+test_imported_namespace_rule_used_from_another_namespace_does_not_warn :: proc(t: ^testing.T) {
+	// The use crosses a namespace boundary, which a bare ident could not do.
+	// Counting it keeps the exported rule out of the unused report either way,
+	// and the local rule in `base` honest about who names it.
+	root := scratch_dir(t, "cmd/check/testdata/scratch/warn_bind_xns")
+	defer os.remove_all("cmd/check/testdata/scratch/warn_bind_xns")
+	defer delete(root)
+
+	base := cat(root, "/base")
+	defer delete(base)
+	os.make_directory_all(base)
+	rgram := cat(base, "/r.grammar")
+	defer delete(rgram)
+	write_test_file(t, rgram, "R = \"x\";\n")
+
+	abs := cat(root, "/main.grammar")
+	defer delete(abs)
+	src := "ns = @import(\"./base\");\nA = ns.R;\n"
+	files := []Mem_File{{abs = abs, display = "main.grammar", src = src}}
+	assert_warnings(t, files, {})
+}
+
+@(test)
+test_unused_is_not_reported_for_a_shadowed_redeclaration :: proc(t: ^testing.T) {
+	// Only the declaration that won the redeclaration contest is registered, so
+	// only that one can be reported unused. Warning about the rejected duplicate
+	// too would restate an error the checker has already given.
+	src := "dup = \"a\";\ndup = \"b\";\nA = dup;\n"
+	files := []Mem_File{test_src(t, "warnshadow", "main.grammar", src)}
+	assert_messages(
+		t,
+		run_semantics(files),
+		{
+			"main.grammar:2:1: field dup redeclared in this namespace. (see other declaration at main.grammar:1:1)",
+		},
+	)
+	assert_warnings(t, files, {})
+}
+
+@(test)
+test_warnings_are_suppressed_for_a_broken_file :: proc(t: ^testing.T) {
+	// A file that failed to parse has no trustworthy rule list, so it reports
+	// its errors and stays quiet about unused declarations.
+	src := "unused = \"x\";\n_unused = \"y\"\n"
+	files := []Mem_File{test_src(t, "warnbroken", "main.grammar", src)}
+	assert_warnings(t, files, {})
 }
 
 @(test)
@@ -461,7 +668,9 @@ test_check_cli_reports_semantic_errors :: proc(t: ^testing.T) {
 	os.make_directory_all(ok_dir)
 	ok_main := cat(ok_dir, "/main.grammar")
 	defer delete(ok_main)
-	write_test_file(t, ok_main, "a = \"x\";\nb = a;\n")
+	// Exported rules are never reported unused, so this package has nothing to
+	// say: no errors and no warnings.
+	write_test_file(t, ok_main, "A = \"x\";\nB = A;\n")
 
 	stderr := bytes.Buffer{}
 	bytes.buffer_init(&stderr, {})
@@ -495,5 +704,38 @@ test_check_cli_reports_semantic_errors :: proc(t: ^testing.T) {
 		t,
 		strings.contains(report, "bad.grammar:1:5: undefined identifier: nope"),
 		"expected the undefined identifier diagnostic",
+	)
+}
+
+@(test)
+test_check_cli_warnings_do_not_fail_the_run :: proc(t: ^testing.T) {
+	warn_dir := "cmd/check/testdata/scratch/cli_warn"
+	os.remove_all(warn_dir)
+	defer os.remove_all(warn_dir)
+	os.make_directory_all(warn_dir)
+	warn_main := cat(warn_dir, "/main.grammar")
+	defer delete(warn_main)
+	// `unused` is a local rule that nothing references, and `_gone` a private
+	// one: both warn, neither is an error.
+	write_test_file(t, warn_main, "unused = \"x\";\nA = \"y\";\n_gone = \"z\";\n")
+
+	stderr := bytes.Buffer{}
+	bytes.buffer_init(&stderr, {})
+	defer bytes.buffer_destroy(&stderr)
+
+	code := check(warn_dir, .Package, bytes.buffer_to_stream(&stderr))
+	report := strings.clone(string(bytes.buffer_to_bytes(&stderr)))
+	defer delete(report)
+
+	testing.expect(t, code == 0, "warnings alone must not make the run fail")
+	testing.expect(
+		t,
+		strings.contains(report, "main.grammar:1:1: warning: unused local rule: unused"),
+		"expected the unused local rule warning",
+	)
+	testing.expect(
+		t,
+		strings.contains(report, "main.grammar:3:1: warning: unused private rule: _gone"),
+		"expected the unused private rule warning",
 	)
 }

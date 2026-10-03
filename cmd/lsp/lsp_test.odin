@@ -177,11 +177,11 @@ test_lsp_did_change_updates_diagnostics :: proc(t: ^testing.T) {
 		),
 		make_notification(
 			`textDocument/didOpen`,
-			`{"textDocument":{"uri":"file:///tmp/test.grammar","languageId":"grammar","version":1,"text":"a = b;"}}`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar","languageId":"grammar","version":1,"text":"A = b;"}}`,
 		),
 		make_notification(
 			`textDocument/didChange`,
-			`{"textDocument":{"uri":"file:///tmp/test.grammar","version":2},"contentChanges":[{"text":"a = \"ok\";"}]}`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar","version":2},"contentChanges":[{"text":"A = \"ok\";"}]}`,
 		),
 		make_request(`2`, `shutdown`, `null`),
 	)
