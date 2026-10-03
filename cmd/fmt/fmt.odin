@@ -5,7 +5,7 @@
 // that a run of blank lines at the end of the file collapses to a single blank
 // line (the golden rule in implementation/08-fmt.md). A run of at least
 // `separator` blank lines ends an alignment group; a shorter run is interior
-// whitespace inside a group and does not break the alignment (rule 6). The
+// whitespace inside a group and does not break the alignment (rule 1). The
 // source is parsed only to validate it: on a lexical or syntax error the file is
 // left untouched and the errors are reported on stderr.
 package fmtcmd
@@ -340,7 +340,7 @@ compute_align :: proc(kinds: []Line_Kind, groups: [][dynamic]token.Token, src: s
 		if kinds[i] == .Blank {
 			if blank_run == 0 do run_start = i
 			blank_run += 1
-			// Only a run that reaches the threshold ends the group (rule 6).
+			// Only a run that reaches the threshold ends the group (rule 1).
 			if blank_run >= separator && in_block {
 				for j in block_start ..< run_start {
 					align[j] = col + 1

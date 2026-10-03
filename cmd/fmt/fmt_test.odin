@@ -66,7 +66,7 @@ check_format :: proc(t: ^testing.T, src, want: string) {
 // column past the widest rule name, so it is always preceded by a space.
 
 @(test)
-test_rule1_rule_grouping :: proc(t: ^testing.T) {
+test_rule1_adjacent_rules_share_a_group :: proc(t: ^testing.T) {
 	src := "a = \"a\";\nbar = \"bar\";\n\nb = \"a\";\nname = \"name\";\n"
 	want := "a   = \"a\";\nbar = \"bar\";\n\nb    = \"a\";\nname = \"name\";\n"
 	check_format(t, src, want)
@@ -101,11 +101,11 @@ test_rule5_continuation_indent :: proc(t: ^testing.T) {
 	check_format(t, src, want)
 }
 
-// Rule 6: only a run of at least `--separator` blank lines ends a group, so with
+// Rule 1: only a run of at least `--separator` blank lines ends a group, so with
 // 2 the single blank between `a` and `bar` leaves them in one group while the
 // double blank before `b` starts a new one.
 @(test)
-test_rule6_separator_threshold :: proc(t: ^testing.T) {
+test_rule1_separator_threshold :: proc(t: ^testing.T) {
 	src := "a = \"a\";\n\nbar = \"bar\";\n\n\nb = \"a\";\nname = \"name\";\n"
 	want := "a   = \"a\";\n\nbar = \"bar\";\n\n\nb    = \"a\";\nname = \"name\";\n"
 	check_format_sep(t, src, want, 2)
@@ -117,7 +117,7 @@ test_rule6_separator_threshold :: proc(t: ^testing.T) {
 // A boundary run longer than the threshold is a group boundary and is kept at
 // its original length rather than being trimmed down to `--separator`.
 @(test)
-test_rule6_boundary_longer_than_separator_preserved :: proc(t: ^testing.T) {
+test_rule1_boundary_longer_than_separator_preserved :: proc(t: ^testing.T) {
 	src := "a = \"a\";\n\n\n\n\nb = \"b\";\n"
 	check_format_sep(t, src, src, 2)
 	check_format_sep(t, src, src, 1)

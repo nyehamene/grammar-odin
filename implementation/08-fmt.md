@@ -9,13 +9,13 @@ exit code after formatting all the input files.
 - [x] Add tests using the rules described below.
 - [x] Implement `grammar fmt --stdin`.
 - [x] Implement `grammar fmt --stdout PATH`.
-- [ ] Implement `grammar fmt --separator N`.
+- [x] Implement `grammar fmt --separator N`.
 
 ## Formating rules
 
 ### Golden rule
 
-The formatter is only allowed to add newlines between groups (see rules 1 and 6).
+The formatter is only allowed to add newlines between groups (see rule 1).
 Any newlines existing in the source must be preserved, but trailing blank lines
 at the end of the file should collapse to 1. The number of newlines added to
 separate groups depends on the flag `--separator N` (see ../command/fmt.txt).
@@ -25,24 +25,46 @@ Boundary runs (blank lines between groups) longer than the value given by
 ### Other rules
 
 1. Rule Grouping: alignment of consecutive rules.
-  Rules not separated by blank lines should be aligned
-  so that the value separator `=` are on the same column.
+  Rules are aligned so that the value separator `=` lands on the same column.
+  A group ends at a run of at least `--separator` blank lines (see
+  ../command/fmt.txt); a shorter run is interior whitespace inside the group
+  and does not break the alignment. A boundary run longer than `--separator` is
+  kept at its original length.
 
-  For example,
+  The same input formats differently depending on the threshold. Before, with
+  one blank line before `bar` and two before `b`:
 
-  Before:
   ```grammar
   a = "a";
+
   bar = "bar";
+
 
   b = "a";
   name = "name";
   ```
 
-  After:
+  After, at the default `--separator 1`, where the single blank ends a group
+  and `a` is padded only against itself:
+
+  ```grammar
+  a = "a";
+
+  bar = "bar";
+
+
+  b    = "a";
+  name = "name";
+  ```
+
+  After, with `--separator 2`, where the single blank is interior, so `a` and
+  `bar` share a group and `a` is padded out to `bar`:
+
   ```grammar
   a   = "a";
+
   bar = "bar";
+
 
   b    = "a";
   name = "name";
@@ -54,7 +76,7 @@ Boundary runs (blank lines between groups) longer than the value given by
   For example,
 
   Before:
-  ```grammmar
+  ```grammar
   one = (foo);
   two = [bar];
   xxx = {baz};
@@ -98,7 +120,24 @@ Boundary runs (blank lines between groups) longer than the value given by
          | three;
   ```
 
-Combing rule 1 and 4, given the following text:
+  The rule separator may also sit on a line of its own. It keeps that line, but
+  lands on the same column.
+
+  Before:
+  ```grammar
+  choice = one
+     | two
+     ;
+  ```
+
+  After:
+  ```grammar
+  choice = one
+         | two
+         ;
+  ```
+
+Combining rule 1 and 4, given the following text:
 
 Before:
 ```grammar
@@ -145,37 +184,6 @@ alignment before it spans multiple lines.
            other
          | two
          | three;
-  ```
-
-6. Rule Grouping: alignment of consecutive rules.
-  Rules are aligned so that the value separator `=` lands on the same column,
-  unless they are separated by a run of at least `--separator` blank lines. A
-  run shorter than `--separator` is interior whitespace inside a group and
-  does not break the alignment.
-  Assuming `--separator 2` is given.
-
-  For example,
-
-  Before:
-  ```grammar
-  a = "a";
-
-  bar = "bar";
-
-
-  b = "a";
-  name = "name";
-  ```
-
-  After:
-  ```grammar
-  a   = "a";
-
-  bar = "bar";
-
-
-  b    = "a";
-  name = "name";
   ```
 
 ## Example
