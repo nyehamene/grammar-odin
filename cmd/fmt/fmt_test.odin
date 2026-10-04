@@ -310,6 +310,8 @@ test_idempotent :: proc(t: ^testing.T) {
 		"choice = one // one\n   | two // two\n   ; // done\n",
 		"foo x y = x y;\nf x = x;\n\nbar xx y = xx y;\nb x y = x y;\n",
 		"a = \"a\";\nfoo = a `name=\"a\"; other=\"b\"`;\nbar = a b `n = \"1\"`;\nbaz = ( a ) `n=\"2\"`;\n",
+		"foo = a b `n=\"1\"`\n  | xxxxxx `n=\"2\"`\n  | x `n=\"3\"`\n  ;\n",
+		"foo = a\n  b `n=\"1\"`\n  | c `n=\"2\"`\n  ;\n",
 	}
 	for src_ in inputs {
 		once := format_ok(t, src_)
@@ -348,6 +350,71 @@ test_tag_value_keeps_separators_inside_it :: proc(t: ^testing.T) {
 test_tag_on_a_group_is_written_outside_it :: proc(t: ^testing.T) {
 	check_format(t, "foo = ( x ) `name=\"a\"`;\n", "foo = ( x ) `name=\"a\"`;\n")
 	check_format(t, "foo = [ x ] { y } `name=\"a\"`;\n", "foo = [ x ] { y } `name=\"a\"`;\n")
+}
+
+// The tags of one rule share a column, so that a production arranged over several
+// lines has its tags read down the page (rule 8).
+@(test)
+test_tags_align_when_alternatives_align :: proc(t: ^testing.T) {
+	check_format(
+		t,
+		"foo = a b `n=\"1\"`\n  | xxxxxx `n=\"2\"`\n  | x `n=\"3\"`\n  ;\n",
+		"foo = a b    `n=\"1\"`\n    | xxxxxx `n=\"2\"`\n    | x      `n=\"3\"`\n    ;\n",
+	)
+	check_format(
+		t,
+		"foo = a `n=\"1\"`\n  | bbb `n=\"2\"`\n  ;\n",
+		"foo = a   `n=\"1\"`\n    | bbb `n=\"2\"`\n    ;\n",
+	)
+}
+
+// A tag on a group is written outside it, and the two tags still line up.
+@(test)
+test_tags_align_across_groups :: proc(t: ^testing.T) {
+	check_format(
+		t,
+		"foo = ( a ) `n=\"1\"`\n  | ( b ) `n=\"2\"`\n  ;\n",
+		"foo = ( a ) `n=\"1\"`\n    | ( b ) `n=\"2\"`\n    ;\n",
+	)
+}
+
+// A tag annotates the last element of a production, so it closes the continuation
+// line it is written on. It aligns like any other.
+@(test)
+test_tags_align_on_a_continuation_line :: proc(t: ^testing.T) {
+	check_format(
+		t,
+		"foo = a\n  b `n=\"1\"`\n  | c `n=\"2\"`\n  ;\n",
+		"foo = a\n      b `n=\"1\"`\n    | c `n=\"2\"`\n    ;\n",
+	)
+}
+
+// A rule with a single tag has nothing to line it up against, so it keeps the one
+// space the tokens give it rather than being padded away from its production.
+@(test)
+test_one_tag_is_left_where_it_is :: proc(t: ^testing.T) {
+	check_format(t, "foo = a `n=\"1\"`;\n", "foo = a `n=\"1\"`;\n")
+	check_format(
+		t,
+		"foo = a `n=\"1\"`\n  | bbb;\n",
+		"foo = a `n=\"1\"`\n    | bbb;\n",
+	)
+}
+
+// The tags of a rule line up with each other and not with those of its neighbours,
+// even when the rules share an alignment group.
+@(test)
+test_tags_align_per_rule :: proc(t: ^testing.T) {
+	check_format(
+		t,
+		"one = a `n=\"1\"`\n  | bb\n  ;\n\ntwo = c `n=\"3\"`\n  | dd `n=\"4\"`\n  ;\n",
+		"one = a `n=\"1\"`\n    | bb\n    ;\n\ntwo = c  `n=\"3\"`\n    | dd `n=\"4\"`\n    ;\n",
+	)
+	check_format(
+		t,
+		"one = a `n=\"1\"`\n  | bb `n=\"2\"`\n  ;\ntwo = c `n=\"3\"`\n  | dd `n=\"4\"`\n  ;\n",
+		"one = a  `n=\"1\"`\n    | bb `n=\"2\"`\n    ;\ntwo = c  `n=\"3\"`\n    | dd `n=\"4\"`\n    ;\n",
+	)
 }
 
 @(test)

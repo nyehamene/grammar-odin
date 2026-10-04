@@ -271,6 +271,12 @@ layout :: proc(src: string, tokens: []token.Token, separator: int) -> string {
 	defer for h in header_lhs do if len(h) > 0 do delete(h)
 	compute_align(kinds[:], groups[:], src, align[:], header_lhs[:], separator)
 
+	// tag_col[line] is the column the tag of that line starts in, or -1 when the
+	// line holds no tag or its rule has fewer than two tags to line up (rule 8).
+	tag_col := make([dynamic]int, n_lines)
+	defer delete(tag_col)
+	compute_tag_columns(kinds[:], groups[:], src, align[:], tag_col[:])
+
 	nl := newline_style(src)
 	b := strings.builder_make()
 	first := true
@@ -295,7 +301,17 @@ layout :: proc(src: string, tokens: []token.Token, separator: int) -> string {
 			if i < cut do write_line(&b, "", &first, nl)
 			continue
 		}
-		line := render_line(groups[i][:], kinds[i], align[i], header_lhs[i], i, src, offsets[:], nl)
+		line := render_line(
+			groups[i][:],
+			kinds[i],
+			align[i],
+			header_lhs[i],
+			tag_col[i],
+			i,
+			src,
+			offsets[:],
+			nl,
+		)
 		write_line(&b, line, &first, nl)
 		delete(line)
 	}
@@ -510,15 +526,114 @@ first_equal :: proc(line: []token.Token) -> int {
 	return len(line)
 }
 
+// first_tag returns the index of the tag in line, or -1 when the line holds none.
+// A tag annotates the last element of a production, so a line holds at most one.
+first_tag :: proc(line: []token.Token) -> int {
+	for t, i in line {
+		if t.kind == .Tag do return i
+	}
+	return -1
+}
+
+// compute_tag_columns fills tag_col with the column the tag of each line starts in.
+// Every tag of a rule shares one column, so that a production arranged over several
+// lines has its tags read down the page (rule 8).
+//
+// A rule with fewer than two tags has nothing to line up, so its tags stay where
+// they were written and its lines get -1. Its lines are already indented to the
+// separator column, and padding a lone tag would only move it away from the
+// production it annotates.
+//
+// The column depends on how wide each line is once laid out, so this runs after
+// compute_align has filled the alignment columns and the padded header left hand
+// sides the prefix widths are measured from.
+compute_tag_columns :: proc(
+	kinds: []Line_Kind,
+	groups: [][dynamic]token.Token,
+	src: string,
+	align: []int,
+	tag_col: []int,
+) {
+	for h in 0 ..< len(kinds) {
+		if kinds[h] != .Header do continue
+		end := rule_end(kinds[:], h)
+
+		tags := 0
+		for i in h ..< end {
+			if first_tag(groups[i][:]) >= 0 do tags += 1
+		}
+		if tags < 2 {
+			for i in h ..< end do tag_col[i] = -1
+			continue
+		}
+
+		widest := 0
+		for i in h ..< end {
+			tag := first_tag(groups[i][:])
+			if tag < 0 do continue
+			widest = max(widest, tag_prefix_width(kinds[i], groups[i][:], tag, src, align[i]))
+		}
+		// One space past the widest line keeps the tag off whatever it follows.
+		for i in h ..< end {
+			if first_tag(groups[i][:]) >= 0 do tag_col[i] = widest + 1
+		}
+	}
+}
+
+// rule_end returns the line at which the rule declared at header stops, which is
+// the next header, blank line or comment line, or the end of the file. A rule
+// separator on a line of its own and the continuation lines above it belong to the
+// rule.
+rule_end :: proc(kinds: []Line_Kind, header: int) -> int {
+	for i in header + 1 ..< len(kinds) {
+		switch kinds[i] {
+		case .Header, .Blank, .Comment:
+			return i
+		case .Pipe, .Body, .Lone_Semicolon:
+		}
+	}
+	return len(kinds)
+}
+
+// tag_prefix_width returns how wide the part of a line before its tag is once the
+// line is laid out: the indent the line is written at, plus the tokens between the
+// start of its body and the tag.
+tag_prefix_width :: proc(
+	kind: Line_Kind,
+	line: []token.Token,
+	tag: int,
+	src: string,
+	col: int,
+) -> int {
+	// A continuation line is written one column past the separator column (rule 5),
+	// and a header adds the `=` and the space after it.
+	head := col
+	start := 0
+	switch kind {
+	case .Header:
+		head = col + 2
+		start = first_equal(line) + 1
+	case .Body:
+		head = col + 2
+	case .Pipe, .Lone_Semicolon, .Comment, .Blank:
+	}
+
+	rendered := render_tokens(line[start:tag], src)
+	defer delete(rendered)
+	return head + len(rendered)
+}
+
 // render_line renders a single source line into a string. Comment lines are
 // copied verbatim; every other line is reconstructed from its tokens and
 // aligned to col. lhs is the padded left hand side compute_align prepared for a
-// rule header, and is empty for every other kind.
+// rule header, and is empty for every other kind. tag_col is the column the line's
+// tag starts in, or -1 to leave the tag where the tokens put it (rule 8).
 render_line :: proc(
 	line: []token.Token,
 	kind: Line_Kind,
 	col: int,
 	lhs: string,
+	tag_col: int,
 	i: int,
 	src: string,
 	offsets: []int,
@@ -541,15 +656,20 @@ render_line :: proc(
 			head = render_tokens(line[:eq], src)
 			defer delete(head)
 		}
-		w := len(head)
 		b := strings.builder_make()
 		strings.write_string(&b, head)
-		for _ in 0 ..< max(col - w, 0) {
+		for _ in 0 ..< max(col - len(head), 0) {
 			strings.write_string(&b, " ")
 		}
 		strings.write_string(&b, "=")
 		if eq + 1 < len(line) {
 			strings.write_string(&b, " ")
+		}
+		// A tag on a header is on the right hand side, so it is written from
+		// there: the index shifts by the separator and the header's own tokens.
+		if tag := first_tag(line); tag > eq && tag_col >= 0 {
+			write_body_with_tag(&b, line[eq+1:], tag-eq-1, tag_col, src)
+		} else if eq + 1 < len(line) {
 			rhs := render_tokens(line[eq + 1:], src)
 			strings.write_string(&b, rhs)
 			delete(rhs)
@@ -559,13 +679,19 @@ render_line :: proc(
 		return res
 
 	case .Pipe:
+		if tag := first_tag(line); tag >= 0 && tag_col >= 0 {
+			return pad_and_render_with_tag(line, col, tag, tag_col, src)
+		}
 		return pad_and_render(line, col, src)
 
 	case .Body:
 		// Rule 5: a continuation line carries no leading `|`, so it is indented
 		// one column past the separator column. That makes it read as a
-		// continuation of the alternative above it instead of as a sibling of
-		// the `|` lines.
+		// continuation of the alternative above it instead of as a sibling of the
+		// `|` lines.
+		if tag := first_tag(line); tag >= 0 && tag_col >= 0 {
+			return pad_and_render_with_tag(line, col + 2, tag, tag_col, src)
+		}
 		return pad_and_render(line, col + 2, src)
 
 	case .Lone_Semicolon:
@@ -592,6 +718,52 @@ pad_and_render :: proc(line: []token.Token, col: int, src: string) -> string {
 	res := strings.clone(strings.to_string(b))
 	strings.builder_destroy(&b)
 	return res
+}
+
+// pad_and_render_with_tag is pad_and_render with the tag at index tag of the line
+// written in column tag_col instead of where its neighbours put it. The returned
+// string is owned by the caller.
+pad_and_render_with_tag :: proc(
+	line: []token.Token,
+	col, tag, tag_col: int,
+	src: string,
+) -> string {
+	b := strings.builder_make()
+	for _ in 0 ..< col {
+		strings.write_string(&b, " ")
+	}
+	write_body_with_tag(&b, line, tag, tag_col, src)
+	res := strings.clone(strings.to_string(b))
+	strings.builder_destroy(&b)
+	return res
+}
+
+// write_body_with_tag appends the body of a line to b with the tag at index tag
+// written in column tag_col (rule 8). The tokens before it are rendered, the line
+// is padded out to the column, the tag is written in its canonical spelling, and
+// whatever follows it is rendered after. A tag never sits inside a group, so no
+// parenthesis is open across it and rendering the two halves apart is safe.
+write_body_with_tag :: proc(
+	b: ^strings.Builder,
+	body: []token.Token,
+	tag, tag_col: int,
+	src: string,
+) {
+	before := render_tokens(body[:tag], src)
+	defer delete(before)
+	strings.write_string(b, before)
+
+	for _ in strings.builder_len(b^) ..< tag_col {
+		strings.write_string(b, " ")
+	}
+
+	write_tag(b, body[tag], src)
+
+	if tag + 1 < len(body) {
+		after := render_tokens(body[tag+1:], src)
+		defer delete(after)
+		strings.write_string(b, after)
+	}
 }
 
 // render_tokens reconstructs the source text of a run of tokens. A single space

@@ -236,6 +236,39 @@ alignment before it spans multiple lines.
   baz = ( a ) `n="1"`;
   ```
 
+8. Align tags in a rule when aligning alternatives
+
+  Before:
+  ```
+  foo = a b `tag`
+    | xxxxxx `tag`
+    | x `tag`
+    ;
+  ```
+
+   After:
+   ```
+   foo = a b    `tag`
+       | xxxxxx `tag`
+       | x      `tag`
+       ;
+   ```
+
+   The column is one space past the widest line of the rule, so every tag starts in
+   the same column. Note that `` `tag` `` stands for a tag such as `name="a"`: the
+   scanner only accepts a run of `name="value"` pairs, so the blocks above are
+   illustrative and cannot be fed to `grammar fmt` as they stand.
+
+   The tags line up per rule, not per alignment group. Two rules in one group each
+   line up their own tags, since a tag annotates a production of one rule and
+   lining it up against another rule's tag would say nothing.
+
+   A rule with a single tag has nothing to line it up against, so it keeps the one
+   space its tokens give it rather than being padded away from the production it
+   annotates. Lines of a rule that hold no tag are left alone.
+
+   A tag on a continuation line (see rule 5) takes part as well, since a tag closes
+   the production of the line it is written on.
 
 ## Example
 
