@@ -195,17 +195,19 @@ alignment before it spans multiple lines.
   foo x y = x y;
   f x = x;
 
-  bar xx y = xx y
-  b x y = x y
+  bar xx y = xx y;
+  baz a bb c = xx y;
+  cat a b c d = a ;
   ```
 
   After:
   ```grammar
   foo x y = x y;
-  f   x   = x;
+  f     x = x;
 
-  bar xx y = xx y
-  b   x  y = x y
+  bar  long y = xx y;
+  baz  a bb c = a bb c;
+  cat a z x y = a c z x y ;
   ```
 
 7. Write a tag in one canonical spelling.
