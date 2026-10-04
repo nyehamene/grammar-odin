@@ -591,12 +591,17 @@ uses_param :: proc(expr: ast.Production, param: string) -> bool {
 	case ast.Qual_Ident:
 		return uses_param(v.lhs, param) || uses_param(v.rhs, param)
 	case ^ast.Call:
+		// The callee names a rule rather than a value, so only a plain receiver
+		// can be the parameter; the arguments are the value positions of a call,
+		// and a parameter passed to one is a use of it.
 		switch it in v.ident {
 		case ast.Ident:
-			return uses_param(it, param)
+			if uses_param(it, param) do return true
 		case ast.Qual_Ident:
-			return uses_param(it.lhs, param)
+			if uses_param(it.lhs, param) do return true
 		}
+		return exprs_use_param(v.args[:], param)
+
 	case ast.Sequence:
 		return exprs_use_param(v.exprs[:], param)
 	case ast.Alternative:

@@ -210,13 +210,11 @@ test_tagged_expressions_are_checked_like_their_element :: proc(t: ^testing.T) {
 		"e = { a } `name=\"e\"`;\n" +
 		"f = [ a ] `name=\"f\"`;\n" +
 		"g = a | b `name=\"g\"`;\n" +
-		// A tag over a longer sequence must check every element of it.
-		"h = a a a `name=\"h\"`;\n" +
+		"h = a a a `name=\"h\"`;\n" +// A tag over a longer sequence must check every element of it.
 		"i = a a `name=\"i\"`\n" +
 		"  | a\n" +
 		"  ;\n" +
-		// A param used only by a tagged element is still used.
-		"j x = x x `name=\"j\"`;\n" +
+		"j x = x x `name=\"j\"`;\n" +// A param used only by a tagged element is still used.
 		"k = <j a> `name=\"k\"`;\n"
 	assert_messages(t, run_semantics([]Mem_File{test_src(t, "tags", "main.grammar", src)}), {})
 }
@@ -237,9 +235,7 @@ test_tagged_sequence_still_resolves_each_element :: proc(t: ^testing.T) {
 // that is not the last of its production, so the parser rejects it there.
 @(test)
 test_tag_inside_a_nested_production_is_rejected :: proc(t: ^testing.T) {
-	src :=
-		"a = \"x\";\n" +
-		"e = { a `name=\"e\"` };\n"
+	src := "a = \"x\";\n" + "e = { a `name=\"e\"` };\n"
 	assert_messages(
 		t,
 		run_semantics([]Mem_File{test_src(t, "tag_nested", "main.grammar", src)}),
@@ -418,7 +414,9 @@ test_local_rule_is_not_reachable_from_another_namespace :: proc(t: ^testing.T) {
 	assert_warnings(
 		t,
 		files,
-		{"cmd/check/testdata/scratch/xns_local/base/r.grammar:1:1: warning: unused local rule: helper"},
+		{
+			"cmd/check/testdata/scratch/xns_local/base/r.grammar:1:1: warning: unused local rule: helper",
+		},
 	)
 }
 
@@ -456,15 +454,21 @@ test_unused_proc_parameter :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_proc_parameter_as_call_argument_counts_as_used :: proc(t: ^testing.T) {
+	// `N` is exported, so the parameter is the only thing to report.
+	src := "N x = <fn x>;\nfn a = a;"
+	files := []Mem_File{test_src(t, "param_in_call_argument", "main.grammar", src)}
+	msgs := run_semantics(files)
+	assert_messages(t, msgs, {})
+	assert_warnings(t, files, {})
+}
+
+@(test)
 test_unused_private_rule_warns :: proc(t: ^testing.T) {
 	src := "_used = \"x\";\n_unused = \"y\";\nA = _used;\n"
 	files := []Mem_File{test_src(t, "warnpriv", "main.grammar", src)}
 	assert_messages(t, run_semantics(files), {})
-	assert_warnings(
-		t,
-		files,
-		{"main.grammar:2:1: warning: unused private rule: _unused"},
-	)
+	assert_warnings(t, files, {"main.grammar:2:1: warning: unused private rule: _unused"})
 }
 
 @(test)
@@ -473,11 +477,7 @@ test_private_rule_referencing_only_itself_warns :: proc(t: ^testing.T) {
 	// only feeds itself is still dead.
 	src := "_loop = _loop \"x\";\nA = \"y\";\n"
 	files := []Mem_File{test_src(t, "warnself", "main.grammar", src)}
-	assert_warnings(
-		t,
-		files,
-		{"main.grammar:1:1: warning: unused private rule: _loop"},
-	)
+	assert_warnings(t, files, {"main.grammar:1:1: warning: unused private rule: _loop"})
 }
 
 @(test)
@@ -485,11 +485,7 @@ test_unused_local_rule_warns :: proc(t: ^testing.T) {
 	src := "used = \"x\";\nunused = \"y\";\nA = used;\n"
 	files := []Mem_File{test_src(t, "warnlocal", "main.grammar", src)}
 	assert_messages(t, run_semantics(files), {})
-	assert_warnings(
-		t,
-		files,
-		{"main.grammar:2:1: warning: unused local rule: unused"},
-	)
+	assert_warnings(t, files, {"main.grammar:2:1: warning: unused local rule: unused"})
 }
 
 @(test)
