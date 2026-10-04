@@ -261,3 +261,474 @@ test_expand_rule_keeps_a_sequence_inside_an_alternative :: proc(t: ^testing.T) {
 	testing.expect(t, ok, "every call of choice should expand")
 	expect_shape(t, expanded.expr, `alt(seq("a" "b") "c")`)
 }
+
+// normalize_one parses source, factors the rule named name, and returns it with
+// whether the expansion it rests on finished. source has to parse cleanly. opts
+// belongs to the caller.
+normalize_one :: proc(
+	t: ^testing.T,
+	source, name: string,
+	opts: ^Normalize_Options,
+) -> (Normalized_Rule, bool) {
+	file := must_parse(t, source)
+	defer destroy_file(&file)
+
+	scope := scope_of(&file)
+	defer delete(scope.rules_by_name)
+
+	return normalize_rule(scope.rules_by_name[name], &scope, opts)
+}
+
+// shape_normalized renders a production of the normalized tree, and an absent one as
+// nothing. The caller owns the result.
+shape_normalized :: proc(n: Normalized_Production) -> string {
+	b := strings.builder_make(context.temp_allocator)
+	shape_normalized_into(&b, n)
+	return strings.clone(strings.to_string(b))
+}
+
+shape_normalized_into :: proc(b: ^strings.Builder, n: Normalized_Production) {
+	if n.kind == nil {
+		strings.write_string(b, "nothing")
+		return
+	}
+	switch it in n.kind {
+	case Nothing:
+		strings.write_string(b, "nothing")
+	case Production:
+		shape_into(b, it)
+	case ^Factored:
+		strings.write_string(b, "factor(")
+		shape_normalized_into(b, it.head)
+		for part in it.body[:] {
+			strings.write_string(b, " | ")
+			shape_normalized_into(b, part)
+		}
+		strings.write_string(b, " ; ")
+		shape_normalized_into(b, it.tail)
+		strings.write_rune(b, ')')
+	case ^Grouped:
+		switch it.shape {
+		case .Sequence:
+			shape_normalized_group(b, "seq", it.exprs[:])
+		case .Group:
+			shape_normalized_group(b, "grp", it.exprs[:])
+		case .Optional:
+			shape_normalized_group(b, "opt", it.exprs[:])
+		case .Repetition:
+			shape_normalized_group(b, "rep", it.exprs[:])
+		case .Tagged:
+			strings.write_string(b, "tag(")
+			for pair, i in it.tag[:] {
+				if i > 0 do strings.write_rune(b, ' ')
+				strings.write_string(b, pair.ident.name)
+				strings.write_rune(b, '=')
+				strings.write_string(b, pair.value.value)
+			}
+			for expr in it.exprs[:] {
+				strings.write_rune(b, ' ')
+				shape_normalized_into(b, expr)
+			}
+			strings.write_rune(b, ')')
+		}
+	}
+}
+
+shape_normalized_group :: proc(
+	b: ^strings.Builder,
+	label: string,
+	exprs: []Normalized_Production,
+) {
+	strings.write_string(b, label)
+	strings.write_rune(b, '(')
+	for expr, i in exprs {
+		if i > 0 do strings.write_rune(b, ' ')
+		shape_normalized_into(b, expr)
+	}
+	strings.write_rune(b, ')')
+}
+
+// branch_shapes_into writes the shape of each production a head, a middle or a tail
+// contributes to a branch: the elements of a sequence, or the one production it is.
+// A tag is left out, since a name for a production is not part of what a rule
+// matches.
+branch_shapes_into :: proc(b: ^strings.Builder, n: Normalized_Production) {
+	if n.kind == nil do return
+	switch it in n.kind {
+	case Nothing:
+	case Production:
+		shape_into(b, it)
+		strings.write_rune(b, ' ')
+	case ^Factored:
+		shape_normalized_into(b, n)
+		strings.write_rune(b, ' ')
+	case ^Grouped:
+		if it.shape == .Sequence || it.shape == .Tagged {
+			for expr in it.exprs[:] do branch_shapes_into(b, expr)
+			break
+		}
+		shape_normalized_into(b, n)
+		strings.write_rune(b, ' ')
+	}
+}
+
+// shape_rule writes out every branch a normalized rule matches, the head and the tail
+// put back around each middle, so that a fact about what the rule matches can be
+// asserted without asserting about how it was factored. The caller owns the result.
+shape_rule :: proc(n: ^Normalized_Rule) -> string {
+	head := strings.builder_make(context.temp_allocator)
+	defer strings.builder_destroy(&head)
+	tail := strings.builder_make(context.temp_allocator)
+	defer strings.builder_destroy(&tail)
+	branches := strings.builder_make(context.temp_allocator)
+	defer strings.builder_destroy(&branches)
+
+	branch_shapes_into(&head, n.head)
+	branch_shapes_into(&tail, n.tail)
+
+	for middle, i in n.body[:] {
+		if i > 0 do strings.write_string(&branches, "| ")
+		strings.write_string(&branches, strings.to_string(head))
+		branch_shapes_into(&branches, middle)
+		strings.write_string(&branches, strings.to_string(tail))
+	}
+	return strings.clone(strings.trim_space(strings.to_string(branches)))
+}
+
+expect_shape_normalized :: proc(t: ^testing.T, n: Normalized_Production, want: string) {
+	got := shape_normalized(n)
+	defer delete(got)
+	testing.expectf(t, got == want, "got %s, want %s", got, want)
+}
+
+expect_shape_rule :: proc(t: ^testing.T, n: ^Normalized_Rule, want: string) {
+	got := shape_rule(n)
+	defer delete(got)
+	testing.expectf(t, got == want, "got %s, want %s", got, want)
+}
+
+expect_body_len :: proc(t: ^testing.T, n: ^Normalized_Rule, want: int) {
+	testing.expectf(t, len(n.body) == want, "got %d branches, want %d", len(n.body), want)
+}
+
+// A rule body is split into what every branch shares at the start, what is left for
+// each branch, and what every branch shares at the end.
+@(test)
+test_normalize_rule_factors_a_common_head_and_tail :: proc(t: ^testing.T) {
+	opts := Normalize_Options{}
+	defer destroy_normalize_options(&opts)
+
+	normalized, ok := normalize_one(t, `use = p a q | p b q;`, "use", &opts)
+	defer destroy_normalized_rule(&normalized)
+
+	testing.expect(t, ok, "a body with no call expands to the end")
+	expect_shape_normalized(t, normalized.head, `p`)
+	expect_body_len(t, &normalized, 2)
+	expect_shape_normalized(t, normalized.body[0], `a`)
+	expect_shape_normalized(t, normalized.body[1], `b`)
+	expect_shape_normalized(t, normalized.tail, `q`)
+	expect_shape_rule(t, &normalized, `p a q | p b q`)
+}
+
+@(test)
+test_normalize_rule_factors_a_head_only :: proc(t: ^testing.T) {
+	opts := Normalize_Options{}
+	defer destroy_normalize_options(&opts)
+
+	normalized, _ := normalize_one(t, `use = x a | x b;`, "use", &opts)
+	defer destroy_normalized_rule(&normalized)
+
+	expect_shape_normalized(t, normalized.head, `x`)
+	expect_shape_normalized(t, normalized.body[0], `a`)
+	expect_shape_normalized(t, normalized.body[1], `b`)
+	expect_shape_normalized(t, normalized.tail, `nothing`)
+	expect_shape_rule(t, &normalized, `x a | x b`)
+}
+
+@(test)
+test_normalize_rule_factors_a_tail_only :: proc(t: ^testing.T) {
+	opts := Normalize_Options{}
+	defer destroy_normalize_options(&opts)
+
+	normalized, _ := normalize_one(t, `use = a x | b x;`, "use", &opts)
+	defer destroy_normalized_rule(&normalized)
+
+	expect_shape_normalized(t, normalized.head, `nothing`)
+	expect_shape_normalized(t, normalized.body[0], `a`)
+	expect_shape_normalized(t, normalized.body[1], `b`)
+	expect_shape_normalized(t, normalized.tail, `x`)
+	expect_shape_rule(t, &normalized, `a x | b x`)
+}
+
+@(test)
+test_normalize_rule_factors_nothing_when_nothing_is_shared :: proc(t: ^testing.T) {
+	opts := Normalize_Options{}
+	defer destroy_normalize_options(&opts)
+
+	normalized, _ := normalize_one(t, `use = a | b;`, "use", &opts)
+	defer destroy_normalized_rule(&normalized)
+
+	expect_shape_normalized(t, normalized.head, `nothing`)
+	expect_shape_normalized(t, normalized.body[0], `a`)
+	expect_shape_normalized(t, normalized.body[1], `b`)
+	expect_shape_normalized(t, normalized.tail, `nothing`)
+	expect_shape_rule(t, &normalized, `a | b`)
+}
+
+// A head is taken as far as it goes, so a branch it runs out of leaves an empty
+// middle rather than a shorter head.
+@(test)
+test_normalize_rule_leaves_a_branch_the_head_exhausts_empty :: proc(t: ^testing.T) {
+	opts := Normalize_Options{}
+	defer destroy_normalize_options(&opts)
+
+	normalized, _ := normalize_one(t, `use = a b | a b c;`, "use", &opts)
+	defer destroy_normalized_rule(&normalized)
+
+	expect_shape_normalized(t, normalized.head, `seq(a b)`)
+	expect_body_len(t, &normalized, 2)
+	expect_shape_normalized(t, normalized.body[0], `nothing`)
+	expect_shape_normalized(t, normalized.body[1], `c`)
+	expect_shape_rule(t, &normalized, `a b | a b c`)
+}
+
+// Only one branch is ever reachable, so a branch equal to one already kept is dead
+// and dropping it cannot change what the rule matches.
+@(test)
+test_normalize_rule_drops_a_duplicate_branch :: proc(t: ^testing.T) {
+	opts := Normalize_Options{}
+	defer destroy_normalize_options(&opts)
+
+	normalized, _ := normalize_one(t, `use = a | a | b;`, "use", &opts)
+	defer destroy_normalized_rule(&normalized)
+
+	expect_body_len(t, &normalized, 2)
+	expect_shape_normalized(t, normalized.body[0], `a`)
+	expect_shape_normalized(t, normalized.body[1], `b`)
+	expect_shape_rule(t, &normalized, `a | b`)
+}
+
+// Branches that overlap without being equal are both kept, since whether the later
+// one is reachable depends on whether a matcher backtracks into it.
+@(test)
+test_normalize_rule_keeps_branches_that_only_overlap :: proc(t: ^testing.T) {
+	opts := Normalize_Options{}
+	defer destroy_normalize_options(&opts)
+
+	normalized, _ := normalize_one(t, `use = a | a b;`, "use", &opts)
+	defer destroy_normalized_rule(&normalized)
+
+	// The `a` both branches start with becomes the head, and neither branch is
+	// dropped for having the other as a prefix.
+	expect_shape_normalized(t, normalized.head, `a`)
+	expect_body_len(t, &normalized, 2)
+	expect_shape_normalized(t, normalized.body[0], `nothing`)
+	expect_shape_normalized(t, normalized.body[1], `b`)
+	expect_shape_normalized(t, normalized.tail, `nothing`)
+	expect_shape_rule(t, &normalized, `a | a b`)
+}
+
+@(test)
+test_normalize_rule_gives_one_branch_when_every_branch_is_equal :: proc(t: ^testing.T) {
+	opts := Normalize_Options{}
+	defer destroy_normalize_options(&opts)
+
+	normalized, _ := normalize_one(t, `use = a b | a b;`, "use", &opts)
+	defer destroy_normalized_rule(&normalized)
+
+	expect_body_len(t, &normalized, 1)
+	expect_shape_normalized(t, normalized.head, `nothing`)
+	expect_shape_normalized(t, normalized.body[0], `seq(a b)`)
+	expect_shape_normalized(t, normalized.tail, `nothing`)
+	expect_shape_rule(t, &normalized, `a b`)
+}
+
+@(test)
+test_normalize_rule_gives_one_branch_without_alternatives :: proc(t: ^testing.T) {
+	opts := Normalize_Options{}
+	defer destroy_normalize_options(&opts)
+
+	normalized, _ := normalize_one(t, `use = a b;`, "use", &opts)
+	defer destroy_normalized_rule(&normalized)
+
+	expect_body_len(t, &normalized, 1)
+	expect_shape_normalized(t, normalized.head, `nothing`)
+	expect_shape_normalized(t, normalized.body[0], `seq(a b)`)
+	expect_shape_normalized(t, normalized.tail, `nothing`)
+	expect_shape_rule(t, &normalized, `a b`)
+}
+
+// Factoring runs on the body an expansion produced, so a call that stood for a tail
+// is the tail once it is inlined.
+@(test)
+test_normalize_rule_facts_an_expanded_body :: proc(t: ^testing.T) {
+	opts := Normalize_Options{}
+	defer destroy_normalize_options(&opts)
+
+	normalized, ok := normalize_one(
+		t,
+		`
+		wrap x = <item x>;
+		item x = x q;
+		use = <wrap "a"> | <wrap "b">;
+		`,
+		"use",
+		&opts,
+	)
+	defer destroy_normalized_rule(&normalized)
+
+	testing.expect(t, ok, "every call of use should expand")
+	expect_shape_normalized(t, normalized.head, `nothing`)
+	expect_shape_normalized(t, normalized.body[0], `"a"`)
+	expect_shape_normalized(t, normalized.body[1], `"b"`)
+	expect_shape_normalized(t, normalized.tail, `q`)
+	expect_shape_rule(t, &normalized, `"a" q | "b" q`)
+}
+
+// An alternative inside a group, a repetition or an optional is factored too, since
+// that is where a choice is written.
+@(test)
+test_normalize_rule_facts_a_nested_alternative :: proc(t: ^testing.T) {
+	opts := Normalize_Options{}
+	defer destroy_normalize_options(&opts)
+
+	normalized, _ := normalize_one(t, `use = { x a | x b };`, "use", &opts)
+	defer destroy_normalized_rule(&normalized)
+
+	expect_body_len(t, &normalized, 1)
+	expect_shape_normalized(t, normalized.body[0], `rep(factor(x | a | b ; nothing))`)
+	expect_shape_rule(t, &normalized, `rep(factor(x | a | b ; nothing))`)
+}
+
+@(test)
+test_normalize_rule_facts_a_nested_alternative_in_a_group_and_an_optional :: proc(
+	t: ^testing.T,
+) {
+	opts := Normalize_Options{}
+	defer destroy_normalize_options(&opts)
+
+	normalized, _ := normalize_one(t, `use = ( y a | y b ) [ c | d ];`, "use", &opts)
+	defer destroy_normalized_rule(&normalized)
+
+	expect_shape_normalized(
+		t,
+		normalized.body[0],
+		`seq(grp(factor(y | a | b ; nothing)) opt(factor(nothing | c | d ; nothing)))`,
+	)
+}
+
+// A tag says nothing about the shape of a production, so by default it does not stop
+// two branches from sharing one, and it does not survive factoring either.
+@(test)
+test_normalize_rule_strips_tags_by_default :: proc(t: ^testing.T) {
+	opts := Normalize_Options{}
+	defer destroy_normalize_options(&opts)
+
+	normalized, _ := normalize_one(
+		t,
+		"use = a `name=\"x\"` | a `name=\"y\"`;",
+		"use",
+		&opts,
+	)
+	defer destroy_normalized_rule(&normalized)
+
+	expect_body_len(t, &normalized, 1)
+	expect_shape_normalized(t, normalized.body[0], `a`)
+	expect_shape_rule(t, &normalized, `a`)
+}
+
+// A tag annotates the whole of the branch it closes, so stripping it does not merge
+// branches whose annotated productions differ.
+@(test)
+test_normalize_rule_keeps_branches_apart_when_stripped :: proc(t: ^testing.T) {
+	opts := Normalize_Options{}
+	defer destroy_normalize_options(&opts)
+
+	normalized, _ := normalize_one(
+		t,
+		"use = a b `name=\"x\"` | a c `name=\"y\"`;\n",
+		"use",
+		&opts,
+	)
+	defer destroy_normalized_rule(&normalized)
+
+	expect_shape_normalized(t, normalized.head, `nothing`)
+	expect_body_len(t, &normalized, 2)
+	expect_shape_normalized(t, normalized.body[0], `seq(a b)`)
+	expect_shape_normalized(t, normalized.body[1], `seq(a c)`)
+	expect_shape_rule(t, &normalized, `a b | a c`)
+}
+
+@(test)
+test_normalize_rule_reports_a_tag_conflict :: proc(t: ^testing.T) {
+	opts := Normalize_Options{tags = .Block}
+	defer destroy_normalize_options(&opts)
+
+	normalized, _ := normalize_one(t, "use = a `name=\"x\"`\n  | a `name=\"y\"`\n  ;\n", "use", &opts)
+	defer destroy_normalized_rule(&normalized)
+
+	expect_body_len(t, &normalized, 1)
+	expect_shape_rule(t, &normalized, `a`)
+
+	testing.expectf(t, len(opts.conflicts) == 1, "got %d conflicts, want 1", len(opts.conflicts))
+	if len(opts.conflicts) == 1 {
+		conflict := opts.conflicts[0]
+		testing.expect(t, conflict.name == "name", "the differing pair is the one written")
+		testing.expect(t, conflict.left == `"x"`, "one branch's value")
+		testing.expect(t, conflict.right == `"y"`, "the other's")
+	}
+}
+
+// .Keep counts tags, so two branches that tag the same production differently do not
+// share it and both survive.
+@(test)
+test_normalize_rule_keeps_tags_and_both_branches :: proc(t: ^testing.T) {
+	opts := Normalize_Options{tags = .Keep}
+	defer destroy_normalize_options(&opts)
+
+	normalized, _ := normalize_one(t, "use = a `name=\"x\"`\n  | a `name=\"y\"`\n  ;\n", "use", &opts)
+	defer destroy_normalized_rule(&normalized)
+
+	expect_shape_normalized(t, normalized.head, `nothing`)
+	expect_body_len(t, &normalized, 2)
+	expect_shape_normalized(t, normalized.body[0], `tag(name="x" a)`)
+	expect_shape_normalized(t, normalized.body[1], `tag(name="y" a)`)
+	expect_shape_rule(t, &normalized, `a | a`)
+	testing.expect(t, len(opts.conflicts) == 0, ".Keep reports nothing")
+}
+
+@(test)
+test_normalize_rule_keeps_a_tag_both_branches_agree_on :: proc(t: ^testing.T) {
+	opts := Normalize_Options{tags = .Keep}
+	defer destroy_normalize_options(&opts)
+
+	normalized, _ := normalize_one(
+		t,
+		"use = a `name=\"x\"` | a `name=\"x\"`;\n",
+		"use",
+		&opts,
+	)
+	defer destroy_normalized_rule(&normalized)
+
+	expect_body_len(t, &normalized, 1)
+	expect_shape_normalized(t, normalized.body[0], `tag(name="x" a)`)
+	expect_shape_rule(t, &normalized, `a`)
+}
+
+// A call the expansion could not resolve is an element like any other to factoring,
+// but ok says the normal form rests on an expansion that did not finish.
+@(test)
+test_normalize_rule_reports_an_unfinished_expansion :: proc(t: ^testing.T) {
+	opts := Normalize_Options{}
+	defer destroy_normalize_options(&opts)
+
+	normalized, ok := normalize_one(t, `use = <nope "a"> x | <nope "a"> y;`, "use", &opts)
+	defer destroy_normalized_rule(&normalized)
+
+	testing.expect(t, !ok, "an undeclared callee cannot be expanded")
+	expect_shape_normalized(t, normalized.head, `call(nope, "a")`)
+	expect_body_len(t, &normalized, 2)
+	expect_shape_normalized(t, normalized.body[0], `x`)
+	expect_shape_normalized(t, normalized.body[1], `y`)
+	expect_shape_rule(t, &normalized, `call(nope, "a") x | call(nope, "a") y`)
+}
