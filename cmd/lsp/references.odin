@@ -286,7 +286,7 @@ rule_ref_in_expr :: proc(
 		for e in v.exprs {
 			rule_ref_in_expr(f, target_ns_dir, name, e, uris, out, private)
 		}
-	case ast.Group_Expr:
+	case ast.Group:
 		for e in v.exprs {
 			rule_ref_in_expr(f, target_ns_dir, name, e, uris, out, private)
 		}
@@ -346,7 +346,7 @@ binding_ref_in_expr :: proc(
 		for e in v.exprs {
 			binding_ref_in_expr(f, name, e, uris, out)
 		}
-	case ast.Group_Expr:
+	case ast.Group:
 		for e in v.exprs {
 			binding_ref_in_expr(f, name, e, uris, out)
 		}

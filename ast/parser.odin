@@ -450,7 +450,7 @@ parse_group :: proc(p: ^Parser) -> Production {
 	inner := parse_production(p)
 	reject_inner_tag(p, inner)
 	expect(p, .RParen)
-	return Group_Expr{exprs = unpack_sequence(inner), pos = start.start}
+	return Group{exprs = unpack_sequence(inner), pos = start.start}
 }
 
 // reject_inner_tag reports a tag found at the end of a production nested inside

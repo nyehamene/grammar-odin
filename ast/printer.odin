@@ -94,7 +94,7 @@ print_expr :: proc(p: ^Printer, expr: Production) {
 			print_expr(p, e)
 		}
 		p.indent -= 1
-	case Group_Expr:
+	case Group:
 		print_header(p, v.pos, "GroupExpr")
 		p.indent += 1
 		for e in v.exprs {

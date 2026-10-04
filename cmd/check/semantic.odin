@@ -610,7 +610,7 @@ uses_param :: proc(expr: ast.Production, param: string) -> bool {
 		return exprs_use_param(v.exprs[:], param)
 	case ast.Repetition:
 		return exprs_use_param(v.exprs[:], param)
-	case ast.Group_Expr:
+	case ast.Group:
 		return exprs_use_param(v.exprs[:], param)
 	case ast.Tagged_Production:
 		return uses_param(v.expr^, param)
@@ -819,7 +819,7 @@ check_expr_scoped :: proc(
 	case ast.Repetition:
 		check_expr_group(cu, fi, params, v.pos, v.exprs[:], o)
 
-	case ast.Group_Expr:
+	case ast.Group:
 		check_expr_group(cu, fi, params, v.pos, v.exprs[:], o)
 
 	case ast.Tagged_Production:

@@ -137,7 +137,7 @@ find_hit_expr :: proc(expr: ast.Production, offset: int) -> Hit {
 				return h
 			}
 		}
-	case ast.Group_Expr:
+	case ast.Group:
 		for e in v.exprs {
 			if h := find_hit_expr(e, offset); found(h) {
 				return h

@@ -172,7 +172,7 @@ grouped = ( a // one
 	seq2, ok7 := other.expr.(Sequence)
 	testing.expect(t, ok7, "expected Sequence for grouped")
 	testing.expect(t, len(seq2.exprs) == 3, "a comment must not add a sequence element")
-	group, ok8 := seq2.exprs[0].(Group_Expr)
+	group, ok8 := seq2.exprs[0].(Group)
 	testing.expect(t, ok8, "expected Group_Expr")
 	testing.expect(t, len(group.exprs) == 2, "a comment must not add a group element")
 }
@@ -183,7 +183,7 @@ test_parse_group_repetition_optional :: proc(t: ^testing.T) {
 	defer destroy_file(&file)
 
 	rule, _ := file.decls[0].(Rule)
-	group, ok := rule.expr.(Group_Expr)
+	group, ok := rule.expr.(Group)
 	testing.expect(t, ok, "expected Group_Expr")
 	testing.expect(t, len(group.exprs) == 3, "expected three elements in group")
 
@@ -426,7 +426,7 @@ test_parse_tag_outside_a_group :: proc(t: ^testing.T) {
 	defer destroy_file(&file)
 
 	tagged := must_tagged(t, file, "foo")
-	group, ok := tagged.expr^.(Group_Expr)
+	group, ok := tagged.expr^.(Group)
 	testing.expect(t, ok, "the tagged element should be the group")
 	testing.expect(t, len(group.exprs) == 1, "expected one element in the group")
 }

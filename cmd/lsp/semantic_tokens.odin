@@ -185,7 +185,7 @@ classify_expr :: proc(expr: ast.Production, types: ^map[int]Sem_Token_Type) {
 		for e in v.exprs {
 			classify_expr(e, types)
 		}
-	case ast.Group_Expr:
+	case ast.Group:
 		for e in v.exprs {
 			classify_expr(e, types)
 		}

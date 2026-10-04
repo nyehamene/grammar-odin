@@ -429,7 +429,7 @@ expr_containing_call :: proc(expr: ast.Production, src: string, offset: int) -> 
 		return exprs_containing_call(v.exprs[:], src, offset)
 	case ast.Repetition:
 		return exprs_containing_call(v.exprs[:], src, offset)
-	case ast.Group_Expr:
+	case ast.Group:
 		return exprs_containing_call(v.exprs[:], src, offset)
 	case ast.Directive:
 		for arg in v.args {

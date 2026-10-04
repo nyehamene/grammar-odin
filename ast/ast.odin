@@ -10,7 +10,7 @@ Production :: union {
 	Alternative,
 	Optional,
 	Repetition,
-	Group_Expr,
+	Group,
 	Qual_Ident,
 	Directive,
 	Tagged_Production,
@@ -109,8 +109,8 @@ Repetition :: struct {
 	pos:   int,
 }
 
-// Group_Expr is a grouped production, e.g. `( a b )`.
-Group_Expr :: struct {
+// Group is a grouped production, e.g. `( a b )`.
+Group :: struct {
 	exprs: [dynamic]Production,
 	pos:   int,
 }
@@ -186,7 +186,7 @@ expr_pos :: proc(expr: Production) -> int {
 		return v.pos
 	case Repetition:
 		return v.pos
-	case Group_Expr:
+	case Group:
 		return v.pos
 	case Qual_Ident:
 		return v.pos
@@ -256,7 +256,7 @@ destroy_expr :: proc(expr: Production) {
 			destroy_expr(e)
 		}
 		delete(v.exprs)
-	case Group_Expr:
+	case Group:
 		for e in v.exprs {
 			destroy_expr(e)
 		}
