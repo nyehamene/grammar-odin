@@ -9,30 +9,30 @@ import "../check"
 
 // Completion_Item_Kind mirrors the LSP CompletionItemKind enum values.
 Completion_Item_Kind :: enum {
-	Text = 1,
-	Method = 2,
-	Function = 3,
-	Constructor = 4,
-	Field = 5,
-	Variable = 6,
-	Class = 7,
-	Interface = 8,
-	Module = 9,
-	Property = 10,
-	Unit = 11,
-	Value = 12,
-	Enum = 13,
-	Keyword = 14,
-	Snippet = 15,
-	Color = 16,
-	File = 17,
-	Reference = 18,
-	Folder = 19,
-	Enum_Member = 20,
-	Constant = 21,
-	Struct = 22,
-	Event = 23,
-	Operator = 24,
+	Text           = 1,
+	Method         = 2,
+	Function       = 3,
+	Constructor    = 4,
+	Field          = 5,
+	Variable       = 6,
+	Class          = 7,
+	Interface      = 8,
+	Module         = 9,
+	Property       = 10,
+	Unit           = 11,
+	Value          = 12,
+	Enum           = 13,
+	Keyword        = 14,
+	Snippet        = 15,
+	Color          = 16,
+	File           = 17,
+	Reference      = 18,
+	Folder         = 19,
+	Enum_Member    = 20,
+	Constant       = 21,
+	Struct         = 22,
+	Event          = 23,
+	Operator       = 24,
 	Type_Parameter = 25,
 }
 
@@ -42,7 +42,7 @@ Completion_Item :: struct {
 }
 
 Completion_List :: struct {
-	is_incomplete: bool              `json:"isIncomplete"`,
+	is_incomplete: bool `json:"isIncomplete"`,
 	items:         []Completion_Item,
 }
 
@@ -94,16 +94,19 @@ handle_completion :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok
 				if f.namespace_path == dir {
 					for decl in f.file.decls {
 						#partial switch d in decl {
-						case ast.Rule_Decl:
+						case ast.Rule:
 							// Only an exported rule is reachable through a
 							// binding, so offering a local or private one from
 							// another namespace would suggest a name that cannot
 							// be used there.
 							if !check.is_exported_rule(d.name.name) do continue
 							if strings.has_prefix(d.name.name, prefix) {
-								append(&items, Completion_Item{label = d.name.name, kind = .Function})
+								append(
+									&items,
+									Completion_Item{label = d.name.name, kind = .Function},
+								)
 							}
-						case ast.Binding_Decl, ast.Comment_Group:
+						case ast.Binding, ast.Comment_Group:
 						}
 					}
 				}
@@ -116,15 +119,17 @@ handle_completion :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok
 			}
 			for decl in f.file.decls {
 				#partial switch d in decl {
-				case ast.Rule_Decl:
-					if strings.has_prefix(d.name.name, prefix) && !has_label(items[:], d.name.name) {
+				case ast.Rule:
+					if strings.has_prefix(d.name.name, prefix) &&
+					   !has_label(items[:], d.name.name) {
 						append(&items, Completion_Item{label = d.name.name, kind = .Function})
 					}
-				case ast.Binding_Decl:
+				case ast.Binding:
 					if f != fi {
 						continue
 					}
-					if strings.has_prefix(d.name.name, prefix) && !has_label(items[:], d.name.name) {
+					if strings.has_prefix(d.name.name, prefix) &&
+					   !has_label(items[:], d.name.name) {
 						append(&items, Completion_Item{label = d.name.name, kind = .Module})
 					}
 				case ast.Comment_Group:
@@ -135,7 +140,10 @@ handle_completion :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok
 
 	sort.quick_sort_proc(items[:], cmp_completion_items)
 
-	result := Completion_List{is_incomplete = false, items = items[:]}
+	result := Completion_List {
+		is_incomplete = false,
+		items         = items[:],
+	}
 	buf, err := json.marshal(result, allocator = context.temp_allocator)
 	if err != nil {
 		debugf(srv, "failed to marshal completion list: %v", err)

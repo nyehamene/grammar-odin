@@ -32,7 +32,7 @@ Hit :: struct {
 find_hit :: proc(file: ^ast.File, offset: int) -> Hit {
 	for decl, id in file.decls {
 		#partial switch d in decl {
-		case ast.Rule_Decl:
+		case ast.Rule:
 			if hit_ident(d.name, offset) {
 				return Hit{kind = .Rule_Name, ident = d.name}
 			}
@@ -53,7 +53,7 @@ find_hit :: proc(file: ^ast.File, offset: int) -> Hit {
 				}
 				return h
 			}
-		case ast.Binding_Decl:
+		case ast.Binding:
 			if hit_ident(d.name, offset) {
 				return Hit{kind = .Binding_Name, ident = d.name}
 			}
@@ -67,15 +67,15 @@ find_hit :: proc(file: ^ast.File, offset: int) -> Hit {
 }
 
 // find_hit_expr searches a single expression (and all sub-expressions) for an
-// offset. Expressions are traversed outermost-first so the most specific token
+// offset. Productions are traversed outermost-first so the most specific token
 // wins.
-find_hit_expr :: proc(expr: ast.Expr, offset: int) -> Hit {
+find_hit_expr :: proc(expr: ast.Production, offset: int) -> Hit {
 	#partial switch v in expr {
 	case ast.Ident:
 		if hit_ident(v, offset) {
 			return Hit{kind = .Ident, ident = v}
 		}
-	case ast.Member_Expr:
+	case ast.Member_Access:
 		if obj, is_ident := v.object^.(ast.Ident); is_ident {
 			if hit_ident(obj, offset) {
 				return Hit{kind = .Member_Object, ident = obj}
@@ -93,7 +93,7 @@ find_hit_expr :: proc(expr: ast.Expr, offset: int) -> Hit {
 			}
 			return hit
 		}
-	case ^ast.Call_Expr:
+	case ^ast.Call:
 		h := find_hit_expr(v.name, offset)
 		if h.kind != .None {
 			h.kind = .Call_Name
@@ -104,7 +104,7 @@ find_hit_expr :: proc(expr: ast.Expr, offset: int) -> Hit {
 				return h
 			}
 		}
-	case ast.Directive_Expr:
+	case ast.Directive:
 		if hit_ident(v.name, offset) {
 			return Hit{kind = .Directive, ident = v.name}
 		}
@@ -113,25 +113,25 @@ find_hit_expr :: proc(expr: ast.Expr, offset: int) -> Hit {
 				return h
 			}
 		}
-	case ast.Sequence_Expr:
+	case ast.Sequence:
 		for e in v.exprs {
 			if h := find_hit_expr(e, offset); found(h) {
 				return h
 			}
 		}
-	case ast.Alternative_Expr:
+	case ast.Alternative:
 		for e in v.exprs {
 			if h := find_hit_expr(e, offset); found(h) {
 				return h
 			}
 		}
-	case ast.Optional_Expr:
+	case ast.Optional:
 		for e in v.exprs {
 			if h := find_hit_expr(e, offset); found(h) {
 				return h
 			}
 		}
-	case ast.Repetition_Expr:
+	case ast.Repetition:
 		for e in v.exprs {
 			if h := find_hit_expr(e, offset); found(h) {
 				return h
@@ -155,7 +155,7 @@ find_hit_expr :: proc(expr: ast.Expr, offset: int) -> Hit {
 		if offset >= v.pos && offset < v.pos + len(v.name) {
 			return Hit{kind = .External, literal = v.name}
 		}
-	case ast.Tagged_Expr:
+	case ast.Tagged_Production:
 		// A tag annotates the production it follows, so the annotation itself
 		// names nothing: look inside it.
 		return find_hit_expr(v.expr^, offset)

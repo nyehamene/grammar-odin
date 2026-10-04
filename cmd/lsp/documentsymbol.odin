@@ -37,11 +37,11 @@ Symbol_Kind :: enum {
 
 // Document_Symbol mirrors the LSP DocumentSymbol object.
 Document_Symbol :: struct {
-	name:           string,
-	kind:           Symbol_Kind,
-	range:          Range,
+	name:            string,
+	kind:            Symbol_Kind,
+	range:           Range,
 	selection_range: Range `json:"selectionRange"`,
-	children:       []Document_Symbol,
+	children:        []Document_Symbol,
 }
 
 // handle_document_symbol implements textDocument/documentSymbol, returning the
@@ -96,45 +96,54 @@ document_symbols :: proc(doc: ^Document) -> [dynamic]Document_Symbol {
 		}
 		start := position_at_offset(doc.text, ast.decl_pos(file.decls[i]))
 		end := position_at_offset(doc.text, next_pos)
-		decl_range := Range{start = start, end = end}
+		decl_range := Range {
+			start = start,
+			end   = end,
+		}
 
 		#partial switch d in file.decls[i] {
-		case ast.Rule_Decl:
-			selection := Range{
+		case ast.Rule:
+			selection := Range {
 				start = position_at_offset(doc.text, d.name.pos),
 				end   = position_at_offset(doc.text, d.name.pos + len(d.name.name)),
 			}
 			children := make([]Document_Symbol, len(d.params))
 			for p, j in d.params {
-				param_range := Range{
+				param_range := Range {
 					start = position_at_offset(doc.text, p.pos),
 					end   = position_at_offset(doc.text, p.pos + len(p.name)),
 				}
-				children[j] = Document_Symbol{
+				children[j] = Document_Symbol {
 					name            = p.name,
 					kind            = .Variable,
 					range           = param_range,
 					selection_range = param_range,
 				}
 			}
-			append(&symbols, Document_Symbol{
-				name            = d.name.name,
-				kind            = .Function,
-				range           = decl_range,
-				selection_range = selection,
-				children        = children,
-			})
-		case ast.Binding_Decl:
-			selection := Range{
+			append(
+				&symbols,
+				Document_Symbol {
+					name = d.name.name,
+					kind = .Function,
+					range = decl_range,
+					selection_range = selection,
+					children = children,
+				},
+			)
+		case ast.Binding:
+			selection := Range {
 				start = position_at_offset(doc.text, d.name.pos),
 				end   = position_at_offset(doc.text, d.name.pos + len(d.name.name)),
 			}
-			append(&symbols, Document_Symbol{
-				name            = d.name.name,
-				kind            = .Namespace,
-				range           = decl_range,
-				selection_range = selection,
-			})
+			append(
+				&symbols,
+				Document_Symbol {
+					name = d.name.name,
+					kind = .Namespace,
+					range = decl_range,
+					selection_range = selection,
+				},
+			)
 		case ast.Comment_Group:
 		}
 	}

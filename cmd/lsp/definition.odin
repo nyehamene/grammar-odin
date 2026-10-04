@@ -111,7 +111,7 @@ definition_for :: proc(
 	case .Param:
 		if hit.decl >= len(fi.file.decls) do break
 		decl := fi.file.decls[hit.decl]
-		d := decl.(ast.Rule_Decl) or_break
+		d := decl.(ast.Rule) or_break
 		loop: for p in d.params {
 			if p.name == hit.ident.name {
 				target = fi

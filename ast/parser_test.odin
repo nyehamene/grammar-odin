@@ -14,12 +14,12 @@ test_parse_hello :: proc(t: ^testing.T) {
 
 	testing.expect(t, len(file.decls) == 1, "expected one decl")
 
-	rule, ok := file.decls[0].(Rule_Decl)
+	rule, ok := file.decls[0].(Rule)
 	testing.expect(t, ok, "expected Rule_Decl")
 	testing.expect(t, rule.name.name == "greeting", "wrong rule name")
 	testing.expect(t, len(rule.params) == 0, "no parameters expected")
 
-	alts, ok3 := rule.expr.(Alternative_Expr)
+	alts, ok3 := rule.expr.(Alternative)
 	testing.expect(t, ok3, "expected Alternative_Expr")
 	testing.expect(t, len(alts.exprs) == 2, "expected two alternatives")
 
@@ -36,8 +36,8 @@ test_parse_sequence :: proc(t: ^testing.T) {
 	file := must_parse(t, `rule = greeting " World";`)
 	defer destroy_file(&file)
 
-	rule, _ := file.decls[0].(Rule_Decl)
-	seq, ok := rule.expr.(Sequence_Expr)
+	rule, _ := file.decls[0].(Rule)
+	seq, ok := rule.expr.(Sequence)
 	testing.expect(t, ok, "expected Sequence_Expr")
 	testing.expect(t, len(seq.exprs) == 2, "expected two elements")
 
@@ -51,7 +51,7 @@ test_parse_binding :: proc(t: ^testing.T) {
 	file := must_parse(t, `f = @import("../foo");`)
 	defer destroy_file(&file)
 
-	binding, ok := file.decls[0].(Binding_Decl)
+	binding, ok := file.decls[0].(Binding)
 	testing.expect(t, ok, "expected Binding_Decl")
 	testing.expect(t, binding.name.name == "f", "wrong binding name")
 	testing.expect(t, binding.path.value == `"../foo"`, "wrong import path")
@@ -62,7 +62,7 @@ test_parse_rule_with_params :: proc(t: ^testing.T) {
 	file := must_parse(t, `greet name title = "hello" name title;`)
 	defer destroy_file(&file)
 
-	rule, _ := file.decls[0].(Rule_Decl)
+	rule, _ := file.decls[0].(Rule)
 	testing.expect(t, len(rule.params) == 2, "expected two parameters")
 	testing.expect(t, rule.params[0].name == "name", "wrong first param")
 	testing.expect(t, rule.params[1].name == "title", "wrong second param")
@@ -73,8 +73,8 @@ test_parse_call :: proc(t: ^testing.T) {
 	file := must_parse(t, `fancy = <greet person "Mr">;`)
 	defer destroy_file(&file)
 
-	rule, _ := file.decls[0].(Rule_Decl)
-	call, ok := rule.expr.(^Call_Expr)
+	rule, _ := file.decls[0].(Rule)
+	call, ok := rule.expr.(^Call)
 	testing.expect(t, ok, "expected Call_Expr")
 
 	ident, i_ok := call.name.(Ident)
@@ -94,12 +94,12 @@ test_parse_member_access :: proc(t: ^testing.T) {
 	file := must_parse(t, `m = foo.bar.baz;`)
 	defer destroy_file(&file)
 
-	rule, _ := file.decls[0].(Rule_Decl)
-	member, ok := rule.expr.(Member_Expr)
+	rule, _ := file.decls[0].(Rule)
+	member, ok := rule.expr.(Member_Access)
 	testing.expect(t, ok, "expected Member_Expr")
 	testing.expect(t, member.member.name == "baz", "outer member should be baz")
 
-	inner, _ := member.object.(Member_Expr)
+	inner, _ := member.object.(Member_Access)
 	testing.expect(t, inner.member.name == "bar", "inner member should be bar")
 }
 
@@ -111,7 +111,7 @@ test_parse_comments :: proc(t: ^testing.T) {
 	comments, ok := file.decls[0].(Comment_Group)
 	testing.expect(t, ok, "expected Comment_Group first")
 	testing.expect(t, strings.contains(comments.list[0].text, "hi"), "comment text preserved")
-	_, ok = file.decls[1].(Rule_Decl)
+	_, ok = file.decls[1].(Rule)
 	testing.expect(t, ok, "expected Rule_Decl after comment")
 }
 
@@ -131,16 +131,16 @@ rule2 = a // comment
 
 	testing.expect(t, len(file.decls) == 2, "expected two rule declarations")
 
-	rule1, ok := file.decls[0].(Rule_Decl)
+	rule1, ok := file.decls[0].(Rule)
 	testing.expect(t, ok, "expected Rule_Decl for rule1")
 	testing.expect(t, rule1.name.name == "rule1", "wrong rule1 name")
 
 	// Both alternatives survive the trailing comments.
-	alt, ok3 := rule1.expr.(Alternative_Expr)
+	alt, ok3 := rule1.expr.(Alternative)
 	testing.expect(t, ok3, "expected Alternative_Expr for rule1")
 	testing.expect(t, len(alt.exprs) == 2, "expected two alternatives")
 
-	rule2, ok4 := file.decls[1].(Rule_Decl)
+	rule2, ok4 := file.decls[1].(Rule)
 	testing.expect(t, ok4, "expected Rule_Decl for rule2")
 	_, ok2p := rule2.expr.(Ident)
 	testing.expect(t, ok2p, "expected Ident for rule2 single production")
@@ -160,18 +160,18 @@ grouped = ( a // one
 	file := must_parse(t, src)
 	defer destroy_file(&file)
 
-	rule, ok := file.decls[0].(Rule_Decl)
+	rule, ok := file.decls[0].(Rule)
 	testing.expect(t, ok, "expected Rule_Decl")
 	testing.expect(t, len(rule.params) == 1, "a comment must not be taken for a parameter")
 	testing.expect(t, rule.params[0].name == "name", "wrong parameter")
 
-	call_expr, ok3 := rule.expr.(^Call_Expr)
+	call_expr, ok3 := rule.expr.(^Call)
 	testing.expect(t, ok3, "expected Call_Expr")
 	testing.expect(t, len(call_expr.args) == 2, "a comment must not be counted as an argument")
 
-	other, ok5 := file.decls[1].(Rule_Decl)
+	other, ok5 := file.decls[1].(Rule)
 	testing.expect(t, ok5, "expected Rule_Decl for grouped")
-	seq2, ok7 := other.expr.(Sequence_Expr)
+	seq2, ok7 := other.expr.(Sequence)
 	testing.expect(t, ok7, "expected Sequence_Expr for grouped")
 	testing.expect(t, len(seq2.exprs) == 3, "a comment must not add a sequence element")
 	group, ok8 := seq2.exprs[0].(Group_Expr)
@@ -184,7 +184,7 @@ test_parse_group_repetition_optional :: proc(t: ^testing.T) {
 	file := must_parse(t, `x = ( "a" { "b" "c" } [ "d" "e" ] );`)
 	defer destroy_file(&file)
 
-	rule, _ := file.decls[0].(Rule_Decl)
+	rule, _ := file.decls[0].(Rule)
 	group, ok := rule.expr.(Group_Expr)
 	testing.expect(t, ok, "expected Group_Expr")
 	testing.expect(t, len(group.exprs) == 3, "expected three elements in group")
@@ -193,14 +193,14 @@ test_parse_group_repetition_optional :: proc(t: ^testing.T) {
 	testing.expect(t, ok2, "first element should be String_Lit")
 	testing.expect(t, lit.value == `"a"`, "wrong first element")
 
-	rep, ok3 := group.exprs[1].(Repetition_Expr)
+	rep, ok3 := group.exprs[1].(Repetition)
 	testing.expect(t, ok3, "second element should be Repetition_Expr")
 	testing.expect(t, len(rep.exprs) == 2, "repetition should hold two expressions")
 	lit2, ok4 := rep.exprs[0].(String_Lit)
 	testing.expect(t, ok4, "repetition element should be String_Lit")
 	testing.expect(t, lit2.value == `"b"`, "wrong repetition element")
 
-	opt, ok5 := group.exprs[2].(Optional_Expr)
+	opt, ok5 := group.exprs[2].(Optional)
 	testing.expect(t, ok5, "third element should be Optional_Expr")
 	testing.expect(t, len(opt.exprs) == 2, "optional should hold two expressions")
 	lit3, ok6 := opt.exprs[0].(String_Lit)
@@ -215,7 +215,7 @@ test_parse_external_value :: proc(t: ^testing.T) {
 	file := must_parse(t, `e = __name;`)
 	defer destroy_file(&file)
 
-	rule, _ := file.decls[0].(Rule_Decl)
+	rule, _ := file.decls[0].(Rule)
 	ext, ok := rule.expr.(External_Value)
 	testing.expect(t, ok, "expected External_Value")
 	testing.expect(t, ext.name == "name", "external name should drop the leading __")
@@ -226,7 +226,7 @@ test_parse_external_value_removes_trailing_delimiter :: proc(t: ^testing.T) {
 	file := must_parse(t, `e = __name__;`)
 	defer destroy_file(&file)
 
-	rule, _ := file.decls[0].(Rule_Decl)
+	rule, _ := file.decls[0].(Rule)
 	ext, ok := rule.expr.(External_Value)
 	testing.expect(t, ok, "expected External_Value")
 	testing.expect(t, ext.name == "name", "a trailing __ is not part of the name")
@@ -304,7 +304,7 @@ test_parse_tag_wraps_the_whole_sequence :: proc(t: ^testing.T) {
 	defer destroy_file(&file)
 
 	tagged := must_tagged(t, file, "foo")
-	seq, ok := tagged.expr^.(Sequence_Expr)
+	seq, ok := tagged.expr^.(Sequence)
 	testing.expect(t, ok, "the annotated production should be the sequence")
 	testing.expect(t, len(seq.exprs) == 2, "a tag must not add an element")
 
@@ -329,7 +329,7 @@ test_parse_tag_wraps_a_three_element_sequence :: proc(t: ^testing.T) {
 	defer destroy_file(&file)
 
 	tagged := must_tagged(t, file, "foo")
-	seq, ok := tagged.expr^.(Sequence_Expr)
+	seq, ok := tagged.expr^.(Sequence)
 	testing.expect(t, ok, "the annotated production should be the sequence")
 	want := []string{"a", "b", "c"}
 	testing.expect(t, len(seq.exprs) == len(want), "expected three elements")
@@ -348,20 +348,20 @@ test_parse_tag_wraps_each_alternative_sequence :: proc(t: ^testing.T) {
 	defer destroy_file(&file)
 
 	rule := must_rule(t, file, "foo")
-	alts, ok := must_production(t, rule).(Alternative_Expr)
+	alts, ok := must_production(t, rule).(Alternative)
 	testing.expect(t, ok, "expected Alternative_Expr")
 	testing.expect(t, len(alts.exprs) == 2, "expected two alternatives")
 
-	first, ok2 := alts.exprs[0].(Tagged_Expr)
+	first, ok2 := alts.exprs[0].(Tagged_Production)
 	testing.expect(t, ok2, "the first alternative should be tagged")
-	first_seq, ok3 := first.expr^.(Sequence_Expr)
+	first_seq, ok3 := first.expr^.(Sequence)
 	testing.expect(t, ok3, "the first alternative should be a sequence")
 	testing.expect(t, len(first_seq.exprs) == 2, "the first alternative has two elements")
 	testing.expect(t, first.tag[0].name.name == "first", "wrong first tag")
 
-	second, ok4 := alts.exprs[1].(Tagged_Expr)
+	second, ok4 := alts.exprs[1].(Tagged_Production)
 	testing.expect(t, ok4, "the second alternative should be tagged")
-	second_seq, ok5 := second.expr^.(Sequence_Expr)
+	second_seq, ok5 := second.expr^.(Sequence)
 	testing.expect(t, ok5, "the second alternative should be a sequence")
 	testing.expect(t, len(second_seq.exprs) == 2, "the second alternative has two elements")
 	testing.expect(t, second.tag[0].name.name == "second", "wrong second tag")
@@ -398,11 +398,7 @@ test_parse_tag_with_several_pairs :: proc(t: ^testing.T) {
 	testing.expect(t, tagged.tag[1].name.name == "other", "wrong second pair name")
 	testing.expect(t, tagged.tag[1].value.value == `"100"`, "wrong second pair value")
 	// Each pair keeps its own offset so a diagnostic can point at it.
-	testing.expect(
-		t,
-		tagged.tag[0].pos < tagged.tag[1].pos,
-		"pairs should be ordered by position",
-	)
+	testing.expect(t, tagged.tag[0].pos < tagged.tag[1].pos, "pairs should be ordered by position")
 }
 
 @(test)
@@ -411,15 +407,15 @@ test_parse_tag_on_each_alternative :: proc(t: ^testing.T) {
 	defer destroy_file(&file)
 
 	rule := must_rule(t, file, "foo")
-	alts, ok := must_production(t, rule).(Alternative_Expr)
+	alts, ok := must_production(t, rule).(Alternative)
 	testing.expect(t, ok, "expected Alternative_Expr")
 	testing.expect(t, len(alts.exprs) == 2, "expected two alternatives")
 
-	first, ok2 := alts.exprs[0].(Tagged_Expr)
+	first, ok2 := alts.exprs[0].(Tagged_Production)
 	testing.expect(t, ok2, "the first alternative should be tagged")
 	testing.expect(t, first.tag[0].name.name == "a", "wrong first tag")
 
-	second, ok3 := alts.exprs[1].(Tagged_Expr)
+	second, ok3 := alts.exprs[1].(Tagged_Production)
 	testing.expect(t, ok3, "the second alternative should be tagged")
 	testing.expect(t, second.tag[0].name.name == "b", "wrong second tag")
 }
@@ -490,23 +486,23 @@ test_parse_malformed_tag :: proc(t: ^testing.T) {
 }
 
 // must_production returns the single production of a rule.
-must_production :: proc(t: ^testing.T, rule: Rule_Decl) -> Expr {
+must_production :: proc(t: ^testing.T, rule: Rule) -> Production {
 	return rule.expr
 }
 
-// must_tagged parses a one rule source and returns the single Tagged_Expr of its
+// must_tagged parses a one rule source and returns the single Tagged_Production of its
 // production.
-must_tagged :: proc(t: ^testing.T, file: File, name: string) -> Tagged_Expr {
+must_tagged :: proc(t: ^testing.T, file: File, name: string) -> Tagged_Production {
 	rule := must_rule(t, file, name)
-	tagged, ok := must_production(t, rule).(Tagged_Expr)
-	testing.expectf(t, ok, "the production of %s should be a Tagged_Expr", name)
+	tagged, ok := must_production(t, rule).(Tagged_Production)
+	testing.expectf(t, ok, "the production of %s should be a Tagged_Production", name)
 	return tagged
 }
 
 // must_rule returns the named rule declaration of file.
-must_rule :: proc(t: ^testing.T, file: File, name: string) -> Rule_Decl {
+must_rule :: proc(t: ^testing.T, file: File, name: string) -> Rule {
 	for decl in file.decls {
-		if rule, ok := decl.(Rule_Decl); ok && rule.name.name == name {
+		if rule, ok := decl.(Rule); ok && rule.name.name == name {
 			return rule
 		}
 	}

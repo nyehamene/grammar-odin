@@ -30,7 +30,7 @@ print_file :: proc(writer: io.Writer, src: string, file: ^File) {
 
 print_decl :: proc(p: ^Printer, decl: Decl) {
 	switch v in decl {
-	case Rule_Decl:
+	case Rule:
 		print_header(p, v.pos, fmt.tprintf("RuleDecl: %s", v.name.name))
 		p.indent += 1
 		for param in v.params {
@@ -38,7 +38,7 @@ print_decl :: proc(p: ^Printer, decl: Decl) {
 		}
 		print_expr(p, v.expr)
 		p.indent -= 1
-	case Binding_Decl:
+	case Binding:
 		print_header(
 			p,
 			v.pos,
@@ -56,7 +56,7 @@ print_decl :: proc(p: ^Printer, decl: Decl) {
 	}
 }
 
-print_expr :: proc(p: ^Printer, expr: Expr) {
+print_expr :: proc(p: ^Printer, expr: Production) {
 	switch v in expr {
 	case Ident:
 		print_header(p, v.pos, fmt.tprintf("Ident: %s", v.name))
@@ -66,28 +66,28 @@ print_expr :: proc(p: ^Printer, expr: Expr) {
 		print_header(p, v.pos, fmt.tprintf("RegexLit: %s", v.value))
 	case External_Value:
 		print_header(p, v.pos, fmt.tprintf("ExternalValue: $%s", v.name))
-	case Sequence_Expr:
+	case Sequence:
 		print_header(p, v.pos, "SequenceExpr")
 		p.indent += 1
 		for e in v.exprs {
 			print_expr(p, e)
 		}
 		p.indent -= 1
-	case Alternative_Expr:
+	case Alternative:
 		print_header(p, v.pos, "AlternativeExpr")
 		p.indent += 1
 		for e in v.exprs {
 			print_expr(p, e)
 		}
 		p.indent -= 1
-	case Optional_Expr:
+	case Optional:
 		print_header(p, v.pos, "OptionalExpr")
 		p.indent += 1
 		for e in v.exprs {
 			print_expr(p, e)
 		}
 		p.indent -= 1
-	case Repetition_Expr:
+	case Repetition:
 		print_header(p, v.pos, "RepetitionExpr")
 		p.indent += 1
 		for e in v.exprs {
@@ -101,13 +101,13 @@ print_expr :: proc(p: ^Printer, expr: Expr) {
 			print_expr(p, e)
 		}
 		p.indent -= 1
-	case Member_Expr:
+	case Member_Access:
 		print_header(p, v.pos, "MemberExpr")
 		p.indent += 1
 		print_expr(p, v.object^)
 		print_header(p, v.member.pos, fmt.tprintf("Member: %s", v.member.name))
 		p.indent -= 1
-	case ^Call_Expr:
+	case ^Call:
 		print_header(p, v.pos, "CallExpr: ")
 		print_expr(p, v.name)
 		p.indent += 1
@@ -115,14 +115,14 @@ print_expr :: proc(p: ^Printer, expr: Expr) {
 			print_expr(p, e)
 		}
 		p.indent -= 1
-	case Directive_Expr:
+	case Directive:
 		print_header(p, v.pos, fmt.tprintf("DirectiveExpr: @%s", v.name.name))
 		p.indent += 1
 		for e in v.args {
 			print_expr(p, e)
 		}
 		p.indent -= 1
-	case Tagged_Expr:
+	case Tagged_Production:
 		print_header(p, v.pos, "TaggedExpr")
 		p.indent += 1
 		print_expr(p, v.expr^)

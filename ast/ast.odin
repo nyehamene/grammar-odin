@@ -1,26 +1,26 @@
 package ast
 
-// Expr is any expression that can appear in a production.
-Expr :: union {
+// Production is any production that can appear in a grammar.
+Production :: union {
 	Ident,
 	String_Lit,
 	Regex_Lit,
 	External_Value,
-	Sequence_Expr,
-	Alternative_Expr,
-	Optional_Expr,
-	Repetition_Expr,
+	Sequence,
+	Alternative,
+	Optional,
+	Repetition,
 	Group_Expr,
-	Member_Expr,
-	^Call_Expr,
-	Directive_Expr,
-	Tagged_Expr,
+	Member_Access,
+	Directive,
+	Tagged_Production,
+	^Call,
 }
 
 // Decl is any top-level declaration in a grammar file.
 Decl :: union {
-	Rule_Decl,
-	Binding_Decl,
+	Rule,
+	Binding,
 	Comment_Group,
 }
 
@@ -30,23 +30,23 @@ File :: struct {
 	end_pos: int,
 }
 
-// Rule_Decl is a named production, optionally with parameters. A rule names one
-// production, so a body of more than one element is a Sequence_Expr.
+// Rule is a named production, optionally with parameters. A rule names one
+// production, so a body of more than one element is a Sequence.
 //   greeting            = "Hello";
 //   greet name title    = "hello" name title;
-Rule_Decl :: struct {
+Rule :: struct {
 	name:   Ident,
 	params: [dynamic]Ident,
-	expr:   Expr,
+	expr:   Production,
 	pos:    int,
 }
 
-// Binding_Decl imports an external grammar file.
+// Binding imports an external grammar file.
 //   f = @import("../foo");
-Binding_Decl :: struct {
+Binding :: struct {
 	name:      Ident,
 	path:      String_Lit,
-	directive: Directive_Expr,
+	directive: Directive,
 	pos:       int,
 }
 
@@ -85,64 +85,65 @@ External_Value :: struct {
 	name: string,
 }
 
-// Sequence_Expr is a sequence of basics, e.g. `a b c`.
-Sequence_Expr :: struct {
-	exprs: [dynamic]Expr,
+// Sequence is a sequence of productions, e.g. `a b c`.
+Sequence :: struct {
+	exprs: [dynamic]Production,
 	pos:   int,
 }
 
-// Alternative_Expr is a set of alternatives, e.g. `a | b | c`.
-Alternative_Expr :: struct {
-	exprs: [dynamic]Expr,
+// Alternative is a set of alternatives, e.g. `a | b | c`.
+Alternative :: struct {
+	exprs: [dynamic]Production,
 	pos:   int,
 }
 
-// Optional_Expr is a zero-or-one production, e.g. `[ a b ]`.
-Optional_Expr :: struct {
-	exprs: [dynamic]Expr,
+// Optional is a zero-or-one production, e.g. `[ a b ]`.
+Optional :: struct {
+	exprs: [dynamic]Production,
 	pos:   int,
 }
 
-// Repetition_Expr is a zero-or-more production, e.g. `{ one two }`.
-Repetition_Expr :: struct {
-	exprs: [dynamic]Expr,
+// Repetition is a zero-or-more production, e.g. `{ one two }`.
+Repetition :: struct {
+	exprs: [dynamic]Production,
 	pos:   int,
 }
 
 // Group_Expr is a grouped production, e.g. `( a b )`.
 Group_Expr :: struct {
-	exprs: [dynamic]Expr,
+	exprs: [dynamic]Production,
 	pos:   int,
 }
 
-// Member_Expr is a member access, e.g. `foo.bar`. It is left-associative, so
-// `a.b.c` is Member_Expr{Member_Expr{a, b}, c}.
-Member_Expr :: struct {
-	object: ^Expr,
+// Member_Access is a member access, e.g. `foo.bar`. It is left-associative, so
+// `a.b.c` is Member_Access{Member_Access{a, b}, c}.
+Member_Access :: struct {
+	object: ^Production,
 	member: Ident,
 	pos:    int,
 }
 
-// Call_Expr is a call to a rule with arguments, e.g. `<greet person "Mr">`.
-Call_Expr :: struct {
-	name: Expr,
-	args: [dynamic]Expr,
+// Call is a call to a rule with arguments, e.g. `<greet person "Mr">`.
+Call :: struct {
+	// name: Production,
+	name: Production,
+	args: [dynamic]Production,
 	pos:  int,
 }
 
-// Directive_Expr is a directive, e.g. `@import("base")`.
-Directive_Expr :: struct {
+// Directive is a directive, e.g. `@import("base")`.
+Directive :: struct {
 	name: Ident,
-	args: [dynamic]Expr,
+	args: [dynamic]Production,
 	pos:  int,
 }
 
-// Tagged_Expr is a production annotated with one or more tags, e.g.
+// Tagged_Production is a production annotated with one or more tags, e.g.
 // `a b `name="value"``. pos is the offset of the annotated production, so the
-// expression reports the position of the element it wraps rather than that of
+// production reports the position of the element it wraps rather than that of
 // the tag written after it.
-Tagged_Expr :: struct {
-	expr: ^Expr,
+Tagged_Production :: struct {
+	expr: ^Production,
 	tag:  [dynamic]Tag_Pair,
 	pos:  int,
 }
@@ -162,7 +163,7 @@ Error :: struct {
 }
 
 // expr_pos returns the source offset of the first token of expr.
-expr_pos :: proc(expr: Expr) -> int {
+expr_pos :: proc(expr: Production) -> int {
 	switch v in expr {
 	case Ident:
 		return v.pos
@@ -172,23 +173,23 @@ expr_pos :: proc(expr: Expr) -> int {
 		return v.pos
 	case External_Value:
 		return v.pos
-	case Sequence_Expr:
+	case Sequence:
 		return v.pos
-	case Alternative_Expr:
+	case Alternative:
 		return v.pos
-	case Optional_Expr:
+	case Optional:
 		return v.pos
-	case Repetition_Expr:
+	case Repetition:
 		return v.pos
 	case Group_Expr:
 		return v.pos
-	case Member_Expr:
+	case Member_Access:
 		return v.pos
-	case ^Call_Expr:
+	case ^Call:
 		return v.pos
-	case Directive_Expr:
+	case Directive:
 		return v.pos
-	case Tagged_Expr:
+	case Tagged_Production:
 		return v.pos
 	}
 	return 0
@@ -197,9 +198,9 @@ expr_pos :: proc(expr: Expr) -> int {
 // decl_pos returns the source offset of the first token of decl.
 decl_pos :: proc(decl: Decl) -> int {
 	switch v in decl {
-	case Rule_Decl:
+	case Rule:
 		return v.pos
-	case Binding_Decl:
+	case Binding:
 		return v.pos
 	case Comment_Group:
 		return v.pos
@@ -217,35 +218,35 @@ destroy_file :: proc(file: ^File) {
 
 destroy_decl :: proc(decl: Decl) {
 	switch v in decl {
-	case Rule_Decl:
+	case Rule:
 		delete(v.params)
 		if v.expr != nil do destroy_expr(v.expr)
-	case Binding_Decl:
+	case Binding:
 		destroy_expr(v.directive)
 	case Comment_Group:
 		delete(v.list)
 	}
 }
 
-destroy_expr :: proc(expr: Expr) {
+destroy_expr :: proc(expr: Production) {
 	switch v in expr {
 	case Ident, String_Lit, Regex_Lit, External_Value:
-	case Sequence_Expr:
+	case Sequence:
 		for e in v.exprs {
 			destroy_expr(e)
 		}
 		delete(v.exprs)
-	case Alternative_Expr:
+	case Alternative:
 		for e in v.exprs {
 			destroy_expr(e)
 		}
 		delete(v.exprs)
-	case Optional_Expr:
+	case Optional:
 		for e in v.exprs {
 			destroy_expr(e)
 		}
 		delete(v.exprs)
-	case Repetition_Expr:
+	case Repetition:
 		for e in v.exprs {
 			destroy_expr(e)
 		}
@@ -255,21 +256,21 @@ destroy_expr :: proc(expr: Expr) {
 			destroy_expr(e)
 		}
 		delete(v.exprs)
-	case Member_Expr:
+	case Member_Access:
 		destroy_expr(v.object^)
 		free(v.object)
-	case ^Call_Expr:
+	case ^Call:
 		for e in v.args {
 			destroy_expr(e)
 		}
 		delete(v.args)
 		free(v)
-	case Directive_Expr:
+	case Directive:
 		for e in v.args {
 			destroy_expr(e)
 		}
 		delete(v.args)
-	case Tagged_Expr:
+	case Tagged_Production:
 		destroy_expr(v.expr^)
 		free(v.expr)
 		delete(v.tag)

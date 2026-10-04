@@ -299,7 +299,7 @@ load :: proc(cu: ^Compilation_Unit, path: string) -> ^Loaded_File {
 resolve_imports :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File) {
 	for decl in fi.file.decls {
 		#partial switch d in decl {
-		case ast.Binding_Decl:
+		case ast.Binding:
 			import_path := unquote(d.path.value)
 			resolved, rerr := filepath.join([]string{fi.namespace_path, import_path})
 			cleaned, _ := filepath.clean(resolved)
@@ -395,7 +395,7 @@ bind_all :: proc(cu: ^Compilation_Unit) {
 
 		for decl in fi.file.decls {
 			#partial switch d in decl {
-			case ast.Rule_Decl:
+			case ast.Rule:
 				if is_malformed_private_name(d.name.name) {
 					add_error(
 						cu,
@@ -439,7 +439,7 @@ bind_all :: proc(cu: ^Compilation_Unit) {
 						ns.rules[d.name.name] = rule
 					}
 				}
-			case ast.Binding_Decl:
+			case ast.Binding:
 				if other, ok := seen[d.name.name]; ok {
 					add_redeclared(cu, fi, d.name.pos, d.name.name, fi, other)
 				} else {
@@ -469,7 +469,7 @@ check_file :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File) {
 	clear(&fi.used_bindings)
 	for decl in fi.file.decls {
 		#partial switch d in decl {
-		case ast.Rule_Decl:
+		case ast.Rule:
 			// Record which rule is being walked so that a reference can tell
 			// whether it came from the declaring rule itself.
 			fi.enclosing_rule = d.name.name
@@ -492,7 +492,7 @@ check_file :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File) {
 check_unused_private_rules :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File) {
 	for decl in fi.file.decls {
 		#partial switch d in decl {
-		case ast.Rule_Decl:
+		case ast.Rule:
 			if !is_private_rule(d.name.name) do continue
 			// A declaration that lost a redeclaration contest was never
 			// registered; the one that won was, and its offset tells them apart.
@@ -517,7 +517,7 @@ check_unused_private_rules :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File) {
 check_unused_bindings :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File) {
 	for decl in fi.file.decls {
 		#partial switch d in decl {
-		case ast.Binding_Decl:
+		case ast.Binding:
 			if _, ok := fi.bindings[d.name.name]; !ok do continue
 			if fi.used_bindings[d.name.name] do continue
 			add_warning(
@@ -547,7 +547,7 @@ check_unused_local_rules :: proc(cu: ^Compilation_Unit) {
 
 		for decl in fi.file.decls {
 			#partial switch d in decl {
-			case ast.Rule_Decl:
+			case ast.Rule:
 				if !is_local_rule(d.name.name) do continue
 				// As with private rules, only the declaration that was actually
 				// registered can be reported; Rule_Ref.offset says which it was.
@@ -569,47 +569,46 @@ check_unused_local_rules :: proc(cu: ^Compilation_Unit) {
 
 // check_unused_params reports every proc parameter that is never referenced in
 // the rule body.
-check_unused_params :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, params: []ast.Ident, expr: ast.Expr) {
+check_unused_params :: proc(
+	cu: ^Compilation_Unit,
+	fi: ^Loaded_File,
+	params: []ast.Ident,
+	expr: ast.Production,
+) {
 	for p in params {
 		if uses_param(expr, p.name) do continue
-		add_error(
-			cu,
-			fi.display,
-			fi.src,
-			p.pos,
-			fmt.tprintf("unused proc parameter: %s", p.name),
-		)
+		add_error(cu, fi.display, fi.src, p.pos, fmt.tprintf("unused proc parameter: %s", p.name))
 	}
 }
 
 // uses_param reports whether param appears as an identifier anywhere in expr.
-uses_param :: proc(expr: ast.Expr, param: string) -> bool {
+uses_param :: proc(expr: ast.Production, param: string) -> bool {
 	switch v in expr {
 	case ast.Ident:
 		return v.name == param
-	case ast.String_Lit, ast.Regex_Lit, ast.External_Value, ast.Directive_Expr:
+	case ast.String_Lit, ast.Regex_Lit, ast.External_Value, ast.Directive:
 		return false
-	case ast.Member_Expr:
+	case ast.Member_Access:
 		return uses_param(v.object^, param) || uses_param(v.member, param)
-	case ^ast.Call_Expr:
+	case ^ast.Call:
 		return uses_param(v.name, param) || exprs_use_param(v.args[:], param)
-	case ast.Sequence_Expr:
+	case ast.Sequence:
 		return exprs_use_param(v.exprs[:], param)
-	case ast.Alternative_Expr:
+	case ast.Alternative:
 		return exprs_use_param(v.exprs[:], param)
-	case ast.Optional_Expr:
+	case ast.Optional:
 		return exprs_use_param(v.exprs[:], param)
-	case ast.Repetition_Expr:
+	case ast.Repetition:
 		return exprs_use_param(v.exprs[:], param)
 	case ast.Group_Expr:
 		return exprs_use_param(v.exprs[:], param)
-	case ast.Tagged_Expr:
+	case ast.Tagged_Production:
 		return uses_param(v.expr^, param)
 	}
 	return false
 }
 
-exprs_use_param :: proc(exprs: []ast.Expr, param: string) -> bool {
+exprs_use_param :: proc(exprs: []ast.Production, param: string) -> bool {
 	for e in exprs {
 		if uses_param(e, param) do return true
 	}
@@ -622,7 +621,12 @@ exprs_use_param :: proc(exprs: []ast.Expr, param: string) -> bool {
 // namespace is rejected: the rule has to call the proc or select from the
 // namespace. Every other shape yields a Production operand and is left to the
 // checks inside the production.
-check_body :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, params: []ast.Ident, expr: ast.Expr) {
+check_body :: proc(
+	cu: ^Compilation_Unit,
+	fi: ^Loaded_File,
+	params: []ast.Ident,
+	expr: ast.Production,
+) {
 	o: Operand
 	check_expr_scoped(cu, fi, params, expr, &o)
 
@@ -661,7 +665,7 @@ check_body :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, params: []ast.Ident,
 }
 
 // is_param reports whether expr is one of the given parameters.
-is_param :: proc(params: []ast.Ident, expr: ast.Expr) -> bool {
+is_param :: proc(params: []ast.Ident, expr: ast.Production) -> bool {
 	ident, ok := expr.(ast.Ident)
 	if !ok do return false
 	for p in params {
@@ -675,7 +679,7 @@ check_expr_scoped :: proc(
 	cu: ^Compilation_Unit,
 	fi: ^Loaded_File,
 	params: []ast.Ident,
-	expr: ast.Expr,
+	expr: ast.Production,
 	o: ^Operand,
 ) {
 
@@ -709,10 +713,10 @@ check_expr_scoped :: proc(
 		Operand_lvalue(o, rule.type, v.pos, v.name)
 		o.arity = rule.arity
 
-	case ast.Member_Expr:
+	case ast.Member_Access:
 		check_member(cu, fi, v, o)
 
-	case ^ast.Call_Expr:
+	case ^ast.Call:
 		name_op: Operand
 		check_expr_scoped(cu, fi, params, v.name, &name_op)
 		if name_op.kind == .Invalid {
@@ -788,22 +792,22 @@ check_expr_scoped :: proc(
 			}
 		}
 
-	case ast.Sequence_Expr:
+	case ast.Sequence:
 		check_expr_group(cu, fi, params, v.pos, v.exprs[:], o)
 
-	case ast.Alternative_Expr:
+	case ast.Alternative:
 		check_expr_group(cu, fi, params, v.pos, v.exprs[:], o)
 
-	case ast.Optional_Expr:
+	case ast.Optional:
 		check_expr_group(cu, fi, params, v.pos, v.exprs[:], o)
 
-	case ast.Repetition_Expr:
+	case ast.Repetition:
 		check_expr_group(cu, fi, params, v.pos, v.exprs[:], o)
 
 	case ast.Group_Expr:
 		check_expr_group(cu, fi, params, v.pos, v.exprs[:], o)
 
-	case ast.Tagged_Expr:
+	case ast.Tagged_Production:
 		// A tag annotates the production it follows, so it is checked, and
 		// yields an operand, exactly as the untagged production would.
 		check_expr_scoped(cu, fi, params, v.expr^, o)
@@ -817,7 +821,7 @@ check_expr_scoped :: proc(
 	case ast.External_Value:
 		Operand_rvalue(o, .External, v.pos, v.name)
 
-	case ast.Directive_Expr:
+	case ast.Directive:
 		// Operand_rvalue(o, .Unknown, v.pos, v.name.name)
 		Operand_invalid(o, v.pos, v.name.name)
 	}
@@ -828,7 +832,7 @@ check_expr_group :: proc(
 	fi: ^Loaded_File,
 	params: []ast.Ident,
 	pos: int,
-	exprs: []ast.Expr,
+	exprs: []ast.Production,
 	o: ^Operand,
 ) {
 	for e in exprs {
@@ -848,13 +852,13 @@ check_expr_group :: proc(
 }
 
 // check_expr resolves names in expr and reports undefined references.
-check_expr :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, expr: ast.Expr, o: ^Operand) {
+check_expr :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, expr: ast.Production, o: ^Operand) {
 	check_expr_scoped(cu, fi, nil, expr, o)
 }
 
 // check_member validates a member access `receiver.member`: the receiver must
 // be a binding to a namespace and the member must be a rule in that namespace.
-check_member :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, m: ast.Member_Expr, o: ^Operand) {
+check_member :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, m: ast.Member_Access, o: ^Operand) {
 	obj_op: Operand
 	check_expr(cu, fi, m.object^, &obj_op)
 	if obj_op.kind != .Namespace {
@@ -1053,12 +1057,12 @@ add_diag :: proc(
 	append(
 		&cu.errors,
 		Semantic_Error {
-			path     = strings.clone(display_path),
-			offset   = offset,
-			line     = line,
-			col      = col,
+			path = strings.clone(display_path),
+			offset = offset,
+			line = line,
+			col = col,
 			severity = severity,
-			message  = strings.clone(message),
+			message = strings.clone(message),
 		},
 	)
 }

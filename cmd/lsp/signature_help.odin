@@ -162,8 +162,12 @@ proc_signature :: proc(
 		sig := Signature_Information {
 			label = name,
 			documentation = Markup_Content {
-				kind  = "markdown",
-				value = fmt.tprintf("**type:** proc, %d parameter%s", ref.arity, plural(ref.arity)),
+				kind = "markdown",
+				value = fmt.tprintf(
+					"**type:** proc, %d parameter%s",
+					ref.arity,
+					plural(ref.arity),
+				),
 			},
 			parameters = []Parameter_Information{},
 		}
@@ -185,14 +189,14 @@ proc_signature :: proc(
 	for p, i in params {
 		infos[i] = Parameter_Information {
 			label = p.name,
-			documentation = Markup_Content {kind = "markdown", value = "**type:** proc parameter"},
+			documentation = Markup_Content{kind = "markdown", value = "**type:** proc parameter"},
 		}
 	}
 
 	sig := Signature_Information {
 		label = strings.to_string(sb),
 		documentation = Markup_Content {
-			kind  = "markdown",
+			kind = "markdown",
 			value = fmt.tprintf("**type:** %s", type_doc(ref)),
 		},
 		parameters = infos,
@@ -205,7 +209,7 @@ production_signature :: proc(name: string) -> Signature_Help {
 	sig := Signature_Information {
 		label = name,
 		documentation = Markup_Content {
-			kind  = "markdown",
+			kind = "markdown",
 			value = fmt.tprintf("**type:** %s", type_doc({arity = 0})),
 		},
 		parameters = []Parameter_Information{},
@@ -222,7 +226,7 @@ type_help :: proc(value_type: string, name := "") -> Signature_Help {
 	sig := Signature_Information {
 		label = label,
 		documentation = Markup_Content {
-			kind  = "markdown",
+			kind = "markdown",
 			value = fmt.tprintf("**type:** %s", value_type),
 		},
 		parameters = []Parameter_Information{},
@@ -278,7 +282,7 @@ member_signature :: proc(
 resolve_named :: proc(
 	cu: ^check.Compilation_Unit,
 	fi: ^check.Loaded_File,
-	expr: ast.Expr,
+	expr: ast.Production,
 ) -> (
 	name: string,
 	ref: check.Rule_Ref,
@@ -290,12 +294,11 @@ resolve_named :: proc(
 			return v.name, r, true
 		}
 		name = v.name
-	case ast.Member_Expr:
+	case ast.Member_Access:
 		if obj, is_ident := v.object^.(ast.Ident); is_ident {
 			if dir, bound := fi.bindings[obj.name]; bound {
 				// Only an exported rule is reachable through a binding.
-				if ns := cu.namespaces[dir]; ns != nil &&
-					check.is_exported_rule(v.member.name) {
+				if ns := cu.namespaces[dir]; ns != nil && check.is_exported_rule(v.member.name) {
 					if r, r_ok := ns.rules[v.member.name]; r_ok {
 						return v.member.name, r, true
 					}
@@ -303,7 +306,7 @@ resolve_named :: proc(
 			}
 		}
 		name = v.member.name
-	case ast.Tagged_Expr:
+	case ast.Tagged_Production:
 		return resolve_named(cu, fi, v.expr^)
 	}
 	return name, {}, false
@@ -339,7 +342,7 @@ rule_params :: proc(
 ) {
 	for decl in fi.file.decls {
 		#partial switch d in decl {
-		case ast.Rule_Decl:
+		case ast.Rule:
 			if d.name.pos == ref.offset {
 				return d.params[:ref.arity], true
 			}
@@ -349,7 +352,7 @@ rule_params :: proc(
 }
 
 // active_arg returns the index of the argument containing or preceding offset.
-active_arg :: proc(call: ^ast.Call_Expr, offset: int) -> int {
+active_arg :: proc(call: ^ast.Call, offset: int) -> int {
 	idx := 0
 	for arg in call.args {
 		if ast.expr_pos(arg) < offset {
@@ -369,14 +372,14 @@ active_arg :: proc(call: ^ast.Call_Expr, offset: int) -> int {
 
 // containing_call returns the innermost rule call whose span contains offset,
 // or nil. It searches children before self so the deepest call wins.
-containing_call :: proc(file: ^ast.File, src: string, offset: int) -> ^ast.Call_Expr {
+containing_call :: proc(file: ^ast.File, src: string, offset: int) -> ^ast.Call {
 	for decl in file.decls {
 		#partial switch d in decl {
-		case ast.Rule_Decl:
+		case ast.Rule:
 			if call := expr_containing_call(d.expr, src, offset); call != nil {
 				return call
 			}
-		case ast.Binding_Decl:
+		case ast.Binding:
 			if call := expr_containing_call(d.directive, src, offset); call != nil {
 				return call
 			}
@@ -386,9 +389,9 @@ containing_call :: proc(file: ^ast.File, src: string, offset: int) -> ^ast.Call_
 	return nil
 }
 
-expr_containing_call :: proc(expr: ast.Expr, src: string, offset: int) -> ^ast.Call_Expr {
+expr_containing_call :: proc(expr: ast.Production, src: string, offset: int) -> ^ast.Call {
 	#partial switch v in expr {
-	case ^ast.Call_Expr:
+	case ^ast.Call:
 		if call := expr_containing_call(v.name, src, offset); call != nil {
 			return call
 		}
@@ -400,32 +403,32 @@ expr_containing_call :: proc(expr: ast.Expr, src: string, offset: int) -> ^ast.C
 		if offset >= v.pos && offset < call_end(src, v.pos) {
 			return v
 		}
-	case ast.Member_Expr:
+	case ast.Member_Access:
 		return expr_containing_call(v.object^, src, offset)
-	case ast.Sequence_Expr:
+	case ast.Sequence:
 		return exprs_containing_call(v.exprs[:], src, offset)
-	case ast.Alternative_Expr:
+	case ast.Alternative:
 		return exprs_containing_call(v.exprs[:], src, offset)
-	case ast.Optional_Expr:
+	case ast.Optional:
 		return exprs_containing_call(v.exprs[:], src, offset)
-	case ast.Repetition_Expr:
+	case ast.Repetition:
 		return exprs_containing_call(v.exprs[:], src, offset)
 	case ast.Group_Expr:
 		return exprs_containing_call(v.exprs[:], src, offset)
-	case ast.Directive_Expr:
+	case ast.Directive:
 		for arg in v.args {
 			if call := expr_containing_call(arg, src, offset); call != nil {
 				return call
 			}
 		}
-	case ast.Tagged_Expr:
+	case ast.Tagged_Production:
 		return expr_containing_call(v.expr^, src, offset)
 	case ast.Ident, ast.String_Lit, ast.Regex_Lit, ast.External_Value:
 	}
 	return nil
 }
 
-exprs_containing_call :: proc(exprs: []ast.Expr, src: string, offset: int) -> ^ast.Call_Expr {
+exprs_containing_call :: proc(exprs: []ast.Production, src: string, offset: int) -> ^ast.Call {
 	for e in exprs {
 		if call := expr_containing_call(e, src, offset); call != nil {
 			return call
@@ -478,7 +481,11 @@ plural :: proc(n: int) -> string {
 // help both render it as "**type:** ..." markdown).
 type_doc :: proc(ref: check.Rule_Ref) -> string {
 	if ref.arity > 0 {
-		return fmt.tprintf("proc, %d parameter%s, returns a production", ref.arity, plural(ref.arity))
+		return fmt.tprintf(
+			"proc, %d parameter%s, returns a production",
+			ref.arity,
+			plural(ref.arity),
+		)
 	}
 	return "production, returns a production"
 }

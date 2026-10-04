@@ -188,12 +188,12 @@ collect_rule_refs :: proc(
 ) {
 	for decl in f.file.decls {
 		#partial switch d in decl {
-		case ast.Rule_Decl:
+		case ast.Rule:
 			if include_declaration && d.name.name == name {
 				push_reference(out, uris, f, d.name.pos, d.name.name)
 			}
 			rule_ref_in_expr(f, target_ns_dir, name, d.expr, uris, out, private)
-		case ast.Binding_Decl, ast.Comment_Group:
+		case ast.Binding, ast.Comment_Group:
 		}
 	}
 }
@@ -209,11 +209,11 @@ collect_binding_refs :: proc(
 ) {
 	for decl in f.file.decls {
 		#partial switch d in decl {
-		case ast.Binding_Decl:
+		case ast.Binding:
 			if include_declaration && d.name.name == name {
 				push_reference(out, uris, f, d.name.pos, d.name.name)
 			}
-		case ast.Rule_Decl:
+		case ast.Rule:
 			binding_ref_in_expr(f, name, d.expr, uris, out)
 		case ast.Comment_Group:
 		}
@@ -231,7 +231,7 @@ collect_param_refs :: proc(
 	if index >= len(f.file.decls) do return
 	decl := f.file.decls[index]
 	#partial switch d in decl {
-	case ast.Rule_Decl:
+	case ast.Rule:
 		for p in d.params {
 			rule_ref_in_expr(f, "", name, p, uris, out, true)
 		}
@@ -243,7 +243,7 @@ collect_param_refs :: proc(
 rule_ref_in_expr :: proc(
 	f: ^check.Loaded_File,
 	target_ns_dir, name: string,
-	expr: ast.Expr,
+	expr: ast.Production,
 	uris: map[^check.Loaded_File]string,
 	out: ^[dynamic]Location,
 	private: bool,
@@ -254,7 +254,7 @@ rule_ref_in_expr :: proc(
 			push_reference(out, uris, f, v.pos, v.name)
 		}
 
-	case ast.Member_Expr:
+	case ast.Member_Access:
 		if private do break
 
 		if obj, is_ident := v.object^.(ast.Ident); is_ident {
@@ -265,24 +265,24 @@ rule_ref_in_expr :: proc(
 		} else {
 			rule_ref_in_expr(f, target_ns_dir, name, v.object^, uris, out, private)
 		}
-	case ^ast.Call_Expr:
+	case ^ast.Call:
 		rule_ref_in_expr(f, target_ns_dir, name, v.name, uris, out, private)
 		for arg in v.args {
 			rule_ref_in_expr(f, target_ns_dir, name, arg, uris, out, private)
 		}
-	case ast.Sequence_Expr:
+	case ast.Sequence:
 		for e in v.exprs {
 			rule_ref_in_expr(f, target_ns_dir, name, e, uris, out, private)
 		}
-	case ast.Alternative_Expr:
+	case ast.Alternative:
 		for e in v.exprs {
 			rule_ref_in_expr(f, target_ns_dir, name, e, uris, out, private)
 		}
-	case ast.Optional_Expr:
+	case ast.Optional:
 		for e in v.exprs {
 			rule_ref_in_expr(f, target_ns_dir, name, e, uris, out, private)
 		}
-	case ast.Repetition_Expr:
+	case ast.Repetition:
 		for e in v.exprs {
 			rule_ref_in_expr(f, target_ns_dir, name, e, uris, out, private)
 		}
@@ -290,11 +290,11 @@ rule_ref_in_expr :: proc(
 		for e in v.exprs {
 			rule_ref_in_expr(f, target_ns_dir, name, e, uris, out, private)
 		}
-	case ast.Directive_Expr:
+	case ast.Directive:
 		for arg in v.args {
 			rule_ref_in_expr(f, target_ns_dir, name, arg, uris, out, private)
 		}
-	case ast.Tagged_Expr:
+	case ast.Tagged_Production:
 		rule_ref_in_expr(f, target_ns_dir, name, v.expr^, uris, out, private)
 	case ast.String_Lit, ast.Regex_Lit, ast.External_Value:
 	}
@@ -304,7 +304,7 @@ rule_ref_in_expr :: proc(
 binding_ref_in_expr :: proc(
 	f: ^check.Loaded_File,
 	name: string,
-	expr: ast.Expr,
+	expr: ast.Production,
 	uris: map[^check.Loaded_File]string,
 	out: ^[dynamic]Location,
 ) {
@@ -313,31 +313,31 @@ binding_ref_in_expr :: proc(
 		if v.name == name {
 			push_reference(out, uris, f, v.pos, v.name)
 		}
-	case ast.Member_Expr:
+	case ast.Member_Access:
 		if obj, is_ident := v.object^.(ast.Ident); is_ident && obj.name == name {
 			push_reference(out, uris, f, obj.pos, obj.name)
 		}
 		if v.member.name == name {
 			push_reference(out, uris, f, v.member.pos, v.member.name)
 		}
-	case ^ast.Call_Expr:
+	case ^ast.Call:
 		binding_ref_in_expr(f, name, v.name, uris, out)
 		for arg in v.args {
 			binding_ref_in_expr(f, name, arg, uris, out)
 		}
-	case ast.Sequence_Expr:
+	case ast.Sequence:
 		for e in v.exprs {
 			binding_ref_in_expr(f, name, e, uris, out)
 		}
-	case ast.Alternative_Expr:
+	case ast.Alternative:
 		for e in v.exprs {
 			binding_ref_in_expr(f, name, e, uris, out)
 		}
-	case ast.Optional_Expr:
+	case ast.Optional:
 		for e in v.exprs {
 			binding_ref_in_expr(f, name, e, uris, out)
 		}
-	case ast.Repetition_Expr:
+	case ast.Repetition:
 		for e in v.exprs {
 			binding_ref_in_expr(f, name, e, uris, out)
 		}
@@ -345,11 +345,11 @@ binding_ref_in_expr :: proc(
 		for e in v.exprs {
 			binding_ref_in_expr(f, name, e, uris, out)
 		}
-	case ast.Directive_Expr:
+	case ast.Directive:
 		for arg in v.args {
 			binding_ref_in_expr(f, name, arg, uris, out)
 		}
-	case ast.Tagged_Expr:
+	case ast.Tagged_Production:
 		binding_ref_in_expr(f, name, v.expr^, uris, out)
 	case ast.String_Lit, ast.Regex_Lit, ast.External_Value:
 	}

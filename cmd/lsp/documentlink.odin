@@ -50,7 +50,7 @@ handle_document_link :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> 
 
 	for decl in fi.file.decls {
 		#partial switch d in decl {
-		case ast.Binding_Decl:
+		case ast.Binding:
 			rel := strip_quotes(d.path.value)
 			if rel == "" {
 				continue
@@ -61,12 +61,15 @@ handle_document_link :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> 
 			}
 			start := position_at_offset(fi.src, d.path.pos)
 			end := position_at_offset(fi.src, d.path.pos + len(d.path.value))
-			append(&links, Document_Link{
-				range  = Range{start = start, end = end},
-				target = path_to_uri(target_abs),
-			})
+			append(
+				&links,
+				Document_Link {
+					range = Range{start = start, end = end},
+					target = path_to_uri(target_abs),
+				},
+			)
 			delete(target_abs)
-		case ast.Rule_Decl, ast.Comment_Group:
+		case ast.Rule, ast.Comment_Group:
 		}
 	}
 
@@ -94,7 +97,10 @@ resolve_import :: proc(
 	file_abs: string,
 	rel: string,
 	cu: ^check.Compilation_Unit,
-) -> (target_abs: string, ok: bool) {
+) -> (
+	target_abs: string,
+	ok: bool,
+) {
 	last_slash := strings.last_index_byte(file_abs, '/')
 	base_dir := file_abs[:last_slash] if last_slash >= 0 else file_abs
 

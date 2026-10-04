@@ -92,14 +92,14 @@ parse_binding :: proc(p: ^Parser, name: token.Token) -> (Decl, bool) {
 	directive := parse_directive(p)
 
 	path: String_Lit
-	dir_name, _ := directive.(Directive_Expr)
+	dir_name, _ := directive.(Directive)
 	if len(dir_name.args) == 1 {
 		path, _ = dir_name.args[0].(String_Lit)
 	}
 
 	expect(p, .Semicolon)
 
-	return Binding_Decl {
+	return Binding {
 			name = ident_node(name, p.src),
 			path = path,
 			directive = dir_name,
@@ -116,10 +116,10 @@ parse_rule :: proc(p: ^Parser, name: token.Token, params: []Ident) -> Decl {
 	if peek(p).kind == .Semicolon || peek(p).kind == .EOF {
 		error_at(p, name.start, "rule declaration must have a body")
 		expect(p, .Semicolon)
-		return Rule_Decl {
-			name   = ident_node(name, p.src),
+		return Rule {
+			name = ident_node(name, p.src),
 			params = clone_idents(params),
-			pos    = name.start,
+			pos = name.start,
 		}
 	}
 
@@ -127,11 +127,11 @@ parse_rule :: proc(p: ^Parser, name: token.Token, params: []Ident) -> Decl {
 
 	expect(p, .Semicolon)
 
-	return Rule_Decl {
-		name   = ident_node(name, p.src),
+	return Rule {
+		name = ident_node(name, p.src),
 		params = clone_idents(params),
-		expr   = expr,
-		pos    = name.start,
+		expr = expr,
+		pos = name.start,
 	}
 }
 
@@ -146,16 +146,16 @@ parse_comment_group :: proc(p: ^Parser) -> Decl {
 }
 
 // parse_production parses a production: a sequence or a set of alternatives.
-parse_production :: proc(p: ^Parser) -> Expr {
+parse_production :: proc(p: ^Parser) -> Production {
 	expr := parse_sequence(p)
 	if peek(p).kind == .Pipe {
-		alts := make([dynamic]Expr)
+		alts := make([dynamic]Production)
 		append(&alts, expr)
 		for peek(p).kind == .Pipe {
 			next(p)
 			append(&alts, parse_sequence(p))
 		}
-		return Alternative_Expr{exprs = alts, pos = expr_pos(expr)}
+		return Alternative{exprs = alts, pos = expr_pos(expr)}
 	}
 	return expr
 }
@@ -166,7 +166,7 @@ parse_production :: proc(p: ^Parser) -> Expr {
 // sequence that carries on after a tag rejects it, since a tag must be the last
 // element of its production or alternative, and a production carries one tag at
 // most.
-parse_sequence :: proc(p: ^Parser) -> Expr {
+parse_sequence :: proc(p: ^Parser) -> Production {
 	// A tag annotates what came before it, so a production may not start with
 	// one: `foo = `name="value"`;` would name no production at all.
 	if peek(p).kind == .Tag {
@@ -182,7 +182,7 @@ parse_sequence :: proc(p: ^Parser) -> Expr {
 		return first
 	}
 
-	terms := make([dynamic]Expr)
+	terms := make([dynamic]Production)
 	append(&terms, first)
 	tag_seen := false
 	for !is_sequence_end(peek(p)) {
@@ -200,13 +200,13 @@ parse_sequence :: proc(p: ^Parser) -> Expr {
 			// Everything parsed so far becomes the annotated production, so a tag
 			// over `a b c` wraps the sequence and not just its last element.
 			annotated := sequence_or_single(terms)
-			terms = make([dynamic]Expr)
+			terms = make([dynamic]Production)
 			append(
 				&terms,
-				Tagged_Expr {
+				Tagged_Production {
 					expr = alloc_expr(annotated),
-					tag  = pairs,
-					pos  = expr_pos(annotated),
+					tag = pairs,
+					pos = expr_pos(annotated),
 				},
 			)
 			// A further tag is reported on its own above, so only an element
@@ -224,15 +224,15 @@ parse_sequence :: proc(p: ^Parser) -> Expr {
 
 // sequence_or_single turns the elements collected for a sequence into the
 // production they describe: a single element stands alone, several make a
-// Sequence_Expr. The list is handed over to the result rather than copied, and
+// Sequence. The list is handed over to the result rather than copied, and
 // freed when there is nothing to keep.
-sequence_or_single :: proc(terms: [dynamic]Expr) -> Expr {
+sequence_or_single :: proc(terms: [dynamic]Production) -> Production {
 	if len(terms) == 1 {
 		only := terms[0]
 		delete(terms)
 		return only
 	}
-	return Sequence_Expr{exprs = terms, pos = expr_pos(terms[0])}
+	return Sequence{exprs = terms, pos = expr_pos(terms[0])}
 }
 
 // parse_tag_pairs splits the scanned tag into its pairs, one per `name="value"`
@@ -255,9 +255,9 @@ parse_tag_pairs :: proc(p: ^Parser, t: token.Token) -> [dynamic]Tag_Pair {
 		append(
 			&pairs,
 			Tag_Pair {
-				name  = Ident{pos = pos, name = pair.name},
+				name = Ident{pos = pos, name = pair.name},
 				value = String_Lit{pos = pos, value = pair.value},
-				pos   = pos,
+				pos = pos,
 			},
 		)
 	}
@@ -268,15 +268,15 @@ parse_tag_pairs :: proc(p: ^Parser, t: token.Token) -> [dynamic]Tag_Pair {
 // production annotated by one, and reports false otherwise. It descends into a
 // sequence or an alternative so it finds the tag of a nested production, which is
 // how a tag written inside a group, a repetition or an optional is found.
-trailing_tag_pos :: proc(expr: Expr) -> (int, bool) {
+trailing_tag_pos :: proc(expr: Production) -> (int, bool) {
 	#partial switch v in expr {
-	case Tagged_Expr:
+	case Tagged_Production:
 		if len(v.tag) > 0 do return v.tag[0].pos, true
-	case Sequence_Expr:
+	case Sequence:
 		if len(v.exprs) > 0 {
 			return trailing_tag_pos(v.exprs[len(v.exprs) - 1])
 		}
-	case Alternative_Expr:
+	case Alternative:
 		if len(v.exprs) > 0 {
 			return trailing_tag_pos(v.exprs[len(v.exprs) - 1])
 		}
@@ -294,7 +294,7 @@ is_sequence_end :: proc(t: token.Token) -> bool {
 }
 
 // parse_basic parses a single basic production element.
-parse_basic :: proc(p: ^Parser) -> Expr {
+parse_basic :: proc(p: ^Parser) -> Production {
 	#partial switch peek(p).kind {
 	case .Ident:
 		return parse_non_terminal(p)
@@ -342,11 +342,11 @@ parse_basic :: proc(p: ^Parser) -> Expr {
 }
 
 // parse_directive parses `"@" ident [ "(" "..." ")" ]`.
-parse_directive :: proc(p: ^Parser) -> Expr {
+parse_directive :: proc(p: ^Parser) -> Production {
 	at := expect(p, .At)
 	name := expect(p, .Ident)
 
-	args := make([dynamic]Expr)
+	args := make([dynamic]Production)
 	if peek(p).kind == .LParen {
 		next(p)
 		t := expect(p, .String)
@@ -354,11 +354,11 @@ parse_directive :: proc(p: ^Parser) -> Expr {
 		expect(p, .RParen)
 	}
 
-	return Directive_Expr{name = ident_node(name, p.src), args = args, pos = at.start}
+	return Directive{name = ident_node(name, p.src), args = args, pos = at.start}
 }
 
 // parse_terminal parses a string or regexp literal.
-parse_terminal :: proc(p: ^Parser) -> Expr {
+parse_terminal :: proc(p: ^Parser) -> Production {
 	t := next(p)
 	node := String_Lit {
 		pos   = t.start,
@@ -372,14 +372,14 @@ parse_terminal :: proc(p: ^Parser) -> Expr {
 
 // parse_non_terminal parses an identifier, optionally followed by member
 // accesses separated by dots.
-parse_non_terminal :: proc(p: ^Parser) -> Expr {
+parse_non_terminal :: proc(p: ^Parser) -> Production {
 	ident := expect(p, .Ident)
-	expr: Expr = ident_node(ident, p.src)
+	expr: Production = ident_node(ident, p.src)
 
 	for peek(p).kind == .Dot {
 		next(p)
 		sel := expect(p, .Ident)
-		expr = Member_Expr {
+		expr = Member_Access {
 			object = alloc_expr(expr),
 			member = ident_node(sel, p.src),
 			pos    = expr_pos(expr),
@@ -389,11 +389,11 @@ parse_non_terminal :: proc(p: ^Parser) -> Expr {
 }
 
 // parse_call parses a rule call with arguments, e.g. `<greet person "Mr">`.
-parse_call :: proc(p: ^Parser) -> Expr {
+parse_call :: proc(p: ^Parser) -> Production {
 	lt := expect(p, .Lt)
 	name := parse_non_terminal(p)
 
-	args := make([dynamic]Expr)
+	args := make([dynamic]Production)
 	for peek(p).kind != .Gt {
 		if peek(p).kind == .EOF {
 			error_at(p, lt.start, "unterminated rule call")
@@ -402,14 +402,18 @@ parse_call :: proc(p: ^Parser) -> Expr {
 		if peek(p).kind == .Tag {
 			t := next(p)
 			delete(parse_tag_pairs(p, t))
-			error_at(p, t.start, "a tag may not appear inside a group, repetition, optional or call")
+			error_at(
+				p,
+				t.start,
+				"a tag may not appear inside a group, repetition, optional or call",
+			)
 			continue
 		}
 		append(&args, parse_basic(p))
 	}
 	expect(p, .Gt)
 
-	call := new(Call_Expr)
+	call := new(Call)
 	call.name = name
 	call.args = args
 	call.pos = lt.start
@@ -417,25 +421,25 @@ parse_call :: proc(p: ^Parser) -> Expr {
 }
 
 // parse_optional parses `[ production ]`, e.g. `[ a b ]`.
-parse_optional :: proc(p: ^Parser) -> Expr {
+parse_optional :: proc(p: ^Parser) -> Production {
 	start := expect(p, .LBrack)
 	inner := parse_production(p)
 	reject_inner_tag(p, inner)
 	expect(p, .RBrack)
-	return Optional_Expr{exprs = unpack_sequence(inner), pos = start.start}
+	return Optional{exprs = unpack_sequence(inner), pos = start.start}
 }
 
 // parse_repetition parses `{ production }`, e.g. `{ one two }`.
-parse_repetition :: proc(p: ^Parser) -> Expr {
+parse_repetition :: proc(p: ^Parser) -> Production {
 	start := expect(p, .LBrace)
 	inner := parse_production(p)
 	reject_inner_tag(p, inner)
 	expect(p, .RBrace)
-	return Repetition_Expr{exprs = unpack_sequence(inner), pos = start.start}
+	return Repetition{exprs = unpack_sequence(inner), pos = start.start}
 }
 
 // parse_group parses `( production )`, e.g. `( a b )`.
-parse_group :: proc(p: ^Parser) -> Expr {
+parse_group :: proc(p: ^Parser) -> Production {
 	start := expect(p, .LParen)
 	inner := parse_production(p)
 	reject_inner_tag(p, inner)
@@ -447,20 +451,20 @@ parse_group :: proc(p: ^Parser) -> Expr {
 // a grouping symbol or a call. A tag annotates the last element of a production
 // or an alternative, and an element inside one of these is neither, so
 // `( a x `name="value"` )` must be written `( a x ) `name="value"``.
-reject_inner_tag :: proc(p: ^Parser, inner: Expr) {
+reject_inner_tag :: proc(p: ^Parser, inner: Production) {
 	if pos, tagged := trailing_tag_pos(inner); tagged {
 		error_at(p, pos, "a tag may not appear inside a group, repetition, optional or call")
 	}
 }
 
 // unpack_sequence converts a production into a list of expressions. If the
-// production is itself a Sequence_Expr its elements are transferred directly,
+// production is itself a Sequence, its elements are transferred directly,
 // otherwise the production is wrapped in a single-element list.
-unpack_sequence :: proc(expr: Expr) -> [dynamic]Expr {
-	if seq, ok := expr.(Sequence_Expr); ok {
+unpack_sequence :: proc(expr: Production) -> [dynamic]Production {
+	if seq, ok := expr.(Sequence); ok {
 		return seq.exprs
 	}
-	list := make([dynamic]Expr)
+	list := make([dynamic]Production)
 	append(&list, expr)
 	return list
 }
@@ -528,8 +532,8 @@ ident_node :: proc(t: token.Token, src: string) -> Ident {
 	return Ident{pos = t.start, name = token.lexeme(t, src)}
 }
 
-alloc_expr :: proc(expr: Expr, allocator := context.allocator) -> ^Expr {
-	p := new(Expr, allocator)
+alloc_expr :: proc(expr: Production, allocator := context.allocator) -> ^Production {
+	p := new(Production, allocator)
 	p^ = expr
 	return p
 }

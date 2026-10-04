@@ -42,7 +42,7 @@ handle_workspace_symbol :: proc(srv: ^Server, id: Request_Id, obj: json.Object) 
 	for _, f in cu.files {
 		for decl in f.file.decls {
 			#partial switch d in decl {
-			case ast.Rule_Decl:
+			case ast.Rule:
 				if query != "" && !strings.contains(d.name.name, query) {
 					continue
 				}
@@ -50,7 +50,7 @@ handle_workspace_symbol :: proc(srv: ^Server, id: Request_Id, obj: json.Object) 
 					&symbols,
 					symbol_information(d.name.name, .Function, uris[f], f, d.name.pos),
 				)
-			case ast.Binding_Decl:
+			case ast.Binding:
 				if query != "" && !strings.contains(d.name.name, query) {
 					continue
 				}
@@ -82,14 +82,14 @@ symbol_information :: proc(
 	f: ^check.Loaded_File,
 	offset: int,
 ) -> Symbol_Information {
-	return Symbol_Information{
+	return Symbol_Information {
 		name = name,
 		kind = kind,
-		location = Location{
+		location = Location {
 			uri = strings.clone(uri),
-			range = Range{
+			range = Range {
 				start = position_at_offset(f.src, offset),
-				end   = position_at_offset(f.src, offset + len(name)),
+				end = position_at_offset(f.src, offset + len(name)),
 			},
 		},
 	}

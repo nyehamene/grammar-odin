@@ -138,13 +138,13 @@ classify_offsets :: proc(file: ^ast.File) -> map[int]Sem_Token_Type {
 	types := make(map[int]Sem_Token_Type)
 	for decl in file.decls {
 		#partial switch d in decl {
-		case ast.Rule_Decl:
+		case ast.Rule:
 			types[d.name.pos] = .Function
 			for p in d.params {
 				types[p.pos] = .Parameter
 			}
 			classify_expr(d.expr, &types)
-		case ast.Binding_Decl:
+		case ast.Binding:
 			types[d.name.pos] = .Namespace
 		case ast.Comment_Group:
 		}
@@ -152,31 +152,31 @@ classify_offsets :: proc(file: ^ast.File) -> map[int]Sem_Token_Type {
 	return types
 }
 
-classify_expr :: proc(expr: ast.Expr, types: ^map[int]Sem_Token_Type) {
+classify_expr :: proc(expr: ast.Production, types: ^map[int]Sem_Token_Type) {
 	#partial switch v in expr {
 	case ast.Ident:
 		types^[v.pos] = .Function
-	case ast.Member_Expr:
+	case ast.Member_Access:
 		classify_object(v.object^, types)
 		types^[v.member.pos] = .Property
-	case ^ast.Call_Expr:
+	case ^ast.Call:
 		classify_expr(v.name, types)
 		for arg in v.args {
 			classify_expr(arg, types)
 		}
-	case ast.Sequence_Expr:
+	case ast.Sequence:
 		for e in v.exprs {
 			classify_expr(e, types)
 		}
-	case ast.Alternative_Expr:
+	case ast.Alternative:
 		for e in v.exprs {
 			classify_expr(e, types)
 		}
-	case ast.Optional_Expr:
+	case ast.Optional:
 		for e in v.exprs {
 			classify_expr(e, types)
 		}
-	case ast.Repetition_Expr:
+	case ast.Repetition:
 		for e in v.exprs {
 			classify_expr(e, types)
 		}
@@ -184,11 +184,11 @@ classify_expr :: proc(expr: ast.Expr, types: ^map[int]Sem_Token_Type) {
 		for e in v.exprs {
 			classify_expr(e, types)
 		}
-	case ast.Directive_Expr:
+	case ast.Directive:
 		for arg in v.args {
 			classify_expr(arg, types)
 		}
-	case ast.Tagged_Expr:
+	case ast.Tagged_Production:
 		classify_expr(v.expr^, types)
 	case ast.String_Lit, ast.Regex_Lit, ast.External_Value:
 	}
@@ -196,11 +196,11 @@ classify_expr :: proc(expr: ast.Expr, types: ^map[int]Sem_Token_Type) {
 
 // classify_object marks an expression used as a member receiver: a bare
 // binding name, or further member access.
-classify_object :: proc(expr: ast.Expr, types: ^map[int]Sem_Token_Type) {
+classify_object :: proc(expr: ast.Production, types: ^map[int]Sem_Token_Type) {
 	#partial switch v in expr {
 	case ast.Ident:
 		types^[v.pos] = .Namespace
-	case ast.Member_Expr:
+	case ast.Member_Access:
 		classify_object(v.object^, types)
 		types^[v.member.pos] = .Property
 	case:
