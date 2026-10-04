@@ -202,11 +202,16 @@ alignment before it spans multiple lines.
   After:
   ```grammar
   foo x y = x y;
-  f   x   = x;
+  f     x = x;
 
   bar xx y = xx y
-  b   x  y = x y
+  b    x y = x y
   ```
+
+  The columns are counted back from the last parameter, so a rule that declares
+  fewer parameters still writes its last one under the last one of its
+  neighbours, and an earlier parameter is right aligned in a cell as wide as the
+  widest parameter of its column. Above, `x` is written in the column of `xx`.
 
 7. Write a tag in one canonical spelling.
 

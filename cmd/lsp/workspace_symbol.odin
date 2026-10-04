@@ -43,20 +43,20 @@ handle_workspace_symbol :: proc(srv: ^Server, id: Request_Id, obj: json.Object) 
 		for decl in f.file.decls {
 			#partial switch d in decl {
 			case ast.Rule:
-				if query != "" && !strings.contains(d.name.name, query) {
+				if query != "" && !strings.contains(d.ident.name, query) {
 					continue
 				}
 				append(
 					&symbols,
-					symbol_information(d.name.name, .Function, uris[f], f, d.name.pos),
+					symbol_information(d.ident.name, .Function, uris[f], f, d.ident.pos),
 				)
 			case ast.Binding:
-				if query != "" && !strings.contains(d.name.name, query) {
+				if query != "" && !strings.contains(d.ident.name, query) {
 					continue
 				}
 				append(
 					&symbols,
-					symbol_information(d.name.name, .Namespace, uris[f], f, d.name.pos),
+					symbol_information(d.ident.name, .Namespace, uris[f], f, d.ident.pos),
 				)
 			case ast.Comment_Group:
 			}

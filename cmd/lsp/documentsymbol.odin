@@ -104,8 +104,8 @@ document_symbols :: proc(doc: ^Document) -> [dynamic]Document_Symbol {
 		#partial switch d in file.decls[i] {
 		case ast.Rule:
 			selection := Range {
-				start = position_at_offset(doc.text, d.name.pos),
-				end   = position_at_offset(doc.text, d.name.pos + len(d.name.name)),
+				start = position_at_offset(doc.text, d.ident.pos),
+				end   = position_at_offset(doc.text, d.ident.pos + len(d.ident.name)),
 			}
 			children := make([]Document_Symbol, len(d.params))
 			for p, j in d.params {
@@ -123,7 +123,7 @@ document_symbols :: proc(doc: ^Document) -> [dynamic]Document_Symbol {
 			append(
 				&symbols,
 				Document_Symbol {
-					name = d.name.name,
+					name = d.ident.name,
 					kind = .Function,
 					range = decl_range,
 					selection_range = selection,
@@ -132,13 +132,13 @@ document_symbols :: proc(doc: ^Document) -> [dynamic]Document_Symbol {
 			)
 		case ast.Binding:
 			selection := Range {
-				start = position_at_offset(doc.text, d.name.pos),
-				end   = position_at_offset(doc.text, d.name.pos + len(d.name.name)),
+				start = position_at_offset(doc.text, d.ident.pos),
+				end   = position_at_offset(doc.text, d.ident.pos + len(d.ident.name)),
 			}
 			append(
 				&symbols,
 				Document_Symbol {
-					name = d.name.name,
+					name = d.ident.name,
 					kind = .Namespace,
 					range = decl_range,
 					selection_range = selection,

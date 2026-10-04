@@ -99,11 +99,11 @@ handle_completion :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok
 							// binding, so offering a local or private one from
 							// another namespace would suggest a name that cannot
 							// be used there.
-							if !check.is_exported_rule(d.name.name) do continue
-							if strings.has_prefix(d.name.name, prefix) {
+							if !check.is_exported_rule(d.ident.name) do continue
+							if strings.has_prefix(d.ident.name, prefix) {
 								append(
 									&items,
-									Completion_Item{label = d.name.name, kind = .Function},
+									Completion_Item{label = d.ident.name, kind = .Function},
 								)
 							}
 						case ast.Binding, ast.Comment_Group:
@@ -120,17 +120,17 @@ handle_completion :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok
 			for decl in f.file.decls {
 				#partial switch d in decl {
 				case ast.Rule:
-					if strings.has_prefix(d.name.name, prefix) &&
-					   !has_label(items[:], d.name.name) {
-						append(&items, Completion_Item{label = d.name.name, kind = .Function})
+					if strings.has_prefix(d.ident.name, prefix) &&
+					   !has_label(items[:], d.ident.name) {
+						append(&items, Completion_Item{label = d.ident.name, kind = .Function})
 					}
 				case ast.Binding:
 					if f != fi {
 						continue
 					}
-					if strings.has_prefix(d.name.name, prefix) &&
-					   !has_label(items[:], d.name.name) {
-						append(&items, Completion_Item{label = d.name.name, kind = .Module})
+					if strings.has_prefix(d.ident.name, prefix) &&
+					   !has_label(items[:], d.ident.name) {
+						append(&items, Completion_Item{label = d.ident.name, kind = .Module})
 					}
 				case ast.Comment_Group:
 				}

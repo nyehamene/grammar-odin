@@ -189,8 +189,8 @@ collect_rule_refs :: proc(
 	for decl in f.file.decls {
 		#partial switch d in decl {
 		case ast.Rule:
-			if include_declaration && d.name.name == name {
-				push_reference(out, uris, f, d.name.pos, d.name.name)
+			if include_declaration && d.ident.name == name {
+				push_reference(out, uris, f, d.ident.pos, d.ident.name)
 			}
 			rule_ref_in_expr(f, target_ns_dir, name, d.expr, uris, out, private)
 		case ast.Binding, ast.Comment_Group:
@@ -210,8 +210,8 @@ collect_binding_refs :: proc(
 	for decl in f.file.decls {
 		#partial switch d in decl {
 		case ast.Binding:
-			if include_declaration && d.name.name == name {
-				push_reference(out, uris, f, d.name.pos, d.name.name)
+			if include_declaration && d.ident.name == name {
+				push_reference(out, uris, f, d.ident.pos, d.ident.name)
 			}
 		case ast.Rule:
 			binding_ref_in_expr(f, name, d.expr, uris, out)
@@ -254,19 +254,19 @@ rule_ref_in_expr :: proc(
 			push_reference(out, uris, f, v.pos, v.name)
 		}
 
-	case ast.Member_Access:
+	case ast.Qual_Ident:
 		if private do break
-
-		if obj, is_ident := v.object^.(ast.Ident); is_ident {
-			if dir, is_binding := f.bindings[obj.name];
-			   is_binding && dir == target_ns_dir && v.member.name == name {
-				push_reference(out, uris, f, v.member.pos, v.member.name)
-			}
-		} else {
-			rule_ref_in_expr(f, target_ns_dir, name, v.object^, uris, out, private)
+		if dir, is_binding := f.bindings[v.lhs.name];
+		   is_binding && dir == target_ns_dir && v.rhs.name == name {
+			push_reference(out, uris, f, v.rhs.pos, v.rhs.name)
 		}
 	case ^ast.Call:
-		rule_ref_in_expr(f, target_ns_dir, name, v.name, uris, out, private)
+		switch it in v.ident {
+		case ast.Ident:
+			rule_ref_in_expr(f, target_ns_dir, name, it, uris, out, private)
+		case ast.Qual_Ident:
+			rule_ref_in_expr(f, target_ns_dir, name, it, uris, out, private)
+		}
 		for arg in v.args {
 			rule_ref_in_expr(f, target_ns_dir, name, arg, uris, out, private)
 		}
@@ -313,15 +313,20 @@ binding_ref_in_expr :: proc(
 		if v.name == name {
 			push_reference(out, uris, f, v.pos, v.name)
 		}
-	case ast.Member_Access:
-		if obj, is_ident := v.object^.(ast.Ident); is_ident && obj.name == name {
-			push_reference(out, uris, f, obj.pos, obj.name)
+	case ast.Qual_Ident:
+		if v.lhs.name == name {
+			push_reference(out, uris, f, v.lhs.pos, v.lhs.name)
 		}
-		if v.member.name == name {
-			push_reference(out, uris, f, v.member.pos, v.member.name)
+		if v.rhs.name == name {
+			push_reference(out, uris, f, v.rhs.pos, v.rhs.name)
 		}
 	case ^ast.Call:
-		binding_ref_in_expr(f, name, v.name, uris, out)
+		switch it in v.ident {
+		case ast.Ident:
+			binding_ref_in_expr(f, name, it, uris, out)
+		case ast.Qual_Ident:
+			binding_ref_in_expr(f, name, it, uris, out)
+		}
 		for arg in v.args {
 			binding_ref_in_expr(f, name, arg, uris, out)
 		}

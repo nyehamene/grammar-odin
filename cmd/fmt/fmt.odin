@@ -394,33 +394,37 @@ close_group :: proc(
 	start, end: int,
 ) {
 	// Rule 6: align names to max name width, and align the last parameter of each
-	// header in the group to the same column (max start column of last params).
+	// header in the group to the same column. Columns are measured from the end
+	// of a parameter list, so a rule that declares fewer parameters still puts
+	// its last one under the last one of its neighbours, and each earlier
+	// parameter is right aligned in a cell as wide as the widest parameter in
+	// that column.
 	name_w := 0
-	last_col_target := 0
-	first := true
+	max_params := 0
 
-	// First pass: compute name width and target column for last param
+	// First pass: name width, and the width of each parameter column.
 	for i in start ..< end {
 		if kinds[i] != .Header do continue
 		lhs := header_tokens(groups[i][:])
 		if len(lhs) == 0 do continue
 		name_w = max(name_w, len(token.lexeme(lhs[0], src)))
-		if len(lhs) > 1 {
-			cur_last_col := name_w + 1
-			for j in 1 ..< len(lhs) - 1 {
-				cur_last_col += len(token.lexeme(lhs[j], src)) + 1
-			}
-			if first || cur_last_col > last_col_target {
-				last_col_target = cur_last_col
-				first = false
-			}
+		max_params = max(max_params, len(lhs) - 1)
+	}
+	col_w := make([dynamic]int, max_params)
+	defer delete(col_w)
+	for i in start ..< end {
+		if kinds[i] != .Header do continue
+		lhs := header_tokens(groups[i][:])
+		for r in 0 ..< len(lhs) - 1 {
+			w := len(token.lexeme(lhs[len(lhs) - 1 - r], src))
+			col_w[r] = max(col_w[r], w)
 		}
 	}
 
 	// Second pass: render each header lhs
 	for i in start ..< end {
 		if kinds[i] != .Header do continue
-		header_lhs[i] = pad_header_new(header_tokens(groups[i][:]), src, name_w, last_col_target)
+		header_lhs[i] = pad_header_new(header_tokens(groups[i][:]), src, name_w, col_w[:])
 	}
 
 	// Compute group alignment column for =, |, ; etc (max width of rendered lhs + 1)
@@ -444,31 +448,49 @@ header_tokens :: proc(line: []token.Token) -> []token.Token {
 	return line[:first_equal(line)]
 }
 
-// pad_header_new renders lhs aligning last parameter to last_col_target.
-// Names are padded to name_w. Earlier params are single-space separated.
-pad_header_new :: proc(lhs: []token.Token, src: string, name_w: int, last_col_target: int) -> string {
+// pad_header_new renders lhs, the name followed by the parameters it declares.
+// Names are padded to name_w. col_w[r] is the width of the parameter column r
+// counted back from the last parameter, so every header in the group writes its
+// last parameter in the same column and each earlier one right aligned in a cell
+// wide enough for the widest parameter of that column.
+pad_header_new :: proc(lhs: []token.Token, src: string, name_w: int, col_w: []int) -> string {
 	b := strings.builder_make()
 	defer strings.builder_destroy(&b)
 
-	// write padded name
-	name := token.lexeme(lhs[0], src)
-	write_padded(&b, name, name_w)
-	if len(lhs) <= 1 {
+	write_padded(&b, token.lexeme(lhs[0], src), name_w)
+	params := len(lhs) - 1
+	if params <= 0 {
 		return strings.clone(strings.to_string(b))
 	}
-	// write params before last
-	strings.write_string(&b, " ")
-	for j in 1 ..< len(lhs) - 1 {
-		strings.write_string(&b, token.lexeme(lhs[j], src))
-		strings.write_string(&b, " ")
+
+	// The last parameter of every header of the group starts in the same column,
+	// and each earlier parameter column sits to the left of it, one space off
+	// the column on its right. col_w spans the widest parameter list in the
+	// group, so a header that declares fewer parameters still reaches the shared
+	// last column.
+	last_col := name_w + 1
+	for r in 1 ..< len(col_w) {
+		last_col += col_w[r] + 1
 	}
-	// position last param at last_col_target
-	cur := strings.builder_len(b)
-	need := last_col_target - cur
-	for _ in 0 ..< need {
-		strings.write_string(&b, " ")
+
+	// starts[r] is the left edge of the cell of the parameter r counted back
+	// from the end of the list.
+	starts := make([dynamic]int, params)
+	defer delete(starts)
+	starts[0] = last_col
+	for r in 1 ..< params {
+		starts[r] = starts[r - 1] - 1 - col_w[r]
 	}
-	strings.write_string(&b, token.lexeme(lhs[len(lhs) - 1], src))
+
+	for j in 0 ..< params {
+		r := params - 1 - j
+		param := token.lexeme(lhs[j + 1], src)
+		target := starts[r] + col_w[r] - len(param)
+		for _ in strings.builder_len(b) ..< target {
+			strings.write_string(&b, " ")
+		}
+		strings.write_string(&b, param)
+	}
 	return strings.clone(strings.to_string(b))
 }
 
@@ -606,13 +628,7 @@ render_tokens :: proc(line: []token.Token, src: string) -> string {
 			write_tag(&b, tok, src)
 			continue
 		}
-		if tok.kind == .Tag {
-		// A tag is rewritten in its canonical spelling: no space around `=`
-		// and one space after each `;`.
-		write_tag(&b, tok, src)
-		continue
-	}
-	strings.write_string(&b, lex)
+		strings.write_string(&b, lex)
 		if tok.kind == .External && !strings.has_suffix(lex, "__") {
 			// Externals are canonically written with a trailing "__"; supply it
 			// when the source omits it.

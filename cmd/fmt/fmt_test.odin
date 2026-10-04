@@ -232,8 +232,8 @@ test_golden_rule_newlines_conserved :: proc(t: ^testing.T) {
 
 @(test)
 test_directive_call_and_member_stay_tight :: proc(t: ^testing.T) {
-	src := "doc = @import(\"document.grammar\");\nreq = @require(\"lib\");\nbase = a.b.c;\n"
-	want := "doc  = @import(\"document.grammar\");\nreq  = @require(\"lib\");\nbase = a.b.c;\n"
+	src := "doc = @import(\"document.grammar\");\nreq = @require(\"lib\");\nbase = a.b;\n"
+	want := "doc  = @import(\"document.grammar\");\nreq  = @require(\"lib\");\nbase = a.b;\n"
 	check_format(t, src, want)
 }
 
@@ -325,11 +325,7 @@ test_idempotent :: proc(t: ^testing.T) {
 @(test)
 test_tag_is_written_canonically :: proc(t: ^testing.T) {
 	check_format(t, "foo = x `name = \"a\"`;\n", "foo = x `name=\"a\"`;\n")
-	check_format(
-		t,
-		"foo = x `name=\"a\";other=\"b\"`;\n",
-		"foo = x `name=\"a\"; other=\"b\"`;\n",
-	)
+	check_format(t, "foo = x `name=\"a\";other=\"b\"`;\n", "foo = x `name=\"a\"; other=\"b\"`;\n")
 	check_format(
 		t,
 		"foo = x `  name=\"a\"  ;  other  =  \"b\"  `;\n",
@@ -425,7 +421,12 @@ test_separator_equals_form_and_clamping :: proc(t: ^testing.T) {
 
 	for sep, i in ([]int{0, -1, -7}) {
 		got := format_ok_sep(t, "a = \"a\";\n\nbar = \"bar\";\n", sep)
-		testing.expectf(t, got == "a = \"a\";\n\nbar = \"bar\";\n", "separator %d should clamp to 1", i)
+		testing.expectf(
+			t,
+			got == "a = \"a\";\n\nbar = \"bar\";\n",
+			"separator %d should clamp to 1",
+			i,
+		)
 		delete(got)
 	}
 }
@@ -454,10 +455,20 @@ test_separator_invalid_values :: proc(t: ^testing.T) {
 		bytes.buffer_init(&stdout, {})
 		bytes.buffer_init(&stderr, {})
 
-		code := run(args, stdin_unused(), bytes.buffer_to_stream(&stdout), bytes.buffer_to_stream(&stderr))
+		code := run(
+			args,
+			stdin_unused(),
+			bytes.buffer_to_stream(&stdout),
+			bytes.buffer_to_stream(&stderr),
+		)
 		testing.expectf(t, code == 1, "invalid separator must fail (case %d)", i)
 		err := string(bytes.buffer_to_bytes(&stderr))
-		testing.expectf(t, strings.contains(err, "invalid arguments"), "expected invalid arguments (case %d)", i)
+		testing.expectf(
+			t,
+			strings.contains(err, "invalid arguments"),
+			"expected invalid arguments (case %d)",
+			i,
+		)
 
 		bytes.buffer_destroy(&stdout)
 		bytes.buffer_destroy(&stderr)
@@ -472,13 +483,23 @@ test_run_invalid_args :: proc(t: ^testing.T) {
 	defer bytes.buffer_destroy(&stdout)
 	defer bytes.buffer_destroy(&stderr)
 
-	code := run({"--unknown"}, stdin_unused(), bytes.buffer_to_stream(&stdout), bytes.buffer_to_stream(&stderr))
+	code := run(
+		{"--unknown"},
+		stdin_unused(),
+		bytes.buffer_to_stream(&stdout),
+		bytes.buffer_to_stream(&stderr),
+	)
 	testing.expect(t, code == 1, "unknown flag must fail")
 	err := string(bytes.buffer_to_bytes(&stderr))
 	testing.expect(t, strings.contains(err, "invalid arguments"), "expected invalid arguments")
 
 	// --stdout without a path is invalid
-	code = run({"--stdout"}, stdin_unused(), bytes.buffer_to_stream(&stdout), bytes.buffer_to_stream(&stderr))
+	code = run(
+		{"--stdout"},
+		stdin_unused(),
+		bytes.buffer_to_stream(&stdout),
+		bytes.buffer_to_stream(&stderr),
+	)
 	testing.expect(t, code == 1, "--stdout without a path must fail")
 }
 
@@ -490,7 +511,12 @@ test_run_no_path :: proc(t: ^testing.T) {
 	defer bytes.buffer_destroy(&stdout)
 	defer bytes.buffer_destroy(&stderr)
 
-	code := run({}, stdin_unused(), bytes.buffer_to_stream(&stdout), bytes.buffer_to_stream(&stderr))
+	code := run(
+		{},
+		stdin_unused(),
+		bytes.buffer_to_stream(&stdout),
+		bytes.buffer_to_stream(&stderr),
+	)
 	testing.expect(t, code == 1, "missing PATH must fail")
 	err := string(bytes.buffer_to_bytes(&stderr))
 	testing.expect(t, strings.contains(err, "requires a PATH"), "expected missing PATH message")
@@ -529,7 +555,11 @@ test_stdout_mode_and_multi_path :: proc(t: ^testing.T) {
 	testing.expect(t, code == 0, "formatting should succeed")
 
 	a_src, _ := os.read_entire_file_from_path(a, context.temp_allocator)
-	testing.expect(t, string(a_src) == "x = \"one\";\n", "in-place file should be unchanged when already formatted")
+	testing.expect(
+		t,
+		string(a_src) == "x = \"one\";\n",
+		"in-place file should be unchanged when already formatted",
+	)
 	b_src, _ := os.read_entire_file_from_path(b, context.temp_allocator)
 	testing.expect(t, string(b_src) == "gg = \"two\";\n", "--stdout must not rewrite the file")
 

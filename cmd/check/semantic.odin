@@ -342,8 +342,8 @@ resolve_imports :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File) {
 			}
 
 			load_namespace(cu, cleaned)
-			fi.bindings[d.name.name] = cleaned
-			fi.binding_offsets[d.name.name] = d.name.pos
+			fi.bindings[d.ident.name] = cleaned
+			fi.binding_offsets[d.ident.name] = d.ident.pos
 		}
 	}
 }
@@ -396,36 +396,36 @@ bind_all :: proc(cu: ^Compilation_Unit) {
 		for decl in fi.file.decls {
 			#partial switch d in decl {
 			case ast.Rule:
-				if is_malformed_private_name(d.name.name) {
+				if is_malformed_private_name(d.ident.name) {
 					add_error(
 						cu,
 						fi.display,
 						fi.src,
-						d.name.pos,
+						d.ident.pos,
 						fmt.tprintf(
 							"malformed private rule name %s. a private rule name is an underscore followed by a letter, as in _helper",
-							d.name.name,
+							d.ident.name,
 						),
 					)
 				}
-				if other, ok := seen[d.name.name]; ok {
-					add_redeclared(cu, fi, d.name.pos, d.name.name, fi, other)
-				} else if other_ref, exists := ns.rules[d.name.name]; exists {
+				if other, ok := seen[d.ident.name]; ok {
+					add_redeclared(cu, fi, d.ident.pos, d.ident.name, fi, other)
+				} else if other_ref, exists := ns.rules[d.ident.name]; exists {
 					add_redeclared(
 						cu,
 						fi,
-						d.name.pos,
-						d.name.name,
+						d.ident.pos,
+						d.ident.name,
 						other_ref.file,
 						other_ref.offset,
 					)
 				} else {
-					seen[d.name.name] = d.name.pos
+					seen[d.ident.name] = d.ident.pos
 
 					arity := len(d.params)
 					rule := Rule_Ref {
 						file   = fi,
-						offset = d.name.pos,
+						offset = d.ident.pos,
 						type   = .Production,
 						arity  = arity,
 					}
@@ -433,17 +433,17 @@ bind_all :: proc(cu: ^Compilation_Unit) {
 						rule.type = .Proc
 					}
 
-					if is_private_rule(d.name.name) {
-						fi.private_rules[d.name.name] = rule
+					if is_private_rule(d.ident.name) {
+						fi.private_rules[d.ident.name] = rule
 					} else {
-						ns.rules[d.name.name] = rule
+						ns.rules[d.ident.name] = rule
 					}
 				}
 			case ast.Binding:
-				if other, ok := seen[d.name.name]; ok {
-					add_redeclared(cu, fi, d.name.pos, d.name.name, fi, other)
+				if other, ok := seen[d.ident.name]; ok {
+					add_redeclared(cu, fi, d.ident.pos, d.ident.name, fi, other)
 				} else {
-					seen[d.name.name] = d.name.pos
+					seen[d.ident.name] = d.ident.pos
 				}
 			}
 		}
@@ -472,7 +472,7 @@ check_file :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File) {
 		case ast.Rule:
 			// Record which rule is being walked so that a reference can tell
 			// whether it came from the declaring rule itself.
-			fi.enclosing_rule = d.name.name
+			fi.enclosing_rule = d.ident.name
 			check_body(cu, fi, d.params[:], d.expr)
 			fi.enclosing_rule = ""
 			if len(d.params) > 0 {
@@ -493,19 +493,19 @@ check_unused_private_rules :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File) {
 	for decl in fi.file.decls {
 		#partial switch d in decl {
 		case ast.Rule:
-			if !is_private_rule(d.name.name) do continue
+			if !is_private_rule(d.ident.name) do continue
 			// A declaration that lost a redeclaration contest was never
 			// registered; the one that won was, and its offset tells them apart.
-			if ref, ok := fi.private_rules[d.name.name]; !ok || ref.offset != d.name.pos {
+			if ref, ok := fi.private_rules[d.ident.name]; !ok || ref.offset != d.ident.pos {
 				continue
 			}
-			if used_by_other(fi.private_uses[d.name.name], d.name.name) do continue
+			if used_by_other(fi.private_uses[d.ident.name], d.ident.name) do continue
 			add_warning(
 				cu,
 				fi.display,
 				fi.src,
-				d.name.pos,
-				fmt.tprintf("unused private rule: %s", d.name.name),
+				d.ident.pos,
+				fmt.tprintf("unused private rule: %s", d.ident.name),
 			)
 		}
 	}
@@ -518,14 +518,14 @@ check_unused_bindings :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File) {
 	for decl in fi.file.decls {
 		#partial switch d in decl {
 		case ast.Binding:
-			if _, ok := fi.bindings[d.name.name]; !ok do continue
-			if fi.used_bindings[d.name.name] do continue
+			if _, ok := fi.bindings[d.ident.name]; !ok do continue
+			if fi.used_bindings[d.ident.name] do continue
 			add_warning(
 				cu,
 				fi.display,
 				fi.src,
-				d.name.pos,
-				fmt.tprintf("unused binding: %s", d.name.name),
+				d.ident.pos,
+				fmt.tprintf("unused binding: %s", d.ident.name),
 			)
 		}
 	}
@@ -548,19 +548,19 @@ check_unused_local_rules :: proc(cu: ^Compilation_Unit) {
 		for decl in fi.file.decls {
 			#partial switch d in decl {
 			case ast.Rule:
-				if !is_local_rule(d.name.name) do continue
+				if !is_local_rule(d.ident.name) do continue
 				// As with private rules, only the declaration that was actually
 				// registered can be reported; Rule_Ref.offset says which it was.
-				if ref, ok := ns.rules[d.name.name]; !ok || ref.offset != d.name.pos {
+				if ref, ok := ns.rules[d.ident.name]; !ok || ref.offset != d.ident.pos {
 					continue
 				}
-				if used_by_other(ns.rule_uses[d.name.name], d.name.name) do continue
+				if used_by_other(ns.rule_uses[d.ident.name], d.ident.name) do continue
 				add_warning(
 					cu,
 					fi.display,
 					fi.src,
-					d.name.pos,
-					fmt.tprintf("unused local rule: %s", d.name.name),
+					d.ident.pos,
+					fmt.tprintf("unused local rule: %s", d.ident.name),
 				)
 			}
 		}
@@ -588,10 +588,15 @@ uses_param :: proc(expr: ast.Production, param: string) -> bool {
 		return v.name == param
 	case ast.String_Lit, ast.Regex_Lit, ast.External_Value, ast.Directive:
 		return false
-	case ast.Member_Access:
-		return uses_param(v.object^, param) || uses_param(v.member, param)
+	case ast.Qual_Ident:
+		return uses_param(v.lhs, param) || uses_param(v.rhs, param)
 	case ^ast.Call:
-		return uses_param(v.name, param) || exprs_use_param(v.args[:], param)
+		switch it in v.ident {
+		case ast.Ident:
+			return uses_param(it, param)
+		case ast.Qual_Ident:
+			return uses_param(it.lhs, param)
+		}
 	case ast.Sequence:
 		return exprs_use_param(v.exprs[:], param)
 	case ast.Alternative:
@@ -713,12 +718,17 @@ check_expr_scoped :: proc(
 		Operand_lvalue(o, rule.type, v.pos, v.name)
 		o.arity = rule.arity
 
-	case ast.Member_Access:
+	case ast.Qual_Ident:
 		check_member(cu, fi, v, o)
 
 	case ^ast.Call:
 		name_op: Operand
-		check_expr_scoped(cu, fi, params, v.name, &name_op)
+		switch it in v.ident {
+		case ast.Ident:
+			check_expr_scoped(cu, fi, params, it, &name_op)
+		case ast.Qual_Ident:
+			check_member(cu, fi, it, &name_op)
+		}
 		if name_op.kind == .Invalid {
 			Operand_invalid(o, v.pos, name_op.name)
 			break
@@ -822,8 +832,8 @@ check_expr_scoped :: proc(
 		Operand_rvalue(o, .External, v.pos, v.name)
 
 	case ast.Directive:
-		// Operand_rvalue(o, .Unknown, v.pos, v.name.name)
-		Operand_invalid(o, v.pos, v.name.name)
+		// Operand_rvalue(o, .Unknown, v.pos, v.ident.name)
+		Operand_invalid(o, v.pos, v.ident.name)
 	}
 }
 
@@ -858,9 +868,9 @@ check_expr :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, expr: ast.Production
 
 // check_member validates a member access `receiver.member`: the receiver must
 // be a binding to a namespace and the member must be a rule in that namespace.
-check_member :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, m: ast.Member_Access, o: ^Operand) {
+check_member :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, m: ast.Qual_Ident, o: ^Operand) {
 	obj_op: Operand
-	check_expr(cu, fi, m.object^, &obj_op)
+	check_expr(cu, fi, m.lhs, &obj_op)
 	if obj_op.kind != .Namespace {
 		if obj_op.kind == .Invalid {
 			add_error(cu, fi.display, fi.src, m.pos, "expected a namespace on the left of '.'")
@@ -870,7 +880,7 @@ check_member :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, m: ast.Member_Acce
 			cu,
 			fi.display,
 			fi.src,
-			m.member.pos,
+			m.rhs.pos,
 			fmt.tprintf("expected a namespace, but '%s' is not a namespace", obj_op.name),
 		)
 		return
@@ -884,7 +894,7 @@ check_member :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, m: ast.Member_Acce
 		mark_binding_used(fi, obj_name)
 		ns := cu.namespaces[target_dir]
 		if ns == nil do return
-		if !is_exported_rule(m.member.name) {
+		if !is_exported_rule(m.rhs.name) {
 			// Only an exported rule crosses a namespace boundary. A local or
 			// private rule of the target namespace is present but unreachable,
 			// which is a different mistake from naming a rule that is not there.
@@ -892,35 +902,35 @@ check_member :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, m: ast.Member_Acce
 				cu,
 				fi.display,
 				fi.src,
-				m.member.pos,
+				m.rhs.pos,
 				fmt.tprintf(
 					"%s.%s is not exported. only a rule whose name starts with an uppercase letter is accessible from another namespace",
 					obj_name,
-					m.member.name,
+					m.rhs.name,
 				),
 			)
 			return
 		}
-		if _, has := ns.rules[m.member.name]; !has {
+		if _, has := ns.rules[m.rhs.name]; !has {
 			ns_name := filepath.base(target_dir)
 			add_error(
 				cu,
 				fi.display,
 				fi.src,
-				m.member.pos,
+				m.rhs.pos,
 				fmt.tprintf(
 					"%s.%s is undefined. namespace %s has no field %s",
 					obj_name,
-					m.member.name,
+					m.rhs.name,
 					ns_name,
-					m.member.name,
+					m.rhs.name,
 				),
 			)
 			return
 		}
 		// The member resolves in another namespace, which is not where the
 		// referencing file's rules live, so mark the target namespace directly.
-		mark_namespace_rule_used(ns, m.member.name)
+		mark_namespace_rule_used(ns, m.rhs.name)
 		return
 	}
 

@@ -31,7 +31,7 @@ print_file :: proc(writer: io.Writer, src: string, file: ^File) {
 print_decl :: proc(p: ^Printer, decl: Decl) {
 	switch v in decl {
 	case Rule:
-		print_header(p, v.pos, fmt.tprintf("RuleDecl: %s", v.name.name))
+		print_header(p, v.pos, fmt.tprintf("RuleDecl: %s", v.ident.name))
 		p.indent += 1
 		for param in v.params {
 			print_header(p, param.pos, fmt.tprintf("Ident: %s", param.name))
@@ -44,7 +44,7 @@ print_decl :: proc(p: ^Printer, decl: Decl) {
 			v.pos,
 			fmt.tprintf(
 				"BindingDecl: %s = @import(\"%s\")",
-				v.name.name,
+				v.ident.name,
 				strip_quotes(v.path.value),
 			),
 		)
@@ -101,22 +101,28 @@ print_expr :: proc(p: ^Printer, expr: Production) {
 			print_expr(p, e)
 		}
 		p.indent -= 1
-	case Member_Access:
+	case Qual_Ident:
 		print_header(p, v.pos, "MemberExpr")
 		p.indent += 1
-		print_expr(p, v.object^)
-		print_header(p, v.member.pos, fmt.tprintf("Member: %s", v.member.name))
+		print_expr(p, v.lhs)
+		print_header(p, v.pos, fmt.tprintf("Member: %s", v.rhs.name))
 		p.indent -= 1
 	case ^Call:
 		print_header(p, v.pos, "CallExpr: ")
-		print_expr(p, v.name)
+		switch it in v.ident {
+		case Ident:
+			print_expr(p, it)
+		case Qual_Ident:
+			print_expr(p, it.lhs)
+			print_expr(p, it.rhs)
+		}
 		p.indent += 1
 		for e in v.args {
 			print_expr(p, e)
 		}
 		p.indent -= 1
 	case Directive:
-		print_header(p, v.pos, fmt.tprintf("DirectiveExpr: @%s", v.name.name))
+		print_header(p, v.pos, fmt.tprintf("DirectiveExpr: @%s", v.ident.name))
 		p.indent += 1
 		for e in v.args {
 			print_expr(p, e)
@@ -130,7 +136,7 @@ print_expr :: proc(p: ^Printer, expr: Production) {
 			print_header(
 				p,
 				pair.pos,
-				fmt.tprintf("TagPair: %s=%s", pair.name.name, pair.value.value),
+				fmt.tprintf("TagPair: %s=%s", pair.ident.name, pair.value.value),
 			)
 		}
 		p.indent -= 1

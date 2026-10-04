@@ -11,7 +11,7 @@ Production :: union {
 	Optional,
 	Repetition,
 	Group_Expr,
-	Member_Access,
+	Qual_Ident,
 	Directive,
 	Tagged_Production,
 	^Call,
@@ -35,7 +35,7 @@ File :: struct {
 //   greeting            = "Hello";
 //   greet name title    = "hello" name title;
 Rule :: struct {
-	name:   Ident,
+	ident:  Ident,
 	params: [dynamic]Ident,
 	expr:   Production,
 	pos:    int,
@@ -44,7 +44,7 @@ Rule :: struct {
 // Binding imports an external grammar file.
 //   f = @import("../foo");
 Binding :: struct {
-	name:      Ident,
+	ident:     Ident,
 	path:      String_Lit,
 	directive: Directive,
 	pos:       int,
@@ -115,27 +115,32 @@ Group_Expr :: struct {
 	pos:   int,
 }
 
-// Member_Access is a member access, e.g. `foo.bar`. It is left-associative, so
-// `a.b.c` is Member_Access{Member_Access{a, b}, c}.
-Member_Access :: struct {
-	object: ^Production,
-	member: Ident,
-	pos:    int,
+// Qual_Ident is a member access, e.g. `foo.bar`. It is left-associative, so
+// `a.b` is Qual_Ident{a, b}.
+Qual_Ident :: struct {
+	lhs: Ident,
+	rhs: Ident,
+	pos: int,
+}
+
+Any_Ident :: union {
+	Ident,
+	Qual_Ident,
 }
 
 // Call is a call to a rule with arguments, e.g. `<greet person "Mr">`.
 Call :: struct {
 	// name: Production,
-	name: Production,
-	args: [dynamic]Production,
-	pos:  int,
+	ident: Any_Ident,
+	args:  [dynamic]Production,
+	pos:   int,
 }
 
 // Directive is a directive, e.g. `@import("base")`.
 Directive :: struct {
-	name: Ident,
-	args: [dynamic]Production,
-	pos:  int,
+	ident: Ident,
+	args:  [dynamic]Production,
+	pos:   int,
 }
 
 // Tagged_Production is a production annotated with one or more tags, e.g.
@@ -151,7 +156,7 @@ Tagged_Production :: struct {
 // Tag_Pair is one `name="value"` entry of a tag. value keeps its quotes, like
 // String_Lit.
 Tag_Pair :: struct {
-	name:  Ident,
+	ident: Ident,
 	value: String_Lit,
 	pos:   int,
 }
@@ -183,7 +188,7 @@ expr_pos :: proc(expr: Production) -> int {
 		return v.pos
 	case Group_Expr:
 		return v.pos
-	case Member_Access:
+	case Qual_Ident:
 		return v.pos
 	case ^Call:
 		return v.pos
@@ -256,9 +261,7 @@ destroy_expr :: proc(expr: Production) {
 			destroy_expr(e)
 		}
 		delete(v.exprs)
-	case Member_Access:
-		destroy_expr(v.object^)
-		free(v.object)
+	case Qual_Ident:
 	case ^Call:
 		for e in v.args {
 			destroy_expr(e)

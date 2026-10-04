@@ -100,7 +100,7 @@ parse_binding :: proc(p: ^Parser, name: token.Token) -> (Decl, bool) {
 	expect(p, .Semicolon)
 
 	return Binding {
-			name = ident_node(name, p.src),
+			ident = ident_node(name, p.src),
 			path = path,
 			directive = dir_name,
 			pos = name.start,
@@ -117,7 +117,7 @@ parse_rule :: proc(p: ^Parser, name: token.Token, params: []Ident) -> Decl {
 		error_at(p, name.start, "rule declaration must have a body")
 		expect(p, .Semicolon)
 		return Rule {
-			name = ident_node(name, p.src),
+			ident = ident_node(name, p.src),
 			params = clone_idents(params),
 			pos = name.start,
 		}
@@ -128,7 +128,7 @@ parse_rule :: proc(p: ^Parser, name: token.Token, params: []Ident) -> Decl {
 	expect(p, .Semicolon)
 
 	return Rule {
-		name = ident_node(name, p.src),
+		ident = ident_node(name, p.src),
 		params = clone_idents(params),
 		expr = expr,
 		pos = name.start,
@@ -255,7 +255,7 @@ parse_tag_pairs :: proc(p: ^Parser, t: token.Token) -> [dynamic]Tag_Pair {
 		append(
 			&pairs,
 			Tag_Pair {
-				name = Ident{pos = pos, name = pair.name},
+				ident = Ident{pos = pos, name = pair.name},
 				value = String_Lit{pos = pos, value = pair.value},
 				pos = pos,
 			},
@@ -297,7 +297,12 @@ is_sequence_end :: proc(t: token.Token) -> bool {
 parse_basic :: proc(p: ^Parser) -> Production {
 	#partial switch peek(p).kind {
 	case .Ident:
-		return parse_non_terminal(p)
+		switch it in parse_non_terminal(p) {
+		case Ident:
+			return it
+		case Qual_Ident:
+			return it
+		}
 	case .String, .Regexp:
 		return parse_terminal(p)
 	case .External:
@@ -334,11 +339,11 @@ parse_basic :: proc(p: ^Parser) -> Production {
 		delete(parse_tag_pairs(p, t))
 		error_at(p, t.start, "a tag must annotate a production element")
 		return Ident{}
-	case:
-		t := next(p)
-		error_at(p, t.start, fmt.tprintf("unexpected token %s", token.kind_name(t.kind)))
-		return Ident{}
 	}
+
+	t := next(p)
+	error_at(p, t.start, fmt.tprintf("unexpected token %s", token.kind_name(t.kind)))
+	return Ident{}
 }
 
 // parse_directive parses `"@" ident [ "(" "..." ")" ]`.
@@ -354,7 +359,7 @@ parse_directive :: proc(p: ^Parser) -> Production {
 		expect(p, .RParen)
 	}
 
-	return Directive{name = ident_node(name, p.src), args = args, pos = at.start}
+	return Directive{ident = ident_node(name, p.src), args = args, pos = at.start}
 }
 
 // parse_terminal parses a string or regexp literal.
@@ -372,20 +377,21 @@ parse_terminal :: proc(p: ^Parser) -> Production {
 
 // parse_non_terminal parses an identifier, optionally followed by member
 // accesses separated by dots.
-parse_non_terminal :: proc(p: ^Parser) -> Production {
+parse_non_terminal :: proc(p: ^Parser) -> Any_Ident {
 	ident := expect(p, .Ident)
-	expr: Production = ident_node(ident, p.src)
+	lhs := ident_node(ident, p.src)
 
-	for peek(p).kind == .Dot {
+	if peek(p).kind == .Dot {
 		next(p)
 		sel := expect(p, .Ident)
-		expr = Member_Access {
-			object = alloc_expr(expr),
-			member = ident_node(sel, p.src),
-			pos    = expr_pos(expr),
+		expr := Qual_Ident {
+			lhs = lhs,
+			rhs = ident_node(sel, p.src),
+			pos = expr_pos(lhs),
 		}
+		return expr
 	}
-	return expr
+	return lhs
 }
 
 // parse_call parses a rule call with arguments, e.g. `<greet person "Mr">`.
@@ -414,7 +420,7 @@ parse_call :: proc(p: ^Parser) -> Production {
 	expect(p, .Gt)
 
 	call := new(Call)
-	call.name = name
+	call.ident = name
 	call.args = args
 	call.pos = lt.start
 	return call

@@ -139,13 +139,13 @@ classify_offsets :: proc(file: ^ast.File) -> map[int]Sem_Token_Type {
 	for decl in file.decls {
 		#partial switch d in decl {
 		case ast.Rule:
-			types[d.name.pos] = .Function
+			types[d.ident.pos] = .Function
 			for p in d.params {
 				types[p.pos] = .Parameter
 			}
 			classify_expr(d.expr, &types)
 		case ast.Binding:
-			types[d.name.pos] = .Namespace
+			types[d.ident.pos] = .Namespace
 		case ast.Comment_Group:
 		}
 	}
@@ -156,11 +156,16 @@ classify_expr :: proc(expr: ast.Production, types: ^map[int]Sem_Token_Type) {
 	#partial switch v in expr {
 	case ast.Ident:
 		types^[v.pos] = .Function
-	case ast.Member_Access:
-		classify_object(v.object^, types)
-		types^[v.member.pos] = .Property
+	case ast.Qual_Ident:
+		classify_object(v.lhs, types)
+		types^[v.rhs.pos] = .Property
 	case ^ast.Call:
-		classify_expr(v.name, types)
+		switch it in v.ident {
+		case ast.Ident:
+			classify_expr(it, types)
+		case ast.Qual_Ident:
+			classify_expr(it, types)
+		}
 		for arg in v.args {
 			classify_expr(arg, types)
 		}
@@ -200,9 +205,9 @@ classify_object :: proc(expr: ast.Production, types: ^map[int]Sem_Token_Type) {
 	#partial switch v in expr {
 	case ast.Ident:
 		types^[v.pos] = .Namespace
-	case ast.Member_Access:
-		classify_object(v.object^, types)
-		types^[v.member.pos] = .Property
+	case ast.Qual_Ident:
+		classify_object(v.lhs, types)
+		types^[v.rhs.pos] = .Property
 	case:
 	}
 }

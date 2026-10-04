@@ -86,7 +86,16 @@ signature_help_for :: proc(
 	ok: bool,
 ) {
 	if call := containing_call(&fi.file, src, offset); call != nil {
-		if name, ref, found := resolve_named(cu, fi, call.name); found {
+		p: ast.Production
+
+		switch it in call.ident {
+		case ast.Ident:
+			p = it
+		case ast.Qual_Ident:
+			p = it
+		}
+
+		if name, ref, found := resolve_named(cu, fi, p); found {
 			sig := signature_for_ref(cu, fi, name, ref)
 			sig.active_parameter = active_arg(call, offset)
 			return sig, true
@@ -294,18 +303,16 @@ resolve_named :: proc(
 			return v.name, r, true
 		}
 		name = v.name
-	case ast.Member_Access:
-		if obj, is_ident := v.object^.(ast.Ident); is_ident {
-			if dir, bound := fi.bindings[obj.name]; bound {
-				// Only an exported rule is reachable through a binding.
-				if ns := cu.namespaces[dir]; ns != nil && check.is_exported_rule(v.member.name) {
-					if r, r_ok := ns.rules[v.member.name]; r_ok {
-						return v.member.name, r, true
-					}
+	case ast.Qual_Ident:
+		if dir, bound := fi.bindings[v.lhs.name]; bound {
+			// Only an exported rule is reachable through a binding.
+			if ns := cu.namespaces[dir]; ns != nil && check.is_exported_rule(v.rhs.name) {
+				if r, r_ok := ns.rules[v.rhs.name]; r_ok {
+					return v.rhs.name, r, true
 				}
 			}
 		}
-		name = v.member.name
+		name = v.rhs.name
 	case ast.Tagged_Production:
 		return resolve_named(cu, fi, v.expr^)
 	}
@@ -343,7 +350,7 @@ rule_params :: proc(
 	for decl in fi.file.decls {
 		#partial switch d in decl {
 		case ast.Rule:
-			if d.name.pos == ref.offset {
+			if d.ident.pos == ref.offset {
 				return d.params[:ref.arity], true
 			}
 		}
@@ -392,7 +399,16 @@ containing_call :: proc(file: ^ast.File, src: string, offset: int) -> ^ast.Call 
 expr_containing_call :: proc(expr: ast.Production, src: string, offset: int) -> ^ast.Call {
 	#partial switch v in expr {
 	case ^ast.Call:
-		if call := expr_containing_call(v.name, src, offset); call != nil {
+		call: ast.Production
+
+		switch it in v.ident {
+		case ast.Ident:
+			call = it
+		case ast.Qual_Ident:
+			call = it
+		}
+
+		if call := expr_containing_call(call, src, offset); call != nil {
 			return call
 		}
 		for arg in v.args {
@@ -403,8 +419,8 @@ expr_containing_call :: proc(expr: ast.Production, src: string, offset: int) -> 
 		if offset >= v.pos && offset < call_end(src, v.pos) {
 			return v
 		}
-	case ast.Member_Access:
-		return expr_containing_call(v.object^, src, offset)
+	case ast.Qual_Ident:
+		return expr_containing_call(v.lhs, src, offset)
 	case ast.Sequence:
 		return exprs_containing_call(v.exprs[:], src, offset)
 	case ast.Alternative:

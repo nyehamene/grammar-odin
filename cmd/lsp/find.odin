@@ -33,8 +33,8 @@ find_hit :: proc(file: ^ast.File, offset: int) -> Hit {
 	for decl, id in file.decls {
 		#partial switch d in decl {
 		case ast.Rule:
-			if hit_ident(d.name, offset) {
-				return Hit{kind = .Rule_Name, ident = d.name}
+			if hit_ident(d.ident, offset) {
+				return Hit{kind = .Rule_Name, ident = d.ident}
 			}
 
 			params := make(map[string]bool, len(d.params))
@@ -54,8 +54,8 @@ find_hit :: proc(file: ^ast.File, offset: int) -> Hit {
 				return h
 			}
 		case ast.Binding:
-			if hit_ident(d.name, offset) {
-				return Hit{kind = .Binding_Name, ident = d.name}
+			if hit_ident(d.ident, offset) {
+				return Hit{kind = .Binding_Name, ident = d.ident}
 			}
 			if h := find_hit_expr(d.directive, offset); found(h) {
 				return h
@@ -75,26 +75,26 @@ find_hit_expr :: proc(expr: ast.Production, offset: int) -> Hit {
 		if hit_ident(v, offset) {
 			return Hit{kind = .Ident, ident = v}
 		}
-	case ast.Member_Access:
-		if obj, is_ident := v.object^.(ast.Ident); is_ident {
-			if hit_ident(obj, offset) {
-				return Hit{kind = .Member_Object, ident = obj}
-			}
-		} else if h := find_hit_expr(v.object^, offset); found(h) {
-			return h
+	case ast.Qual_Ident:
+		if hit_ident(v.lhs, offset) {
+			return Hit{kind = .Member_Object, ident = v.lhs}
 		}
-		if hit_ident(v.member, offset) {
+		if hit_ident(v.rhs, offset) {
 			hit := Hit {
 				kind  = .Member,
-				ident = v.member,
+				ident = v.rhs,
 			}
-			if obj, is_ident := v.object^.(ast.Ident); is_ident {
-				hit.member_object = obj.name
-			}
+			hit.member_object = v.lhs.name
 			return hit
 		}
 	case ^ast.Call:
-		h := find_hit_expr(v.name, offset)
+		h: Hit
+		switch it in v.ident {
+		case ast.Ident:
+			h = find_hit_expr(it, offset)
+		case ast.Qual_Ident:
+			h = find_hit_expr(it, offset)
+		}
 		if h.kind != .None {
 			h.kind = .Call_Name
 			return h
@@ -105,8 +105,8 @@ find_hit_expr :: proc(expr: ast.Production, offset: int) -> Hit {
 			}
 		}
 	case ast.Directive:
-		if hit_ident(v.name, offset) {
-			return Hit{kind = .Directive, ident = v.name}
+		if hit_ident(v.ident, offset) {
+			return Hit{kind = .Directive, ident = v.ident}
 		}
 		for arg in v.args {
 			if h := find_hit_expr(arg, offset); found(h) {
