@@ -36,9 +36,7 @@ print_decl :: proc(p: ^Printer, decl: Decl) {
 		for param in v.params {
 			print_header(p, param.pos, fmt.tprintf("Ident: %s", param.name))
 		}
-		for body in v.body {
-			print_expr(p, body)
-		}
+		print_expr(p, v.expr)
 		p.indent -= 1
 	case Binding_Decl:
 		print_header(
@@ -68,11 +66,6 @@ print_expr :: proc(p: ^Printer, expr: Expr) {
 		print_header(p, v.pos, fmt.tprintf("RegexLit: %s", v.value))
 	case External_Value:
 		print_header(p, v.pos, fmt.tprintf("ExternalValue: $%s", v.name))
-	case Term_Expr:
-		print_header(p, v.pos, "TermExpr")
-		p.indent += 1
-		print_expr(p, v.x^)
-		p.indent -= 1
 	case Sequence_Expr:
 		print_header(p, v.pos, "SequenceExpr")
 		p.indent += 1

@@ -143,9 +143,7 @@ classify_offsets :: proc(file: ^ast.File) -> map[int]Sem_Token_Type {
 			for p in d.params {
 				types[p.pos] = .Parameter
 			}
-			for e in d.body {
-				classify_expr(e, &types)
-			}
+			classify_expr(d.expr, &types)
 		case ast.Binding_Decl:
 			types[d.name.pos] = .Namespace
 		case ast.Comment_Group:
@@ -158,8 +156,6 @@ classify_expr :: proc(expr: ast.Expr, types: ^map[int]Sem_Token_Type) {
 	#partial switch v in expr {
 	case ast.Ident:
 		types^[v.pos] = .Function
-	case ast.Term_Expr:
-		classify_expr(v.x^, types)
 	case ast.Member_Expr:
 		classify_object(v.object^, types)
 		types^[v.member.pos] = .Property

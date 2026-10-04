@@ -192,9 +192,7 @@ collect_rule_refs :: proc(
 			if include_declaration && d.name.name == name {
 				push_reference(out, uris, f, d.name.pos, d.name.name)
 			}
-			for e in d.body {
-				rule_ref_in_expr(f, target_ns_dir, name, e, uris, out, private)
-			}
+			rule_ref_in_expr(f, target_ns_dir, name, d.expr, uris, out, private)
 		case ast.Binding_Decl, ast.Comment_Group:
 		}
 	}
@@ -216,9 +214,7 @@ collect_binding_refs :: proc(
 				push_reference(out, uris, f, d.name.pos, d.name.name)
 			}
 		case ast.Rule_Decl:
-			for e in d.body {
-				binding_ref_in_expr(f, name, e, uris, out)
-			}
+			binding_ref_in_expr(f, name, d.expr, uris, out)
 		case ast.Comment_Group:
 		}
 	}
@@ -239,9 +235,7 @@ collect_param_refs :: proc(
 		for p in d.params {
 			rule_ref_in_expr(f, "", name, p, uris, out, true)
 		}
-		for e in d.body {
-			rule_ref_in_expr(f, "", name, e, uris, out, true)
-		}
+		rule_ref_in_expr(f, "", name, d.expr, uris, out, true)
 	case ast.Comment_Group:
 	}
 }
@@ -259,9 +253,6 @@ rule_ref_in_expr :: proc(
 		if v.name == name {
 			push_reference(out, uris, f, v.pos, v.name)
 		}
-
-	case ast.Term_Expr:
-		rule_ref_in_expr(f, target_ns_dir, name, v.x^, uris, out, private)
 
 	case ast.Member_Expr:
 		if private do break
@@ -322,8 +313,6 @@ binding_ref_in_expr :: proc(
 		if v.name == name {
 			push_reference(out, uris, f, v.pos, v.name)
 		}
-	case ast.Term_Expr:
-		binding_ref_in_expr(f, name, v.x^, uris, out)
 	case ast.Member_Expr:
 		if obj, is_ident := v.object^.(ast.Ident); is_ident && obj.name == name {
 			push_reference(out, uris, f, obj.pos, obj.name)

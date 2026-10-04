@@ -53,7 +53,6 @@ test_print_ast_output :: proc(t: ^testing.T) {
 	out := string(bytes.buffer_to_bytes(&buf))
 	testing.expect(t, strings.has_prefix(out, "File\n"), "should start with File header")
 	testing.expect(t, strings.contains(out, "RuleDecl: greeting"), "should print rule name")
-	testing.expect(t, strings.contains(out, "TermExpr"), "should contain TermExpr")
 	testing.expect(t, strings.contains(out, "AlternativeExpr"), "should contain AlternativeExpr")
 	testing.expect(t, strings.contains(out, "StringLit: \"Hello\""), "should contain string literal")
 	testing.expect(t, strings.contains(out, "StringLit: \"Hi\""), "should contain second alternative")

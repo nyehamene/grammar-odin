@@ -473,12 +473,10 @@ check_file :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File) {
 			// Record which rule is being walked so that a reference can tell
 			// whether it came from the declaring rule itself.
 			fi.enclosing_rule = d.name.name
-			for body in d.body {
-				check_body(cu, fi, d.params[:], body)
-			}
+			check_body(cu, fi, d.params[:], d.expr)
 			fi.enclosing_rule = ""
 			if len(d.params) > 0 {
-				check_unused_params(cu, fi, d.params[:], d.body[:])
+				check_unused_params(cu, fi, d.params[:], d.expr)
 			}
 		}
 	}
@@ -571,24 +569,16 @@ check_unused_local_rules :: proc(cu: ^Compilation_Unit) {
 
 // check_unused_params reports every proc parameter that is never referenced in
 // the rule body.
-check_unused_params :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, params: []ast.Ident, body: []ast.Expr) {
+check_unused_params :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, params: []ast.Ident, expr: ast.Expr) {
 	for p in params {
-		used := false
-		for b in body {
-			if uses_param(b, p.name) {
-				used = true
-				break
-			}
-		}
-		if !used {
-			add_error(
-				cu,
-				fi.display,
-				fi.src,
-				p.pos,
-				fmt.tprintf("unused proc parameter: %s", p.name),
-			)
-		}
+		if uses_param(expr, p.name) do continue
+		add_error(
+			cu,
+			fi.display,
+			fi.src,
+			p.pos,
+			fmt.tprintf("unused proc parameter: %s", p.name),
+		)
 	}
 }
 
@@ -599,8 +589,6 @@ uses_param :: proc(expr: ast.Expr, param: string) -> bool {
 		return v.name == param
 	case ast.String_Lit, ast.Regex_Lit, ast.External_Value, ast.Directive_Expr:
 		return false
-	case ast.Term_Expr:
-		return uses_param(v.x^, param)
 	case ast.Member_Expr:
 		return uses_param(v.object^, param) || uses_param(v.member, param)
 	case ^ast.Call_Expr:
@@ -628,10 +616,48 @@ exprs_use_param :: proc(exprs: []ast.Expr, param: string) -> bool {
 	return false
 }
 
-// check_body checks expr with a rule's parameters in scope.
+// check_body checks the production of a rule with its parameters in scope. A
+// rule names one production, and that production stands where a value is
+// expected, so a body that is nothing but a reference to a proc or to a
+// namespace is rejected: the rule has to call the proc or select from the
+// namespace. Every other shape yields a Production operand and is left to the
+// checks inside the production.
 check_body :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, params: []ast.Ident, expr: ast.Expr) {
 	o: Operand
 	check_expr_scoped(cu, fi, params, expr, &o)
+
+	if o.kind == .LValue {
+		if o.type == .Proc {
+			add_error(
+				cu,
+				fi.display,
+				fi.src,
+				o.pos,
+				fmt.tprintf("proc cannot be used as a production: %s", o.name),
+			)
+		}
+		return
+	}
+
+	switch o.type {
+	case .Unknown, .String, .Regexp, .External, .Production:
+	case .Namespace:
+		add_error(
+			cu,
+			fi.display,
+			fi.src,
+			o.pos,
+			fmt.tprintf("namespace cannot be used as an production: %s", o.name),
+		)
+	case .Proc:
+		add_error(
+			cu,
+			fi.display,
+			fi.src,
+			o.pos,
+			fmt.tprintf("proc cannot be used as a production: %s", o.name),
+		)
+	}
 }
 
 // is_param reports whether expr is one of the given parameters.
@@ -682,40 +708,6 @@ check_expr_scoped :: proc(
 		mark_rule_used(cu, fi, v.name)
 		Operand_lvalue(o, rule.type, v.pos, v.name)
 		o.arity = rule.arity
-
-	case ast.Term_Expr:
-		check_expr_scoped(cu, fi, params, v.x^, o)
-		if o.kind == .LValue {
-			if o.type == .Proc {
-				add_error(
-					cu,
-					fi.display,
-					fi.src,
-					o.pos,
-					fmt.tprintf("proc cannot be used as a production: %s", o.name),
-				)
-			}
-			break
-		}
-		switch o.type {
-		case .Unknown, .String, .Regexp, .External, .Production:
-		case .Namespace:
-			add_error(
-				cu,
-				fi.display,
-				fi.src,
-				o.pos,
-				fmt.tprintf("namespace cannot be used as an production: %s", o.name),
-			)
-		case .Proc:
-			add_error(
-				cu,
-				fi.display,
-				fi.src,
-				o.pos,
-				fmt.tprintf("proc cannot be used as a production: %s", o.name),
-			)
-		}
 
 	case ast.Member_Expr:
 		check_member(cu, fi, v, o)

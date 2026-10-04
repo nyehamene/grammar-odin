@@ -1020,8 +1020,19 @@ create_stream_reader :: proc(msgs: ..string) -> io.Reader {
 // send_request starts the server in test mode over stdin and returns a clone
 // of everything written to its output stream.
 send_request :: proc(stdin: io.Reader) -> string {
-	sb_log := strings.builder_make(context.temp_allocator)
-	sb_out := strings.builder_make(context.temp_allocator)
+	// These two builders buffer an entire session, so they outlive the
+	// per-message temp-allocator guard the server installs in handle_message.
+	// Backing them with context.temp_allocator corrupts the run: the guard
+	// reclaims and zeroes memory above its mark as these builders grow, and
+	// growth happens while the server is streaming responses into sb_out. Use
+	// the heap allocator and free the buffers here instead.
+	//
+	// stdin is safe to leave on temp_allocator: it is built before run starts,
+	// so it sits below every guard mark and is never reclaimed.
+	sb_log := strings.builder_make(context.allocator)
+	sb_out := strings.builder_make(context.allocator)
+	defer delete_string(strings.to_string(sb_log), context.allocator)
+	defer delete_string(strings.to_string(sb_out), context.allocator)
 
 	stdout := strings.to_writer(&sb_out)
 	logout := strings.to_writer(&sb_log)

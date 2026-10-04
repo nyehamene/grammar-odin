@@ -46,14 +46,12 @@ find_hit :: proc(file: ^ast.File, offset: int) -> Hit {
 				}
 				params[p.name] = true
 			}
-			for e in d.body {
-				if h := find_hit_expr(e, offset); found(h) {
-					if h.ident.name in params {
-						h.kind = .Param
-						h.decl = id
-					}
-					return h
+			if h := find_hit_expr(d.expr, offset); found(h) {
+				if h.ident.name in params {
+					h.kind = .Param
+					h.decl = id
 				}
+				return h
 			}
 		case ast.Binding_Decl:
 			if hit_ident(d.name, offset) {
@@ -77,8 +75,6 @@ find_hit_expr :: proc(expr: ast.Expr, offset: int) -> Hit {
 		if hit_ident(v, offset) {
 			return Hit{kind = .Ident, ident = v}
 		}
-	case ast.Term_Expr:
-		return find_hit_expr(v.x^, offset)
 	case ast.Member_Expr:
 		if obj, is_ident := v.object^.(ast.Ident); is_ident {
 			if hit_ident(obj, offset) {

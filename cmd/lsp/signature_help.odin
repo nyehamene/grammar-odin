@@ -373,10 +373,8 @@ containing_call :: proc(file: ^ast.File, src: string, offset: int) -> ^ast.Call_
 	for decl in file.decls {
 		#partial switch d in decl {
 		case ast.Rule_Decl:
-			for e in d.body {
-				if call := expr_containing_call(e, src, offset); call != nil {
-					return call
-				}
+			if call := expr_containing_call(d.expr, src, offset); call != nil {
+				return call
 			}
 		case ast.Binding_Decl:
 			if call := expr_containing_call(d.directive, src, offset); call != nil {
@@ -402,8 +400,6 @@ expr_containing_call :: proc(expr: ast.Expr, src: string, offset: int) -> ^ast.C
 		if offset >= v.pos && offset < call_end(src, v.pos) {
 			return v
 		}
-	case ast.Term_Expr:
-		return expr_containing_call(v.x^, src, offset)
 	case ast.Member_Expr:
 		return expr_containing_call(v.object^, src, offset)
 	case ast.Sequence_Expr:

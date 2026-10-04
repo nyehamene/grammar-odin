@@ -7,6 +7,8 @@ import "core:mem"
 import "core:mem/virtual"
 import "core:strings"
 
+import "base:runtime"
+
 Server :: struct {
 	arena:                  virtual.Arena,
 
@@ -67,6 +69,18 @@ clone_string :: proc(arena: ^virtual.Arena, s: string) -> string {
 }
 
 handle_message :: proc(srv: ^Server, msg: json.Value) -> bool {
+	// Handlers marshal their responses into context.temp_allocator, which is
+	// shared process-wide and only ever grows unless something resets it. A
+	// server handles messages for as long as the editor stays open, so without
+	// this a long session accumulates every response it ever sent. The guard
+	// releases the region when this call returns.
+	//
+	// Scoping it to one message is safe because nothing a handler produces
+	// outlives the call: responses are written before returning, and the state
+	// that must survive (documents) is cloned into the server arena rather than
+	// referenced from here.
+	runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
+
 	obj, obj_ok := msg.(json.Object)
 	if !obj_ok {
 		return false

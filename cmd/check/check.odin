@@ -82,26 +82,31 @@ collect_files :: proc(
 	files = make([dynamic]string, allocator)
 	switch mode {
 	case .File:
-		append(&files, strings.clone(path))
+		append(&files, strings.clone(path, allocator))
 	case .Package:
-		if info, err := os.stat(path, context.allocator); err == nil && info.type == .Directory {
+		// os.stat hands back a File_Info that owns its fullpath, so it has to be
+		// released with file_info_delete or the path leaks on every call.
+		info, stat_err := os.stat(path, allocator)
+		defer os.file_info_delete(info, allocator)
+		if stat_err == nil && info.type == .Directory {
 			w := os.walker_create(path)
 			defer os.walker_destroy(&w)
-			for info in os.walker_walk(&w) {
-				if info.type == .Regular && strings.has_suffix(info.fullpath, ".grammar") {
-					append(&files, strings.clone(info.fullpath))
+			for entry in os.walker_walk(&w) {
+				if entry.type == .Regular && strings.has_suffix(entry.fullpath, ".grammar") {
+					append(&files, strings.clone(entry.fullpath, allocator))
 				}
 			}
 		} else {
-			append(&files, strings.clone(path))
+			append(&files, strings.clone(path, allocator))
 		}
 	}
 	return
 }
 
-// cleanup frees the strings in files and the array itself.
-cleanup :: proc(files: [dynamic]string) {
-	for f in files do delete(f)
+// cleanup frees the strings in files and the array itself. allocator must be the
+// one collect_files was given, since it owns those strings.
+cleanup :: proc(files: [dynamic]string, allocator := context.allocator) {
+	for f in files do delete(f, allocator)
 	delete(files)
 }
 

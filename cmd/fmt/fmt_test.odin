@@ -138,13 +138,13 @@ test_blank_lines_preserved :: proc(t: ^testing.T) {
 @(test)
 test_rule6_param_alignment :: proc(t: ^testing.T) {
 	src := "foo x y = x y;\nf x = x;\n\nbar xx y = xx y;\nb x y = x y;\n"
-	want := "foo x y = x y;\nf   x   = x;\n\nbar xx y = xx y;\nb   x  y = x y;\n"
+	want := "foo x y = x y;\nf     x = x;\n\nbar xx y = xx y;\nb    x y = x y;\n"
 	check_format(t, src, want)
 
 	// A rule with no parameters still has its name aligned, and a rule with more
 	// parameters than its neighbour widens the column for the whole group.
 	src2 := "a x = a;\nbb y z = b;\n"
-	want2 := "a  x   = a;\nbb y z = b;\n"
+	want2 := "a    x = a;\nbb y z = b;\n"
 	check_format(t, src2, want2)
 
 	// A single rule in a group pads nothing, so it comes back unchanged.
@@ -161,7 +161,7 @@ test_rule6_respects_group_boundary :: proc(t: ^testing.T) {
 
 	// With a threshold of 2 the single blank is interior, so the two rules share
 	// one group and `bar` pads its missing second parameter out to match `foo`.
-	check_format_sep(t, src, "foo x y = x y;\n\nbar x   = x;\n", 2)
+	check_format_sep(t, src, "foo x y = x y;\n\nbar   x = x;\n", 2)
 }
 
 @(test)

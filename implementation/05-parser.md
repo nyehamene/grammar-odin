@@ -30,8 +30,8 @@ see ../grammar.txt
 
 ## Rule
 
-A rule is an identifier follow by one or more parameter, an equal (=) and a body terminated by semicolon (;).
-The body is one or more productions.
+A rule is an identifier follow by zero or more parameters, an equal (=) and a body terminated by semicolon (;).
+The body is one production.
 
 ```
 rule1 = "no parameter";

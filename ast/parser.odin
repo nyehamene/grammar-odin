@@ -109,25 +109,29 @@ parse_binding :: proc(p: ^Parser, name: token.Token) -> (Decl, bool) {
 }
 
 // parse_rule parses `ident "=" production ";"` where the parameter idents have
-// already been consumed.
+// already been consumed. A rule names one production: a body of more than one
+// element is a sequence, which parse_production has already built by the time it
+// returns.
 parse_rule :: proc(p: ^Parser, name: token.Token, params: []Ident) -> Decl {
-	body := make([dynamic]Expr)
-	for peek(p).kind != .Semicolon && peek(p).kind != .EOF {
-		prod := parse_production(p)
-		append(&body, Term_Expr{x = alloc_expr(prod), pos = expr_pos(prod)})
+	if peek(p).kind == .Semicolon || peek(p).kind == .EOF {
+		error_at(p, name.start, "rule declaration must have a body")
+		expect(p, .Semicolon)
+		return Rule_Decl {
+			name   = ident_node(name, p.src),
+			params = clone_idents(params),
+			pos    = name.start,
+		}
 	}
 
-	if len(body) == 0 {
-		error_at(p, name.start, "rule declaration must have a body")
-	}
+	expr := parse_production(p)
 
 	expect(p, .Semicolon)
 
 	return Rule_Decl {
-		name = ident_node(name, p.src),
+		name   = ident_node(name, p.src),
 		params = clone_idents(params),
-		body = body,
-		pos = name.start,
+		expr   = expr,
+		pos    = name.start,
 	}
 }
 

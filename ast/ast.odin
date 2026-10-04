@@ -6,7 +6,6 @@ Expr :: union {
 	String_Lit,
 	Regex_Lit,
 	External_Value,
-	Term_Expr,
 	Sequence_Expr,
 	Alternative_Expr,
 	Optional_Expr,
@@ -31,13 +30,14 @@ File :: struct {
 	end_pos: int,
 }
 
-// Rule_Decl is a named production, optionally with parameters.
+// Rule_Decl is a named production, optionally with parameters. A rule names one
+// production, so a body of more than one element is a Sequence_Expr.
 //   greeting            = "Hello";
 //   greet name title    = "hello" name title;
 Rule_Decl :: struct {
 	name:   Ident,
 	params: [dynamic]Ident,
-	body:   [dynamic]Expr,
+	expr:   Expr,
 	pos:    int,
 }
 
@@ -83,12 +83,6 @@ Regex_Lit :: struct {
 External_Value :: struct {
 	pos:  int,
 	name: string,
-}
-
-// Term_Expr represents a single production appearing in a rule body.
-Term_Expr :: struct {
-	x:   ^Expr,
-	pos: int,
 }
 
 // Sequence_Expr is a sequence of basics, e.g. `a b c`.
@@ -178,8 +172,6 @@ expr_pos :: proc(expr: Expr) -> int {
 		return v.pos
 	case External_Value:
 		return v.pos
-	case Term_Expr:
-		return v.pos
 	case Sequence_Expr:
 		return v.pos
 	case Alternative_Expr:
@@ -227,10 +219,7 @@ destroy_decl :: proc(decl: Decl) {
 	switch v in decl {
 	case Rule_Decl:
 		delete(v.params)
-		for body in v.body {
-			destroy_expr(body)
-		}
-		delete(v.body)
+		if v.expr != nil do destroy_expr(v.expr)
 	case Binding_Decl:
 		destroy_expr(v.directive)
 	case Comment_Group:
@@ -241,9 +230,6 @@ destroy_decl :: proc(decl: Decl) {
 destroy_expr :: proc(expr: Expr) {
 	switch v in expr {
 	case Ident, String_Lit, Regex_Lit, External_Value:
-	case Term_Expr:
-		destroy_expr(v.x^)
-		free(v.x)
 	case Sequence_Expr:
 		for e in v.exprs {
 			destroy_expr(e)

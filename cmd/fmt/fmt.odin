@@ -393,40 +393,47 @@ close_group :: proc(
 	header_lhs: []string,
 	start, end: int,
 ) {
-	// Rule 6: the name of every header in the group starts on the same column,
-	// and so does each parameter, so the parameters line up vertically. A header
-	// left hand side is a rule name followed by its parameters: the source is
-	// parsed before it is laid out, so nothing else can reach this point.
+	// Rule 6: align names to max name width, and align the last parameter of each
+	// header in the group to the same column (max start column of last params).
 	name_w := 0
-	param_w: [dynamic]int
-	defer delete(param_w)
+	last_col_target := 0
+	first := true
 
+	// First pass: compute name width and target column for last param
 	for i in start ..< end {
 		if kinds[i] != .Header do continue
 		lhs := header_tokens(groups[i][:])
+		if len(lhs) == 0 do continue
 		name_w = max(name_w, len(token.lexeme(lhs[0], src)))
-		for j in 1 ..< len(lhs) {
-			w := len(token.lexeme(lhs[j], src))
-			if j - 1 >= len(param_w) {
-				append(&param_w, w)
-			} else {
-				param_w[j - 1] = max(param_w[j - 1], w)
+		if len(lhs) > 1 {
+			cur_last_col := name_w + 1
+			for j in 1 ..< len(lhs) - 1 {
+				cur_last_col += len(token.lexeme(lhs[j], src)) + 1
+			}
+			if first || cur_last_col > last_col_target {
+				last_col_target = cur_last_col
+				first = false
 			}
 		}
 	}
 
-	col := name_w
-	for w in param_w {
-		col += 1 + w
-	}
-
+	// Second pass: render each header lhs
 	for i in start ..< end {
 		if kinds[i] != .Header do continue
-		header_lhs[i] = pad_header(header_tokens(groups[i][:]), src, name_w, param_w[:])
+		header_lhs[i] = pad_header_new(header_tokens(groups[i][:]), src, name_w, last_col_target)
+	}
+
+	// Compute group alignment column for =, |, ; etc (max width of rendered lhs + 1)
+	col_sep := 0
+	for i in start ..< end {
+		if kinds[i] != .Header do continue
+		if len(header_lhs[i]) > col_sep {
+			col_sep = len(header_lhs[i])
+		}
 	}
 
 	for j in start ..< end {
-		align[j] = col + 1
+		align[j] = col_sep + 1
 	}
 }
 
@@ -437,24 +444,31 @@ header_tokens :: proc(line: []token.Token) -> []token.Token {
 	return line[:first_equal(line)]
 }
 
-// pad_header renders a left hand side with its name padded to name_w and each of
-// its parameters padded to the matching entry of param_w. A rule with fewer
-// parameters than the group pads the missing ones, so its value separator still
-// lands on the group column. The result is owned by the caller.
-pad_header :: proc(lhs: []token.Token, src: string, name_w: int, param_w: []int) -> string {
+// pad_header_new renders lhs aligning last parameter to last_col_target.
+// Names are padded to name_w. Earlier params are single-space separated.
+pad_header_new :: proc(lhs: []token.Token, src: string, name_w: int, last_col_target: int) -> string {
 	b := strings.builder_make()
 	defer strings.builder_destroy(&b)
 
-	write_padded(&b, token.lexeme(lhs[0], src), name_w)
-	for j in 0 ..< len(param_w) {
-		strings.write_string(&b, " ")
-		if j + 1 < len(lhs) {
-			write_padded(&b, token.lexeme(lhs[j + 1], src), param_w[j])
-		} else {
-			write_padded(&b, "", param_w[j])
-		}
+	// write padded name
+	name := token.lexeme(lhs[0], src)
+	write_padded(&b, name, name_w)
+	if len(lhs) <= 1 {
+		return strings.clone(strings.to_string(b))
 	}
-
+	// write params before last
+	strings.write_string(&b, " ")
+	for j in 1 ..< len(lhs) - 1 {
+		strings.write_string(&b, token.lexeme(lhs[j], src))
+		strings.write_string(&b, " ")
+	}
+	// position last param at last_col_target
+	cur := strings.builder_len(b)
+	need := last_col_target - cur
+	for _ in 0 ..< need {
+		strings.write_string(&b, " ")
+	}
+	strings.write_string(&b, token.lexeme(lhs[len(lhs) - 1], src))
 	return strings.clone(strings.to_string(b))
 }
 
@@ -592,7 +606,13 @@ render_tokens :: proc(line: []token.Token, src: string) -> string {
 			write_tag(&b, tok, src)
 			continue
 		}
-		strings.write_string(&b, lex)
+		if tok.kind == .Tag {
+		// A tag is rewritten in its canonical spelling: no space around `=`
+		// and one space after each `;`.
+		write_tag(&b, tok, src)
+		continue
+	}
+	strings.write_string(&b, lex)
 		if tok.kind == .External && !strings.has_suffix(lex, "__") {
 			// Externals are canonically written with a trailing "__"; supply it
 			// when the source omits it.

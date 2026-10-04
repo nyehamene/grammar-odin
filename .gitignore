@@ -7,6 +7,9 @@
 
 # Build output
 /grammar
+/grammar-odin
+/fmt
+/test_fix3
 
 lsp_log.txt
 

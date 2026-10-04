@@ -3,6 +3,7 @@ name = "grammar"
 scope = "source.grammar"
 injection-regex = "grammar"
 file-types = ["grammar"]
+auto-format = true
 comment-tokens = "//"
 indent = { tab-width = 2, unit = "  " }
 formatter = { command = "./grammar" , args = ["fmt", "--stdin"] }
@@ -12,4 +13,3 @@ language-servers = [ "grammar" ]
 command = "./grammar"
 args = ["lsp"]
 config = { provideFormatter = true }
-# environment = { "ENV1" = "value1", "ENV2" = "value2" }
