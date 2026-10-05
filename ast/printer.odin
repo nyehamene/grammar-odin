@@ -31,13 +31,7 @@ print_file :: proc(writer: io.Writer, src: string, file: ^File) {
 print_decl :: proc(p: ^Printer, decl: Decl) {
 	switch v in decl {
 	case Rule:
-		print_header(p, v.pos, fmt.tprintf("RuleDecl: %s", v.ident.name))
-		p.indent += 1
-		for param in v.params {
-			print_header(p, param.pos, fmt.tprintf("Ident: %s", param.name))
-		}
-		print_expr(p, v.expr)
-		p.indent -= 1
+		print_rule(p, v)
 	case Binding:
 		print_header(
 			p,
@@ -154,6 +148,12 @@ print_header :: proc(p: ^Printer, offset: int, text: string) {
 	for i in len(col) ..< 4 {
 		io.write_string(p.writer, " ")
 	}
+	write_header_line(p, text)
+}
+
+// write_header_line writes the indent and the text of a node header, and the
+// newline that ends it.
+write_header_line :: proc(p: ^Printer, text: string) {
 	for i in 0 ..< p.indent {
 		io.write_string(p.writer, "  ")
 	}
@@ -166,4 +166,122 @@ strip_quotes :: proc(s: string) -> string {
 		return s[1:len(s) - 1]
 	}
 	return s
+}
+
+// Print_Rule writes one rule as an indented tree to writer. It is what
+// `grammar expand --tree` prints, since the rule an expansion returns is not part
+// of a file.
+Print_Rule :: proc(writer: io.Writer, src: string, rule: Rule) {
+	p := Printer {
+		writer = writer,
+		src    = src,
+	}
+	print_rule(&p, rule)
+}
+
+// Print_Normalized_Rule writes one factored rule as an indented tree to writer,
+// which is what `grammar normalize --tree` prints.
+Print_Normalized_Rule :: proc(writer: io.Writer, src: string, n: Normalized_Rule) {
+	p := Printer {
+		writer = writer,
+		src    = src,
+	}
+	print_normalized_rule(&p, n)
+}
+
+// print_rule writes a rule declaration: its name, its parameters, and its body.
+print_rule :: proc(p: ^Printer, rule: Rule) {
+	print_header(p, rule.pos, fmt.tprintf("RuleDecl: %s", rule.ident.name))
+	p.indent += 1
+	for param in rule.params {
+		print_header(p, param.pos, fmt.tprintf("Param: %s", param.name))
+	}
+	print_expr(p, rule.expr)
+	p.indent -= 1
+}
+
+// print_normalized_rule writes a factored rule: its leading, one entry per middle,
+// and its trailing. The three parts themselves carry no position, since factoring
+// has put them somewhere no single production ever was. The productions inside them
+// keep the offsets they were parsed at, which say where they were written rather
+// than where the factored form will put them.
+print_normalized_rule :: proc(p: ^Printer, n: Normalized_Rule) {
+	print_text(p, fmt.tprintf("NormalizedRule: %s", n.ident.name))
+	p.indent += 1
+	for param in n.params {
+		print_text(p, fmt.tprintf("Param: %s", param.name))
+	}
+	print_text(p, "Leading:")
+	p.indent += 1
+	print_normalized(p, n.leading)
+	p.indent -= 1
+	print_text(p, "Middle:")
+	p.indent += 1
+	for middle in n.body {
+		print_normalized(p, middle)
+	}
+	p.indent -= 1
+	print_text(p, "Trailing:")
+	p.indent += 1
+	print_normalized(p, n.trailing)
+	p.indent -= 1
+}
+
+// print_normalized writes a production of a normalized tree.
+print_normalized :: proc(p: ^Printer, n: Normalized_Production) {
+	if n.kind == nil {
+		print_text(p, "Nothing")
+		return
+	}
+	switch it in n.kind {
+	case Nothing:
+		print_text(p, "Nothing")
+	case Production:
+		print_expr(p, it)
+	case ^Factored:
+		print_text(p, "Factored:")
+		p.indent += 1
+		for middle in it.body {
+			print_normalized(p, middle)
+		}
+		p.indent -= 1
+	case ^Grouped:
+		print_grouped(p, it)
+	}
+}
+
+// print_grouped writes a production that holds productions, by its shape. The shape
+// is spelled out from the normalized one so that a tree printed this way cannot be
+// mistaken for a parsed one.
+print_grouped :: proc(p: ^Printer, g: ^Grouped) {
+	switch g.shape {
+	case .Sequence:
+		print_text(p, "NormalizedSequenceExpr")
+	case .Group:
+		print_text(p, "NormalizedGroupExpr")
+	case .Optional:
+		print_text(p, "NormalizedOptionalExpr")
+	case .Repetition:
+		print_text(p, "NormalizedRepetitionExpr")
+	case .Tagged:
+		print_text(p, "NormalizedTaggedExpr")
+	}
+	p.indent += 1
+	for pair in g.tag[:] {
+		print_header(
+			p,
+			pair.pos,
+			fmt.tprintf("TagPair: %s=%s", pair.ident.name, pair.value.value),
+		)
+	}
+	for expr in g.exprs[:] {
+		print_normalized(p, expr)
+	}
+	p.indent -= 1
+}
+
+// print_text writes a node header with no position, for a tree whose nodes have
+// been moved about.
+print_text :: proc(p: ^Printer, text: string) {
+	write_header_line(p, text)
 }
