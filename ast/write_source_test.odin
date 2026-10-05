@@ -318,6 +318,27 @@ test_write_normalized_rule_writes_a_nested_group_with_its_parts :: proc(t: ^test
 	)
 }
 
+// A nested production with an empty middle has no factored form either, since
+// `( | x )` does not parse, so it is written as its branches whole like a rule that
+// has one. The branches keep the leading and the trailing they were factored around.
+@(test)
+test_write_normalized_rule_writes_a_nested_empty_middle_as_its_branches :: proc(t: ^testing.T) {
+	expect_written_normalized(
+		t,
+		"use = { x a q | x a };",
+		"use",
+		"use = { x a q | x a };\n",
+		.Strip,
+	)
+	expect_written_normalized(
+		t,
+		"use = [ p a q | p a ];",
+		"use",
+		"use = [ p a q | p a ];\n",
+		.Strip,
+	)
+}
+
 // Under .Keep a tag survives, written where it closes the production it names.
 @(test)
 test_write_normalized_rule_writes_a_kept_tag :: proc(t: ^testing.T) {

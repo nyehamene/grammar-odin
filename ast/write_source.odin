@@ -243,20 +243,31 @@ write_normalized_rule :: proc(w: io.Writer, n: Normalized_Rule) {
 write_branches :: proc(w: io.Writer, n: Normalized_Rule) {
 	for middle, i in n.body {
 		if i > 0 do io.write_string(w, " | ")
-		written := 0
-		if !is_nothing(n.leading) {
-			write_normalized(w, n.leading)
-			written += 1
-		}
-		if !is_nothing(middle) {
-			if written > 0 do io.write_string(w, " ")
-			write_normalized(w, middle)
-			written += 1
-		}
-		if !is_nothing(n.trailing) {
-			if written > 0 do io.write_string(w, " ")
-			write_normalized(w, n.trailing)
-		}
+		write_branch(w, n.leading, middle, n.trailing)
+	}
+}
+
+// write_branch writes one branch of a factored production put back together: the
+// leading, its own middle and the trailing, in that order and each one left out when
+// it is absent. It takes the three parts rather than the rule they came from, so that
+// a production nested in a group is written the same way a rule is.
+write_branch :: proc(
+	w: io.Writer,
+	leading, middle, trailing: Normalized_Production,
+) {
+	written := 0
+	if !is_nothing(leading) {
+		write_normalized(w, leading)
+		written += 1
+	}
+	if !is_nothing(middle) {
+		if written > 0 do io.write_string(w, " ")
+		write_normalized(w, middle)
+		written += 1
+	}
+	if !is_nothing(trailing) {
+		if written > 0 do io.write_string(w, " ")
+		write_normalized(w, trailing)
 	}
 }
 
@@ -300,6 +311,16 @@ write_normalized :: proc(w: io.Writer, n: Normalized_Production) {
 	case Production:
 		write_production(w, it)
 	case ^Factored:
+		// A production with an empty middle has no factored form to write, since
+		// `( | x )` does not parse, so it is written as its branches whole, the same
+		// as a rule that has one.
+		if has_empty_middle(it.body[:]) {
+			for middle, i in it.body {
+				if i > 0 do io.write_string(w, " | ")
+				write_branch(w, it.leading, middle, it.trailing)
+			}
+			return
+		}
 		// A factored production nested in another one keeps its own leading and its
 		// own trailing. They are the productions every branch of the alternative it
 		// came from shared, so leaving them out drops what the branches had in common
