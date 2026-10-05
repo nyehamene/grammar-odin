@@ -128,6 +128,29 @@ test_normalize_keeps_tags :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(res.stdout, "`name=\"y\"`"), res.stdout)
 }
 
+// Under .Merge the tags of two branches annotating the same production are combined
+// rather than dropped, and a pair name they share keeps the first of its two values.
+@(test)
+test_normalize_merges_tags :: proc(t: ^testing.T) {
+	src := "use = a `kind=\"x\"` | a `name=\"y\"`;\n"
+	res := run_normalize([]string{"--tags", "merge", "--stdin"}, stdin_from(src))
+	defer destroy_result(&res)
+	testing.expectf(t, res.code == 0, "exit 0, got %d", res.code)
+	testing.expect(
+		t,
+		strings.contains(res.stdout, "use = a `kind=\"x\"; name=\"y\"`;"),
+		res.stdout,
+	)
+	testing.expectf(t, res.stderr == "", "merge reports nothing: %s", res.stderr)
+
+	clashing := "use = a `kind=\"x\"` | a `kind=\"y\"`;\n"
+	res = run_normalize([]string{"--tags", "merge", "--stdin"}, stdin_from(clashing))
+	defer destroy_result(&res)
+	testing.expectf(t, res.code == 0, "exit 0, got %d", res.code)
+	testing.expect(t, strings.contains(res.stdout, "use = a `kind=\"x\"`;"), res.stdout)
+	testing.expect(t, strings.contains(res.stderr, "kind"), res.stderr)
+}
+
 // Under .Block the tag still goes, but losing it is said out loud.
 @(test)
 test_normalize_block_reports_a_dropped_tag :: proc(t: ^testing.T) {

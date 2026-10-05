@@ -125,7 +125,7 @@ language was written:
   equal are both kept, because whether the later one is reachable at all depends on
   whether a matcher backtracks into it after an earlier branch matched, which nothing
   here decides.
-- **Tags**, unless the policy keeps them. See below.
+- **Tags**, unless the policy keeps them, which `.Merge` and `.Keep` do. See below.
 
 ### Tags
 
@@ -136,16 +136,29 @@ its shape, so the default drops it. `Tag_Policy` decides:
 |---|---|---|---|
 | `.Strip` (default) | no | dropped | factored as far as it goes; one tag is lost, quietly |
 | `.Block` | no | dropped | factored as far as it goes; the loss is reported in `Normalize_Options.conflicts` |
+| `.Merge` | no | kept | factored as far as it goes; pair names are combined, and a name both branches give different values keeps the first and is reported |
 | `.Keep` | yes | kept | not common, so the common prefix stops before them and nothing is lost |
 
 `.Block` exists for a caller that cannot afford a silent loss but does not want to
 give up the extra factoring.
 
-There is no policy that factors a pair of branches tagged `name="x"` and `name="y"`
-over the same production and keeps both tags, because factoring that production is
-exactly where one tag has to go.
+`.Merge` is for a caller that wants the pairs rather than the value. Two branches
+annotating the same production with different pair names say two things about it, and
+both are true at once, so a production two branches tag differently comes out
+annotated with both — which neither `.Strip` nor `.Block` can say, since they keep
+one run whole. Two *values* for one pair name is the case merging cannot hold, since
+that is what one name means: it keeps the first and records the contradiction in
+`Normalize_Options.conflicts` the way `.Block` records a loss, and reports nothing for
+the names that combine.
 
-A tag annotates the whole of the branch it closes, so it can never be a shared prefix.
+Where the pairs meet is narrow. A tag annotates the whole of the branch it closes, so
+two runs of pairs can only come together where two whole branches are one branch.
+`merge_tag_into` combines the pairs element by element wherever one copy of an element
+stands for several — dropping a duplicate branch, and building the leading and the
+trailing out of one branch while the others are freed — and each of those is reached
+only under `.Merge`, since the other policies either drop the tags on the way out or
+keep two branches apart precisely when they agree on them.
+
 In
 
 ```
@@ -154,8 +167,10 @@ use = p a `name="x"`
     ;
 ```
 
-both branches are a single tagged production, so under `.Keep` they are equal and
-collapse to one.
+each branch is one tagged production, so the pair of them is decided by the policy and
+not by the prefix: under `.Strip`, `.Block` and `.Merge` the annotated production is the
+same and they collapse to one branch, and under `.Keep` the tags are part of the
+production, so they stay two branches.
 
 ### The result tree
 

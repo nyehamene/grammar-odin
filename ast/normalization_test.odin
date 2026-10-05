@@ -680,6 +680,149 @@ test_normalize_rule_reports_a_tag_conflict :: proc(t: ^testing.T) {
 	}
 }
 
+// .Merge combines the pairs two branches give the same production, so one branch is
+// left. A pair name they give different values cannot hold both, which is the one
+// thing merging has to resolve rather than combine, and it resolves it the way .Block
+// does: by keeping the first value and saying so.
+@(test)
+test_normalize_rule_merges_tag_pairs_and_reports_a_conflicting_value :: proc(t: ^testing.T) {
+	opts := Normalize_Options{tags = .Merge}
+	defer destroy_normalize_options(&opts)
+
+	normalized, _ := normalize_one(t, "use = a `name=\"x\"`\n  | a `name=\"y\"`\n  ;\n", "use", &opts)
+	defer destroy_normalized_rule(&normalized)
+
+	expect_shape_normalized(t, normalized.leading, `nothing`)
+	expect_body_len(t, &normalized, 1)
+	expect_shape_rule(t, &normalized, `a`)
+
+	testing.expectf(t, len(opts.conflicts) == 1, "got %d conflicts, want 1", len(opts.conflicts))
+	if len(opts.conflicts) == 1 {
+		conflict := opts.conflicts[0]
+		testing.expect(t, conflict.name == "name", "the differing pair is the one written")
+		testing.expect(t, conflict.left == `"x"`, "the value that was kept")
+		testing.expect(t, conflict.right == `"y"`, "the other's")
+	}
+}
+
+// Pair names the branches do not share are not a contradiction, so under .Merge they
+// are combined rather than reported.
+@(test)
+test_normalize_rule_merges_differing_pair_names_without_reporting_one :: proc(t: ^testing.T) {
+	opts := Normalize_Options{tags = .Merge}
+	defer destroy_normalize_options(&opts)
+
+	normalized, _ := normalize_one(t, "use = a `kind=\"x\"`\n  | a `name=\"y\"`\n  ;\n", "use", &opts)
+	defer destroy_normalized_rule(&normalized)
+
+	expect_body_len(t, &normalized, 1)
+	testing.expect(t, len(opts.conflicts) == 0, ".Merge combines names, so it reports none")
+}
+
+// A tag closes the production it annotates, so it annotates whatever that production
+// turns out to be, the whole branch here. Two runs of pairs therefore meet only where
+// two whole branches are one branch, which is where merging happens.
+@(test)
+test_normalize_rule_merges_nothing_when_the_branches_stay_apart :: proc(t: ^testing.T) {
+	opts := Normalize_Options{tags = .Merge}
+	defer destroy_normalize_options(&opts)
+
+	normalized, _ := normalize_one(t, "use = a b `kind=\"x\"`\n  | a c `name=\"y\"`\n  ;\n", "use", &opts)
+	defer destroy_normalized_rule(&normalized)
+
+	expect_shape_normalized(t, normalized.leading, `nothing`)
+	expect_body_len(t, &normalized, 2)
+	expect_shape_normalized(t, normalized.body[0], `tag(kind="x" seq(a b))`)
+	expect_shape_normalized(t, normalized.body[1], `tag(name="y" seq(a c))`)
+	testing.expect(t, len(opts.conflicts) == 0, "the branches are different, so they disagree on nothing")
+}
+
+// The same rule without the tags has a leading to factor, and keeps one: the tag is
+// what stops the branches from being common, not the productions they annotate.
+@(test)
+test_normalize_rule_factors_the_leading_of_two_untagged_branches :: proc(t: ^testing.T) {
+	opts := Normalize_Options{tags = .Merge}
+	defer destroy_normalize_options(&opts)
+
+	normalized, _ := normalize_one(t, "use = a b\n  | a c\n  ;\n", "use", &opts)
+	defer destroy_normalized_rule(&normalized)
+
+	expect_shape_normalized(t, normalized.leading, `a`)
+	expect_body_len(t, &normalized, 2)
+	expect_shape_normalized(t, normalized.body[0], `b`)
+	expect_shape_normalized(t, normalized.body[1], `c`)
+}
+
+// tagged_pair builds one `name="value"` pair for a test.
+tagged_pair :: proc(name, value: string) -> Tag_Pair {
+	return Tag_Pair {
+		ident = Ident{name = name},
+		value = String_Lit{value = value},
+	}
+}
+
+// annotated builds a production annotating name with pairs, for a test. The caller
+// owns the run of pairs it ends up holding, which destroy_tagged frees.
+annotated :: proc(name: string, pairs: ..Tag_Pair) -> Production {
+	run := make([dynamic]Tag_Pair, len(pairs))
+	for pair, i in pairs {
+		run[i] = pair
+	}
+	delete(pairs)
+
+	annotated_expr := new(Production)
+	annotated_expr^ = Production(Ident{name = name})
+	return Tagged_Production {
+		expr = annotated_expr,
+		tag  = run,
+	}
+}
+
+// destroy_tagged frees a production made by annotated.
+destroy_tagged :: proc(prod: Production) {
+	if tagged, is_tagged := prod.(Tagged_Production); is_tagged {
+		delete(tagged.tag)
+	}
+}
+
+// Merging adds a pair that is not there yet and keeps one that is, so that which
+// branch the pair came from does not change what is written.
+@(test)
+test_merge_tag_into_combines_pairs_and_keeps_the_first_value :: proc(t: ^testing.T) {
+	dst := annotated("a", tagged_pair("kind", "x"), tagged_pair("u", "u"))
+	defer destroy_tagged(dst)
+	src := annotated("a", tagged_pair("kind", "y"), tagged_pair("name", "y"))
+	defer destroy_tagged(src)
+
+	opts := Normalize_Options{tags = .Merge}
+	defer destroy_normalize_options(&opts)
+
+	merge_tag_into(&dst, src, &opts)
+
+	into := dst.(Tagged_Production)
+	testing.expectf(t, len(into.tag) == 3, "got %d pairs, want 3", len(into.tag))
+	testing.expect(t, into.tag[0].ident.name == "kind", "the pair dst had comes first")
+	testing.expect(t, into.tag[0].value.value == "x", "and keeps its value")
+	testing.expect(t, into.tag[1].ident.name == "u", "the other pair dst had is kept")
+	testing.expect(t, into.tag[2].ident.name == "name", "and the one src had is added")
+
+	// The other policies drop the tags on the way out, so there is nothing to combine
+	// and nothing is allocated to do it.
+	stripped := Normalize_Options{tags = .Strip}
+	defer destroy_normalize_options(&stripped)
+
+	other := annotated("a", tagged_pair("kind", "x"))
+	defer destroy_tagged(other)
+	merge_tag_into(&other, src, &stripped)
+
+	testing.expectf(
+		t,
+		len(other.(Tagged_Production).tag) == 1,
+		"got %d pairs, want 1",
+		len(other.(Tagged_Production).tag),
+	)
+}
+
 // .Keep counts tags, so two branches that tag the same production differently do not
 // share it and both survive.
 @(test)

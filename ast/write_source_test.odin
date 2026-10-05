@@ -198,6 +198,64 @@ test_write_normalized_rule_writes_branches_when_a_middle_is_empty :: proc(t: ^te
 	)
 }
 
+// A tag two branches give the same production differently, but under different pair
+// names, is combined into one run: a production two branches annotate differently
+// comes out annotated with both, where the other policies drop all but the first.
+@(test)
+test_write_normalized_rule_merges_tag_pairs_under_the_merge_policy :: proc(t: ^testing.T) {
+	expect_written_normalized(
+		t,
+		"use = a `kind=\"x\"` | a `name=\"y\"`;",
+		"use",
+		"use = a `kind=\"x\"; name=\"y\"`;\n",
+		.Merge,
+	)
+	expect_written_normalized(
+		t,
+		"use = a `kind=\"x\"` | a `name=\"y\"`;",
+		"use",
+		"use = a;\n",
+		.Strip,
+	)
+	expect_written_normalized(
+		t,
+		"use = a `kind=\"x\"` | a `name=\"y\"`;",
+		"use",
+		"use = ( a `kind=\"x\"` | a `name=\"y\"` );\n",
+		.Keep,
+	)
+}
+
+// A pair name cannot carry two values, so the first is kept and the contradiction
+// is reported rather than written down as a second pair of the same name.
+@(test)
+test_write_normalized_rule_keeps_the_first_value_of_a_conflicting_pair :: proc(t: ^testing.T) {
+	src := "use = a `kind=\"x\"` | a `kind=\"y\"`;"
+	expect_written_normalized(t, src, "use", "use = a `kind=\"x\"`;\n", .Merge)
+	expect_written_normalized(t, src, "use", "use = a;\n", .Strip)
+	expect_written_normalized(
+		t,
+		src,
+		"use",
+		"use = ( a `kind=\"x\"` | a `kind=\"y\"` );\n",
+		.Keep,
+	)
+}
+
+// Merging is what happens instead of the other policies when two branches are one
+// branch, so it does not reach an element two branches kept apart: a tagged element
+// always closes its branch, so the pairs meet in a whole branch.
+@(test)
+test_write_normalized_rule_leaves_the_tags_of_two_different_elements_alone :: proc(t: ^testing.T) {
+	expect_written_normalized(
+		t,
+		"use = a b `kind=\"x\"` | a c `name=\"y\"`;",
+		"use",
+		"use = ( a b `kind=\"x\"` | a c `name=\"y\"` );\n",
+		.Merge,
+	)
+}
+
 @(test)
 test_has_empty_middle_reports_a_branch_the_leading_matched :: proc(t: ^testing.T) {
 	file, rules, scope, normalized := normalized_rule_of(t, "use = a b | a b c;", "use", .Strip)

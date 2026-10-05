@@ -281,9 +281,11 @@ transform_file :: proc(
 }
 
 // report_conflicts writes the tag conflicts recorded since the last file, then
-// drains them so that the next file reports only its own. Under .Block a tag two
-// branches give the same production differently is resolved by dropping one, and
-// this says so rather than leaving it to be noticed in the output.
+// drains them so that the next file reports only its own. A tag two branches give
+// the same production differently is resolved by dropping one of them, which is what
+// .Block does, and .Merge keeps the first value where a pair name cannot hold both.
+// Either way the contradiction is said out loud rather than left to be noticed in
+// the output.
 report_conflicts :: proc(opts: ^ast.Normalize_Options, name: string, stderr: io.Writer) {
 	for conflict in opts.conflicts[:] {
 		io.write_string(
@@ -360,13 +362,15 @@ parse_args :: proc(args: []string) -> (opts: Options, ok: bool, message: string)
 				opts.tags = .Strip
 			case "block":
 				opts.tags = .Block
+			case "merge":
+				opts.tags = .Merge
 			case "keep":
 				opts.tags = .Keep
 			case:
 				return opts,
 					false,
 					fmt.tprintf(
-						"error: unknown tag policy '%s': expected strip, block or keep\n",
+						"error: unknown tag policy '%s': expected strip, block, merge or keep\n",
 						policy,
 					),
 			}

@@ -104,15 +104,28 @@ Tag_Policy :: enum {
 	// Block compares as Strip does but records every tag a shared element disagrees
 	// on, for a caller that cannot afford to lose one quietly.
 	Block,
+	// Merge compares as Strip does, so two branches annotating the same production
+	// are one branch, but it combines their pairs instead of dropping them: a
+	// production two branches annotate differently comes out annotated with both.
+	// A pair name they give different values cannot hold both, so the first value
+	// is kept and the contradiction is recorded the way .Block records one.
+	Merge,
 	// Keep compares tags as part of the production, so two elements carrying
 	// different tags are not common and the common prefix stops before them. Every
 	// tag survives.
 	Keep,
 }
 
+// tags_survive reports whether a policy leaves tags in the written rule, which is
+// what .Merge and .Keep do and the other two do not.
+tags_survive :: proc(p: Tag_Policy) -> bool {
+	return p == .Merge || p == .Keep
+}
+
 // Tag_Conflict is one tag that two branches give the same production differently.
-// Factoring can resolve such a pair only by dropping one of them, which is what
-// .Block exists to report rather than to do silently.
+// Factoring can resolve such a pair only by dropping one of them or by keeping one
+// of the two values, which is what .Block exists to report and what .Merge keeps a
+// value for rather than losing it.
 Tag_Conflict :: struct {
 	pos:   int, // offset of the shared element the conflict is about
 	name:  string, // the tag pair that differs
@@ -646,7 +659,7 @@ normalize_tagged :: proc(
 	inner := normalize_expr(tagged.expr^, opts)
 	free(tagged.expr)
 
-	if opts.tags != .Keep {
+	if !tags_survive(opts.tags) {
 		delete(tagged.tag)
 		return inner
 	}
@@ -702,7 +715,10 @@ factor :: proc(alts: Alternative, opts: ^Normalize_Options) -> Normalized_Produc
 
 	kept := make([dynamic][dynamic]Production, 0, len(branches))
 	for branch in branches {
-		if holds_equal_branch(kept[:], branch[:], opts) {
+		if index, same := index_of_equal_branch(kept[:], branch[:], opts); same {
+			// The branch is one of the ones already kept, so what it annotates is
+			// combined into that one rather than thrown away with it.
+			merge_branch_tags(&kept[index], branch[:], opts)
 			destroy_expr_list(branch[:])
 			delete(branch)
 			continue
@@ -739,6 +755,20 @@ factor :: proc(alts: Alternative, opts: ^Normalize_Options) -> Normalized_Produc
 	// rather than by the order of two steps.
 	trailing_len := common_suffix_len(residuals[:], opts)
 
+	// Every branch but the first wrote its own copy of the leading and of the
+	// trailing, and only one copy of each survives. Under .Merge what they annotate
+	// is combined into the copies that survive, so an element two branches annotate
+	// differently comes out annotated with both.
+	for i in 1 ..< len(kept) {
+		for j in 0 ..< leading_len {
+			merge_tag_into(&kept[i][j], kept[0][j], opts)
+		}
+		for j in 0 ..< trailing_len {
+			tail := len(kept[i]) - trailing_len + j
+			merge_tag_into(&kept[i][tail], kept[0][len(kept[0])-trailing_len+j], opts)
+		}
+	}
+
 	factored := new(Factored)
 	factored^ = Factored {
 		leading = normalized_list(kept[0][:leading_len], alts.pos, opts),
@@ -769,15 +799,77 @@ factor :: proc(alts: Alternative, opts: ^Normalize_Options) -> Normalized_Produc
 }
 
 // holds_equal_branch reports whether branches already holds a branch equal to one.
-holds_equal_branch :: proc(
+// index_of_equal_branch returns the index of a branch already kept that branch is
+// equal to, and ok is false when there is none. Equal is decided by the policy: a
+// tag that only names a production does not make two branches different, unless the
+// policy keeps tags.
+index_of_equal_branch :: proc(
 	branches: [][dynamic]Production,
 	branch: []Production,
 	opts: ^Normalize_Options,
-) -> bool {
-	for other in branches {
-		if equal_production_list(other[:], branch, opts) do return true
+) -> (index: int, ok: bool) {
+	for other, i in branches {
+		if equal_production_list(other[:], branch, opts) do return i, true
 	}
-	return false
+	return 0, false
+}
+
+// merge_branch_tags combines what src annotates into what dst does, element by
+// element.
+merge_branch_tags :: proc(
+	dst: ^[dynamic]Production,
+	src: []Production,
+	opts: ^Normalize_Options,
+) {
+	if opts.tags != .Merge do return
+	for prod, i in src {
+		merge_tag_into(&dst[i], prod, opts)
+	}
+}
+
+// merge_tag_into adds the pairs src annotates a production with to the pairs dst
+// annotates it with. A pair name dst already carries keeps dst's value: two values
+// for one name is a contradiction, which equal_production has already recorded and
+// which there is no way to write down. Only .Merge calls this: .Keep keeps two
+// branches apart unless they annotate a production the same way, in which case
+// there is nothing to add, and the other two drop the tags on the way out.
+merge_tag_into :: proc(dst: ^Production, src: Production, opts: ^Normalize_Options) {
+	if opts.tags != .Merge do return
+
+	into, is_into := dst^.(Tagged_Production)
+	if !is_into do return
+	from, is_from := src.(Tagged_Production)
+	if !is_from do return
+	if len(from.tag) == 0 do return
+
+	old := into.tag
+	merged := make([dynamic]Tag_Pair, 0, len(old) + len(from.tag))
+	for pair in old {
+		append(&merged, pair)
+	}
+	for pair in from.tag {
+		if has_pair(merged[:], pair.ident.name) do continue
+		append(&merged, pair)
+	}
+	delete(old)
+
+	into.tag = merged
+	dst^ = into
+}
+
+// pair_index returns where a run of tag pairs carries one of the given name, and ok
+// is false when it carries none.
+pair_index :: proc(pairs: []Tag_Pair, name: string) -> (index: int, ok: bool) {
+	for pair, i in pairs {
+		if pair.ident.name == name do return i, true
+	}
+	return 0, false
+}
+
+// has_pair reports whether a run of tag pairs already carries one of the given name.
+has_pair :: proc(pairs: []Tag_Pair, name: string) -> bool {
+	_, ok := pair_index(pairs, name)
+	return ok
 }
 
 // common_prefix_len returns how many productions the start of every branch shares.
@@ -895,7 +987,11 @@ equal_production :: proc(a, b: Production, opts: ^Normalize_Options) -> bool {
 		switch opts.tags {
 		case .Strip:
 			return true
-		case .Block:
+		case .Block, .Merge:
+			// The annotated productions are the same, so a difference in the tags
+			// decides nothing about whether the two are one element. Block drops the
+			// difference and says so; Merge keeps one of the two values and combines
+			// the pairs, at the merge points rather than here.
 			if !equal_tag(x.tag[:], y.tag[:]) do record_tag_conflict(x, y, opts)
 			return true
 		case .Keep:
@@ -930,19 +1026,33 @@ equal_tag :: proc(a, b: []Tag_Pair) -> bool {
 // record_tag_conflict notes the first tag two tagged productions disagree on, once
 // per shared element however many comparisons find it.
 record_tag_conflict :: proc(a, b: Tagged_Production, opts: ^Normalize_Options) {
-	pairs := a.tag[:]
-	for pair, i in pairs {
-		disagrees :=
-			i >= len(b.tag) ||
-			pair.ident.name != b.tag[i].ident.name ||
-			pair.value.value != b.tag[i].value.value
-		if !disagrees do continue
+	// Under .Merge a pair name the other run does not carry is added rather than
+	// dropped, so it is not a conflict: only a name both runs carry with a different
+	// value is, because that is the one thing merging cannot hold. The other policies
+	// keep one of the two runs whole, so any difference costs a pair.
+	by_name := opts.tags == .Merge
+
+	for pair, i in a.tag {
+		other, has_other := i, i < len(b.tag)
+		if by_name {
+			other, has_other = pair_index(b.tag[:], pair.ident.name)
+		}
+
+		same :=
+			has_other &&
+			pair.ident.name == b.tag[other].ident.name &&
+			pair.value.value == b.tag[other].value.value
+		if same do continue
+
+		// A name only one run carries is the one difference that costs nothing, since
+		// merging adds it to the other run rather than dropping one of them.
+		if by_name && !has_other do continue
 
 		for seen in opts.conflicts[:] {
 			if seen.pos == pair.pos && seen.name == pair.ident.name do return
 		}
 		right := ""
-		if i < len(b.tag) do right = b.tag[i].value.value
+		if has_other do right = b.tag[other].value.value
 		append(
 			&opts.conflicts,
 			Tag_Conflict {

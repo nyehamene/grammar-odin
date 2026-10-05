@@ -34,11 +34,15 @@ PATH                Path to a file or directory.
                     no heading. The rest of the input is still read, so a call
                     in the selected declaration resolves as it would anywhere
                     else.
-    --tags POLICY   What factoring does with a tag: strip (the default), block
-                    or keep. Strip compares and drops tags, so two branches
+    --tags POLICY   What factoring does with a tag: strip (the default), block,
+                    merge or keep. Strip compares and drops tags, so two branches
                     tagged differently are the same production. Block does the
-                    same but reports every tag it had to drop. Keep counts tags,
-                    so a differing tag is not common and nothing is lost.
+                    same but reports every tag it had to drop. Merge compares the
+                    same way but combines the pairs instead of dropping them, so a
+                    production two branches tag differently comes out tagged with
+                    both; a pair name they give different values keeps the first
+                    value and is reported, as under block. Keep counts tags, so a
+                    differing tag is not common and nothing is lost.
 -h, --help          Print this message.
 
 Without --write the result goes to stdout, one file per `== path ==` heading.
