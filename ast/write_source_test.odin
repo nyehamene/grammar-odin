@@ -289,15 +289,31 @@ test_write_normalized_rule_is_idempotent :: proc(t: ^testing.T) {
 	testing.expectf(t, once == twice, "got %q then %q", once, twice)
 }
 
-// A nested alternative is factored and written back as a group where it stood.
+// A nested alternative is factored and written back where it stood, keeping the
+// leading and the trailing its own branches shared: they are what the branches had in
+// common, so leaving them out would write a language the rule does not match.
 @(test)
-test_write_normalized_rule_writes_a_nested_group :: proc(t: ^testing.T) {
-	expect_written_normalized(t, "use = { x a | x b };", "use", "use = { ( a | b ) };\n", .Strip)
+test_write_normalized_rule_writes_a_nested_group_with_its_parts :: proc(t: ^testing.T) {
+	expect_written_normalized(t, "use = { x a | x b };", "use", "use = { x ( a | b ) };\n", .Strip)
 	expect_written_normalized(
 		t,
 		"use = [ x a | x b ];",
 		"use",
-		"use = [ ( a | b ) ];\n",
+		"use = [ x ( a | b ) ];\n",
+		.Strip,
+	)
+	expect_written_normalized(
+		t,
+		"use = x { a q | b q };",
+		"use",
+		"use = x { ( a | b ) q };\n",
+		.Strip,
+	)
+	expect_written_normalized(
+		t,
+		"use = x { p a | p b };",
+		"use",
+		"use = x { p ( a | b ) };\n",
 		.Strip,
 	)
 }

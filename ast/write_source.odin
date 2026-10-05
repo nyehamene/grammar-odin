@@ -26,7 +26,14 @@ import "core:strings"
 // that writes a normalized rule uses this to say so rather than to leave the
 // reader with a file that will not load.
 Has_Empty_Middle :: proc(n: Normalized_Rule) -> bool {
-	for middle in n.body {
+	return has_empty_middle(n.body[:])
+}
+
+// has_empty_middle reports whether a factored production holds a middle that its
+// leading and its trailing left nothing in. Whether the production is a whole rule or
+// a group inside one makes no difference to that, or to there being no way to write it.
+has_empty_middle :: proc(body: []Normalized_Production) -> bool {
+	for middle in body {
 		if is_nothing(middle) do return true
 	}
 	return false
@@ -293,9 +300,21 @@ write_normalized :: proc(w: io.Writer, n: Normalized_Production) {
 	case Production:
 		write_production(w, it)
 	case ^Factored:
+		// A factored production nested in another one keeps its own leading and its
+		// own trailing. They are the productions every branch of the alternative it
+		// came from shared, so leaving them out drops what the branches had in common
+		// and writes a language the rule does not match.
+		if !is_nothing(it.leading) {
+			write_normalized(w, it.leading)
+			io.write_string(w, " ")
+		}
 		io.write_string(w, "( ")
 		write_choice(w, it.body[:])
 		io.write_string(w, " )")
+		if !is_nothing(it.trailing) {
+			io.write_string(w, " ")
+			write_normalized(w, it.trailing)
+		}
 	case ^Grouped:
 		write_grouped(w, it)
 	}
