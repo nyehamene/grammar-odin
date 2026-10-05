@@ -26,8 +26,8 @@ Scope :: struct {
 // Normalized_Production is a production of the normalized tree: a production that
 // stands for itself, an alternative that has been factored, or a production that
 // holds productions, each of them normalized. A nil value is nothing at all, which
-// is how an absent head or tail and an empty middle between a head and a tail are
-// written.
+// is how an absent leading or trailing production, and an empty middle left between
+// them, are written.
 Normalized_Production :: struct {
 	kind: union {
 		Nothing,
@@ -37,8 +37,8 @@ Normalized_Production :: struct {
 	},
 }
 
-// Nothing is the absence of a production: no common head, no common tail, and
-// nothing left between them.
+// Nothing is the absence of a production: nothing is shared at the start of every
+// branch, nothing at the end, and nothing is left in between.
 Nothing :: enum {
 	absent,
 }
@@ -52,14 +52,14 @@ nothing :: proc() -> Normalized_Production {
 // Factored is an alternative split into the productions every branch shares at its
 // start, the productions they do not share, and the productions every branch shares
 // at its end. body holds one entry per surviving branch, in source order, and is
-// what a consumer switches on; a nil entry is a branch the head and tail matched on
-// their own. head and tail are nil when nothing is shared, so a rule with one branch
+// what a consumer switches on; a nil entry is a branch the leading and the trailing
+// matched on their own. Both are nil when nothing is shared, so a rule with one branch
 // or none factors to a body of a single entry and nothing else.
 Factored :: struct {
-	head: Normalized_Production,
-	body: [dynamic]Normalized_Production,
-	tail: Normalized_Production,
-	pos:  int,
+	leading:  Normalized_Production,
+	body:     [dynamic]Normalized_Production,
+	trailing: Normalized_Production,
+	pos:      int,
 }
 
 // Group_Shape is what a Grouped production wraps. A tag is one of them, since a
@@ -86,12 +86,12 @@ Grouped :: struct {
 // fields of Factored rather than embedding it, so that the position of the rule
 // does not collide with the position of the body.
 Normalized_Rule :: struct {
-	ident:  Ident,
-	params: [dynamic]Ident,
-	head:   Normalized_Production,
-	body:   [dynamic]Normalized_Production,
-	tail:   Normalized_Production,
-	pos:    int,
+	ident:    Ident,
+	params:   [dynamic]Ident,
+	leading:  Normalized_Production,
+	body:     [dynamic]Normalized_Production,
+	trailing: Normalized_Production,
+	pos:      int,
 }
 
 // Tag_Policy says what factoring does with a tag. A tag names a production for a
@@ -486,7 +486,7 @@ has_call :: proc(p: Production) -> bool {
 //
 // ok is false when the expansion the rule was normalized against did not finish. A
 // call left in place is opaque to factoring, which treats it like any other element,
-// so it may well sit in a common head; ok says the normal form rests on an expansion
+// so it may well sit in a leading sequence; ok says the normal form rests on an expansion
 // that is incomplete, not that the factoring is.
 //
 // The rule that comes back owns its parameter list and its body, and the caller
@@ -501,8 +501,8 @@ normalize_rule :: proc(
 	normalized := Normalized_Rule {
 		ident  = r.ident,
 		params = clone_idents(r.params[:]),
-		head   = nothing(),
-		tail   = nothing(),
+		leading   = nothing(),
+		trailing   = nothing(),
 		pos    = r.pos,
 	}
 
@@ -511,9 +511,9 @@ normalize_rule :: proc(
 	#partial switch it in root.kind {
 	case ^Factored:
 		// The three parts move out and the node they were read from goes with them.
-		normalized.head = it.head
+		normalized.leading = it.leading
 		normalized.body = it.body
-		normalized.tail = it.tail
+		normalized.trailing = it.trailing
 		free(it)
 	case:
 		normalized.body = make([dynamic]Normalized_Production, 1)
@@ -525,15 +525,26 @@ normalize_rule :: proc(
 // destroy_normalized_rule frees a rule normalize_rule returned.
 destroy_normalized_rule :: proc(n: ^Normalized_Rule) {
 	delete(n.params)
-	destroy_normalized(&n.head)
+	destroy_normalized(&n.leading)
 	destroy_normalized_list(n.body[:])
 	delete(n.body)
-	destroy_normalized(&n.tail)
+	destroy_normalized(&n.trailing)
 }
 
 // destroy_normalize_options frees what a pass found.
 destroy_normalize_options :: proc(opts: ^Normalize_Options) {
-	delete(opts.conflicts)
+	list := opts.conflicts
+	opts.conflicts = nil
+	delete(list)
+}
+
+// Clear_Conflicts drops the tag conflicts a pass has recorded so far and frees
+// the list. A caller that transforms file after file reports each file's own
+// conflicts this way, rather than every one seen so far.
+Clear_Conflicts :: proc(opts: ^Normalize_Options) {
+	list := opts.conflicts
+	opts.conflicts = nil
+	delete(list)
 }
 
 // destroy_normalized frees a production of the normalized tree.
@@ -544,10 +555,10 @@ destroy_normalized :: proc(n: ^Normalized_Production) {
 		destroy_expr(it)
 	case Nothing:
 	case ^Factored:
-		destroy_normalized(&it.head)
+		destroy_normalized(&it.leading)
 		destroy_normalized_list(it.body[:])
 		delete(it.body)
-		destroy_normalized(&it.tail)
+		destroy_normalized(&it.trailing)
 		free(it)
 	case ^Grouped:
 		destroy_normalized_list(it.exprs[:])
@@ -654,9 +665,8 @@ normalize_tagged :: proc(
 
 // normalized_list returns the one production a list of elements describes, with each
 // element normalized. A single element stands alone, as it does in a parsed branch.
-// An empty list is a middle that the head and the tail left between them, which the
-// parser never writes but a factored alternative needs, and is nil: nothing sits
-// between them.
+// An empty list is a middle that the leading and the trailing left between them,
+// which the parser never writes but a factored alternative needs, and is nil.
 //
 // The list is taken over.
 normalized_list :: proc(
@@ -706,9 +716,9 @@ factor :: proc(alts: Alternative, opts: ^Normalize_Options) -> Normalized_Produc
 	if len(kept) < 2 {
 		factored := new(Factored)
 		factored^ = Factored {
-			head = nothing(),
+			leading = nothing(),
 			body = make([dynamic]Normalized_Production, 1),
-			tail = nothing(),
+			trailing = nothing(),
 			pos  = alts.pos,
 		}
 		factored.body[0] = normalized_list(kept[0][:], alts.pos, opts)
@@ -717,37 +727,38 @@ factor :: proc(alts: Alternative, opts: ^Normalize_Options) -> Normalized_Produc
 		return Normalized_Production{kind = factored}
 	}
 
-	head_len := common_prefix_len(kept[:], opts)
+	leading_len := common_prefix_len(kept[:], opts)
 
 	residuals := make([dynamic][]Production, len(kept))
 	for b, i in kept {
-		residuals[i] = kept[i][head_len:]
+		residuals[i] = kept[i][leading_len:]
 	}
-	// The tail is the common suffix of what the head left, which stops at the
-	// shortest remainder, so head and tail cannot overlap. The head is maximal, so
-	// that already follows; going through the common suffix keeps it true by
-	// construction rather than by the order of two steps.
-	tail_len := common_suffix_len(residuals[:], opts)
+	// The trailing is the common suffix of what the leading left, which stops at the
+	// shortest remainder, so the two cannot overlap. The leading is already maximal,
+	// so that follows; going through the common suffix keeps it true by construction
+	// rather than by the order of two steps.
+	trailing_len := common_suffix_len(residuals[:], opts)
 
 	factored := new(Factored)
 	factored^ = Factored {
-		head = normalized_list(kept[0][:head_len], alts.pos, opts),
-		tail = nothing(),
+		leading = normalized_list(kept[0][:leading_len], alts.pos, opts),
+		trailing = nothing(),
 		pos  = alts.pos,
 	}
-	factored.tail = normalized_list(residuals[0][len(residuals[0])-tail_len:], alts.pos, opts)
+	factored.trailing = normalized_list(residuals[0][len(residuals[0])-trailing_len:], alts.pos, opts)
 	factored.body = make([dynamic]Normalized_Production, 0, len(residuals))
 	for i in 0 ..< len(residuals) {
-		middle := residuals[i][:len(residuals[i])-tail_len]
+		middle := residuals[i][:len(residuals[i])-trailing_len]
 		append(&factored.body, normalized_list(middle, alts.pos, opts))
 	}
 
-	// Every branch but the first lent its head and its tail to a duplicate of what
-	// the shared head and the shared tail already hold, so those productions are
-	// freed instead of left behind. Its middle moved into body above.
+	// Every branch but the first lent the first and last elements of its middle to
+	// duplicates of what the shared leading and the shared trailing already hold, so
+	// those productions are freed instead of left behind. Its own middle moved into
+	// body above.
 	for i in 1 ..< len(kept) {
-		destroy_expr_list(kept[i][:head_len])
-		destroy_expr_list(residuals[i][len(residuals[i])-tail_len:])
+		destroy_expr_list(kept[i][:leading_len])
+		destroy_expr_list(residuals[i][len(residuals[i])-trailing_len:])
 		delete(kept[i])
 	}
 	delete(kept[0])
@@ -791,8 +802,8 @@ common_prefix_len :: proc(branches: [][dynamic]Production, opts: ^Normalize_Opti
 }
 
 // common_suffix_len returns how many productions the end of every branch shares. It
-// stops at the shortest branch, which is what keeps a common tail from running into
-// a common head.
+// stops at the shortest branch, which is what keeps a common trailing from running
+// into a common leading.
 common_suffix_len :: proc(branches: [][]Production, opts: ^Normalize_Options) -> int {
 	n := 0
 	shortest := len(branches[0])
@@ -949,4 +960,26 @@ record_tag_conflict :: proc(a, b: Tagged_Production, opts: ^Normalize_Options) {
 // whoever allocated it.
 destroy_expr_list :: proc(prods: []Production) {
 	for prod in prods do destroy_expr(prod)
+}
+
+// Build_Scope returns a scope holding the given rules, for a caller that
+// resolves calls itself rather than through expand_rule. A rule that is already
+// in the scope is replaced by the later one, which is what declaring a name twice
+// in a namespace means.
+//
+// The scope owns its map and is freed with Destroy_Scope. It does not own the
+// rules: each one keeps the arrays and the source views it was parsed from, so
+// those have to outlive the scope.
+Build_Scope :: proc(rules: []Rule) -> Scope {
+	scope: Scope
+	for rule in rules {
+		scope.rules_by_name[rule.ident.name] = rule
+	}
+	return scope
+}
+
+// Destroy_Scope frees the map a scope owns. The rules it held are not freed: they
+// belong to whatever they were parsed from.
+Destroy_Scope :: proc(s: ^Scope) {
+	delete(s.rules_by_name)
 }

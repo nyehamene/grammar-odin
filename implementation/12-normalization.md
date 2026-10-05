@@ -100,17 +100,17 @@ use = p a q
     ;
 ```
 
-gives a head of `p`, a body of `a` and `b`, and a tail of `q`.
+gives a leading of `p`, a body of `a` and `b`, and a trailing of `q`.
 
-A head is taken as far as it goes, so a branch it runs out of leaves an empty middle
-rather than a shorter head: `a b | a b c` has a head of `a b` and a body of nothing
-and `c`. The empty middle is the point at which a branch is matched by the head and
-the tail alone.
+A leading is taken as far as it goes, so a branch it runs out of leaves an empty middle
+rather than a shorter leading: `a b | a b c` has a leading of `a b` and a body of nothing
+and `c`. The empty middle is the point at which a branch is matched by the leading and
+the trailing alone.
 
 An alternative is factored wherever one is written, including inside a group, a
 repetition, an optional or a tag, since that is where a choice is written.
 
-Under two distinct branches left, there is nothing to share, so `head` and `tail` are
+Under two distinct branches left, there is nothing to share, so `leading` and `trailing` are
 absent and `body` holds the single branch. That covers both a rule with no `|` at all
 and a rule whose branches were all the same.
 
@@ -161,10 +161,10 @@ collapse to one.
 
 A normalized production is one of four things:
 
-- **absent**, which is how an absent head or tail and an empty middle are written;
+- **absent**, which is how an absent leading or trailing and an empty middle are written;
 - a **production** standing for itself, for a leaf and for a call, since a call only
   survives an expansion that did not finish;
-- a **factored alternative**, holding a head, a list of middles and a tail;
+- a **factored alternative**, holding a leading, a list of middles and a trailing;
 - a **grouped production**, holding normalized elements, for a sequence, a group, an
   optional, a repetition or a tagged production.
 
@@ -177,8 +177,8 @@ them has a meaningful answer for a normalized node, since nothing consumes one y
 
 Normalization takes the tree expansion produced over, as `expand_production` does.
 Nodes are moved rather than copied, so one branch array is split three ways: what
-becomes the shared head, what becomes each middle, and what becomes the shared tail.
-The productions of a duplicate head or tail in a branch that is not the first are
+becomes the shared leading, what becomes each middle, and what becomes the shared trailing.
+The productions of a duplicate leading or trailing in a branch that is not the first are
 freed rather than left behind. The caller frees one tree with
 `destroy_normalized_rule`.
 
@@ -202,7 +202,7 @@ over is not written down yet either.
 - [x] `ast`: an expanded rule owns its body, and the scope is left untouched
 - [x] `ast`: an unresolvable, cross-namespace or cyclic call reported instead of
       expanded
-- [x] `ast`: the normal form, a common head and tail factored out of every
+- [x] `ast`: the normal form, a common leading and trailing factored out of every
       alternative in the tree
 - [x] `ast`: a duplicate branch dropped, an overlapping one kept
 - [x] `ast`: three tag policies, stripping by default

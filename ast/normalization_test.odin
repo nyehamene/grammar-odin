@@ -299,13 +299,13 @@ shape_normalized_into :: proc(b: ^strings.Builder, n: Normalized_Production) {
 		shape_into(b, it)
 	case ^Factored:
 		strings.write_string(b, "factor(")
-		shape_normalized_into(b, it.head)
+		shape_normalized_into(b, it.leading)
 		for part in it.body[:] {
 			strings.write_string(b, " | ")
 			shape_normalized_into(b, part)
 		}
 		strings.write_string(b, " ; ")
-		shape_normalized_into(b, it.tail)
+		shape_normalized_into(b, it.trailing)
 		strings.write_rune(b, ')')
 	case ^Grouped:
 		switch it.shape {
@@ -348,8 +348,9 @@ shape_normalized_group :: proc(
 	strings.write_rune(b, ')')
 }
 
-// branch_shapes_into writes the shape of each production a head, a middle or a tail
-// contributes to a branch: the elements of a sequence, or the one production it is.
+// branch_shapes_into writes the shape of each production the leading, a middle or the
+// trailing contributes to a branch: the elements of a sequence, or the one production it
+// is.
 // A tag is left out, since a name for a production is not part of what a rule
 // matches.
 branch_shapes_into :: proc(b: ^strings.Builder, n: Normalized_Production) {
@@ -372,25 +373,25 @@ branch_shapes_into :: proc(b: ^strings.Builder, n: Normalized_Production) {
 	}
 }
 
-// shape_rule writes out every branch a normalized rule matches, the head and the tail
-// put back around each middle, so that a fact about what the rule matches can be
-// asserted without asserting about how it was factored. The caller owns the result.
+// shape_rule writes out every branch a normalized rule matches, the leading and the
+// trailing put back around each middle, so that a fact about what the rule matches can
+// be asserted without asserting about how it was factored. The caller owns the result.
 shape_rule :: proc(n: ^Normalized_Rule) -> string {
-	head := strings.builder_make(context.temp_allocator)
-	defer strings.builder_destroy(&head)
-	tail := strings.builder_make(context.temp_allocator)
-	defer strings.builder_destroy(&tail)
+	leading := strings.builder_make(context.temp_allocator)
+	defer strings.builder_destroy(&leading)
+	trailing := strings.builder_make(context.temp_allocator)
+	defer strings.builder_destroy(&trailing)
 	branches := strings.builder_make(context.temp_allocator)
 	defer strings.builder_destroy(&branches)
 
-	branch_shapes_into(&head, n.head)
-	branch_shapes_into(&tail, n.tail)
+	branch_shapes_into(&leading, n.leading)
+	branch_shapes_into(&trailing, n.trailing)
 
 	for middle, i in n.body[:] {
 		if i > 0 do strings.write_string(&branches, "| ")
-		strings.write_string(&branches, strings.to_string(head))
+		strings.write_string(&branches, strings.to_string(leading))
 		branch_shapes_into(&branches, middle)
-		strings.write_string(&branches, strings.to_string(tail))
+		strings.write_string(&branches, strings.to_string(trailing))
 	}
 	return strings.clone(strings.trim_space(strings.to_string(branches)))
 }
@@ -422,11 +423,11 @@ test_normalize_rule_factors_a_common_head_and_tail :: proc(t: ^testing.T) {
 	defer destroy_normalized_rule(&normalized)
 
 	testing.expect(t, ok, "a body with no call expands to the end")
-	expect_shape_normalized(t, normalized.head, `p`)
+	expect_shape_normalized(t, normalized.leading, `p`)
 	expect_body_len(t, &normalized, 2)
 	expect_shape_normalized(t, normalized.body[0], `a`)
 	expect_shape_normalized(t, normalized.body[1], `b`)
-	expect_shape_normalized(t, normalized.tail, `q`)
+	expect_shape_normalized(t, normalized.trailing, `q`)
 	expect_shape_rule(t, &normalized, `p a q | p b q`)
 }
 
@@ -438,10 +439,10 @@ test_normalize_rule_factors_a_head_only :: proc(t: ^testing.T) {
 	normalized, _ := normalize_one(t, `use = x a | x b;`, "use", &opts)
 	defer destroy_normalized_rule(&normalized)
 
-	expect_shape_normalized(t, normalized.head, `x`)
+	expect_shape_normalized(t, normalized.leading, `x`)
 	expect_shape_normalized(t, normalized.body[0], `a`)
 	expect_shape_normalized(t, normalized.body[1], `b`)
-	expect_shape_normalized(t, normalized.tail, `nothing`)
+	expect_shape_normalized(t, normalized.trailing, `nothing`)
 	expect_shape_rule(t, &normalized, `x a | x b`)
 }
 
@@ -453,10 +454,10 @@ test_normalize_rule_factors_a_tail_only :: proc(t: ^testing.T) {
 	normalized, _ := normalize_one(t, `use = a x | b x;`, "use", &opts)
 	defer destroy_normalized_rule(&normalized)
 
-	expect_shape_normalized(t, normalized.head, `nothing`)
+	expect_shape_normalized(t, normalized.leading, `nothing`)
 	expect_shape_normalized(t, normalized.body[0], `a`)
 	expect_shape_normalized(t, normalized.body[1], `b`)
-	expect_shape_normalized(t, normalized.tail, `x`)
+	expect_shape_normalized(t, normalized.trailing, `x`)
 	expect_shape_rule(t, &normalized, `a x | b x`)
 }
 
@@ -468,15 +469,15 @@ test_normalize_rule_factors_nothing_when_nothing_is_shared :: proc(t: ^testing.T
 	normalized, _ := normalize_one(t, `use = a | b;`, "use", &opts)
 	defer destroy_normalized_rule(&normalized)
 
-	expect_shape_normalized(t, normalized.head, `nothing`)
+	expect_shape_normalized(t, normalized.leading, `nothing`)
 	expect_shape_normalized(t, normalized.body[0], `a`)
 	expect_shape_normalized(t, normalized.body[1], `b`)
-	expect_shape_normalized(t, normalized.tail, `nothing`)
+	expect_shape_normalized(t, normalized.trailing, `nothing`)
 	expect_shape_rule(t, &normalized, `a | b`)
 }
 
-// A head is taken as far as it goes, so a branch it runs out of leaves an empty
-// middle rather than a shorter head.
+// A leading is taken as far as it goes, so a branch it runs out of leaves an empty
+// middle rather than a shorter leading.
 @(test)
 test_normalize_rule_leaves_a_branch_the_head_exhausts_empty :: proc(t: ^testing.T) {
 	opts := Normalize_Options{}
@@ -485,7 +486,7 @@ test_normalize_rule_leaves_a_branch_the_head_exhausts_empty :: proc(t: ^testing.
 	normalized, _ := normalize_one(t, `use = a b | a b c;`, "use", &opts)
 	defer destroy_normalized_rule(&normalized)
 
-	expect_shape_normalized(t, normalized.head, `seq(a b)`)
+	expect_shape_normalized(t, normalized.leading, `seq(a b)`)
 	expect_body_len(t, &normalized, 2)
 	expect_shape_normalized(t, normalized.body[0], `nothing`)
 	expect_shape_normalized(t, normalized.body[1], `c`)
@@ -518,13 +519,13 @@ test_normalize_rule_keeps_branches_that_only_overlap :: proc(t: ^testing.T) {
 	normalized, _ := normalize_one(t, `use = a | a b;`, "use", &opts)
 	defer destroy_normalized_rule(&normalized)
 
-	// The `a` both branches start with becomes the head, and neither branch is
+	// The `a` both branches start with becomes the leading, and neither branch is
 	// dropped for having the other as a prefix.
-	expect_shape_normalized(t, normalized.head, `a`)
+	expect_shape_normalized(t, normalized.leading, `a`)
 	expect_body_len(t, &normalized, 2)
 	expect_shape_normalized(t, normalized.body[0], `nothing`)
 	expect_shape_normalized(t, normalized.body[1], `b`)
-	expect_shape_normalized(t, normalized.tail, `nothing`)
+	expect_shape_normalized(t, normalized.trailing, `nothing`)
 	expect_shape_rule(t, &normalized, `a | a b`)
 }
 
@@ -537,9 +538,9 @@ test_normalize_rule_gives_one_branch_when_every_branch_is_equal :: proc(t: ^test
 	defer destroy_normalized_rule(&normalized)
 
 	expect_body_len(t, &normalized, 1)
-	expect_shape_normalized(t, normalized.head, `nothing`)
+	expect_shape_normalized(t, normalized.leading, `nothing`)
 	expect_shape_normalized(t, normalized.body[0], `seq(a b)`)
-	expect_shape_normalized(t, normalized.tail, `nothing`)
+	expect_shape_normalized(t, normalized.trailing, `nothing`)
 	expect_shape_rule(t, &normalized, `a b`)
 }
 
@@ -552,14 +553,14 @@ test_normalize_rule_gives_one_branch_without_alternatives :: proc(t: ^testing.T)
 	defer destroy_normalized_rule(&normalized)
 
 	expect_body_len(t, &normalized, 1)
-	expect_shape_normalized(t, normalized.head, `nothing`)
+	expect_shape_normalized(t, normalized.leading, `nothing`)
 	expect_shape_normalized(t, normalized.body[0], `seq(a b)`)
-	expect_shape_normalized(t, normalized.tail, `nothing`)
+	expect_shape_normalized(t, normalized.trailing, `nothing`)
 	expect_shape_rule(t, &normalized, `a b`)
 }
 
-// Factoring runs on the body an expansion produced, so a call that stood for a tail
-// is the tail once it is inlined.
+// Factoring runs on the body an expansion produced, so a call that stood for a trailing
+// is the trailing once it is inlined.
 @(test)
 test_normalize_rule_facts_an_expanded_body :: proc(t: ^testing.T) {
 	opts := Normalize_Options{}
@@ -578,10 +579,10 @@ test_normalize_rule_facts_an_expanded_body :: proc(t: ^testing.T) {
 	defer destroy_normalized_rule(&normalized)
 
 	testing.expect(t, ok, "every call of use should expand")
-	expect_shape_normalized(t, normalized.head, `nothing`)
+	expect_shape_normalized(t, normalized.leading, `nothing`)
 	expect_shape_normalized(t, normalized.body[0], `"a"`)
 	expect_shape_normalized(t, normalized.body[1], `"b"`)
-	expect_shape_normalized(t, normalized.tail, `q`)
+	expect_shape_normalized(t, normalized.trailing, `q`)
 	expect_shape_rule(t, &normalized, `"a" q | "b" q`)
 }
 
@@ -652,7 +653,7 @@ test_normalize_rule_keeps_branches_apart_when_stripped :: proc(t: ^testing.T) {
 	)
 	defer destroy_normalized_rule(&normalized)
 
-	expect_shape_normalized(t, normalized.head, `nothing`)
+	expect_shape_normalized(t, normalized.leading, `nothing`)
 	expect_body_len(t, &normalized, 2)
 	expect_shape_normalized(t, normalized.body[0], `seq(a b)`)
 	expect_shape_normalized(t, normalized.body[1], `seq(a c)`)
@@ -689,7 +690,7 @@ test_normalize_rule_keeps_tags_and_both_branches :: proc(t: ^testing.T) {
 	normalized, _ := normalize_one(t, "use = a `name=\"x\"`\n  | a `name=\"y\"`\n  ;\n", "use", &opts)
 	defer destroy_normalized_rule(&normalized)
 
-	expect_shape_normalized(t, normalized.head, `nothing`)
+	expect_shape_normalized(t, normalized.leading, `nothing`)
 	expect_body_len(t, &normalized, 2)
 	expect_shape_normalized(t, normalized.body[0], `tag(name="x" a)`)
 	expect_shape_normalized(t, normalized.body[1], `tag(name="y" a)`)
@@ -726,7 +727,7 @@ test_normalize_rule_reports_an_unfinished_expansion :: proc(t: ^testing.T) {
 	defer destroy_normalized_rule(&normalized)
 
 	testing.expect(t, !ok, "an undeclared callee cannot be expanded")
-	expect_shape_normalized(t, normalized.head, `call(nope, "a")`)
+	expect_shape_normalized(t, normalized.leading, `call(nope, "a")`)
 	expect_body_len(t, &normalized, 2)
 	expect_shape_normalized(t, normalized.body[0], `x`)
 	expect_shape_normalized(t, normalized.body[1], `y`)
