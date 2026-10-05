@@ -88,7 +88,7 @@ expect_argv :: proc(t: ^testing.T, args: []string, stdin: io.Reader, code: int, 
 @(test)
 test_normalize_writes_leading_a_group_and_trailing :: proc(t: ^testing.T) {
 	src := "use = p a q | p b q;\n"
-	expect_argv(t, []string{"--stdin"}, stdin_from(src), 0, "== <stdin> ==\nuse = p ( a | b ) q;\n")
+	expect_argv(t, []string{"--stdin"}, stdin_from(src), 0, "== <stdin> ==\nuse = p\n      ( a | b )\n      q\n    ;\n")
 }
 
 // A file of rules comes out under a heading per file.
@@ -172,7 +172,11 @@ test_normalize_reports_an_empty_middle :: proc(t: ^testing.T) {
 	defer destroy_result(&res)
 	testing.expectf(t, res.code == 1, "exit 1, got %d", res.code)
 	testing.expect(t, strings.contains(res.stderr, "written as its branches"), res.stderr)
-	testing.expect(t, strings.contains(res.stdout, "use = a b | a b c;"), res.stdout)
+	testing.expect(
+		t,
+		strings.contains(res.stdout, "use = a b\n    | a b c\n    ;"),
+		res.stdout,
+	)
 	testing.expect(t, !strings.contains(res.stdout, "| c )"), "the empty middle should not be written")
 }
 
@@ -187,32 +191,39 @@ test_normalize_reports_an_unexpanded_call :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(res.stdout, "<nope \"a\">"), res.stdout)
 }
 
-// Normalizing is idempotent on anything without an empty middle, which is what
-// makes --write settle after one pass.
+// expect_file_holds fails the test unless the file at path holds want.
+expect_file_holds :: proc(t: ^testing.T, path, want, why: string) {
+	data, read_ok := os.read_entire_file(path, context.allocator)
+	defer delete(data)
+	testing.expect(t, read_ok == nil, "the rewritten file should be readable")
+	testing.expectf(t, string(data) == want, "%s: got %q", why, string(data))
+}
+
+// A factored rule written out is a sequence holding a group, and factoring only ever
+// looks at alternatives, so the parts it was factored into cannot be read back out of
+// it. The first pass writes the rule with its parts on lines of their own, the second
+// writes it as the sequence it now reads as, and a third finds nothing left to change.
 @(test)
-test_normalize_is_idempotent :: proc(t: ^testing.T) {
+test_normalize_settles_after_a_second_write :: proc(t: ^testing.T) {
 	dir := scratch_dir(t, "cmd/normalize/testdata/scratch_idempotent")
 	defer os.remove_all(dir)
 	path := concat({dir, "/n.grammar"})
 	write_file(t, path, "use = p a q | p b q;\n")
 
-	first := run_normalize([]string{"--write", path}, stdin_unused())
-	defer destroy_result(&first)
-	testing.expect(t, first.code == 0, "the first pass should be clean: %s", first.stderr)
+	pass := run_normalize([]string{"--write", path}, stdin_unused())
+	defer destroy_result(&pass)
+	testing.expect(t, pass.code == 0, "the first pass should be clean: %s", pass.stderr)
+	expect_file_holds(t, path, "use = p\n      ( a | b )\n      q\n    ;\n", "the first pass")
 
-	second := run_normalize([]string{"--write", path}, stdin_unused())
-	defer destroy_result(&second)
-	testing.expect(t, second.code == 0, "the second pass should be clean: %s", second.stderr)
+	pass = run_normalize([]string{"--write", path}, stdin_unused())
+	defer destroy_result(&pass)
+	testing.expect(t, pass.code == 0, "the second pass should be clean: %s", pass.stderr)
+	expect_file_holds(t, path, "use = p ( a | b ) q;\n", "the second pass")
 
-	data, read_ok := os.read_entire_file(path, context.allocator)
-	defer delete(data)
-	testing.expect(t, read_ok == nil, "the rewritten file should be readable")
-	testing.expectf(
-		t,
-		string(data) == "use = p ( a | b ) q;\n",
-		"got %q",
-		string(data),
-	)
+	pass = run_normalize([]string{"--write", path}, stdin_unused())
+	defer destroy_result(&pass)
+	testing.expect(t, pass.code == 0, "the third pass should be clean: %s", pass.stderr)
+	expect_file_holds(t, path, "use = p ( a | b ) q;\n", "the third pass")
 }
 
 // A rule in one directory is not resolved against a rule of the same name in
@@ -300,7 +311,12 @@ test_normalize_select_picks_one_declaration :: proc(t: ^testing.T) {
 	res := run_normalize([]string{"--select", "2:1", path}, stdin_unused())
 	defer destroy_result(&res)
 	testing.expectf(t, res.code == 0, "exit 0, got %d (stderr: %s)", res.code, res.stderr)
-	testing.expectf(t, res.stdout == "use = p ( a | b ) q;\n", "got %q", res.stdout)
+	testing.expectf(
+		t,
+		res.stdout == "use = p\n      ( a | b )\n      q\n    ;\n",
+		"got %q",
+		res.stdout,
+	)
 }
 
 // A rule the selected declaration is not is left out entirely rather than printed
@@ -330,7 +346,12 @@ test_normalize_select_resolves_against_the_whole_scope :: proc(t: ^testing.T) {
 	res := run_normalize([]string{"--select", "2:1", path}, stdin_unused())
 	defer destroy_result(&res)
 	testing.expectf(t, res.code == 0, "exit 0, got %d (stderr: %s)", res.code, res.stderr)
-	testing.expectf(t, res.stdout == "use = ( \"a\" | \"b\" ) q;\n", "got %q", res.stdout)
+	testing.expectf(
+		t,
+		res.stdout == "use = ( \"a\" | \"b\" )\n      q\n    ;\n",
+		"got %q",
+		res.stdout,
+	)
 }
 
 @(test)
@@ -386,7 +407,12 @@ test_normalize_select_names_a_file_of_a_directory :: proc(t: ^testing.T) {
 	res := run_normalize([]string{"--select", "b.grammar:1:1", dir}, stdin_unused())
 	defer destroy_result(&res)
 	testing.expectf(t, res.code == 0, "exit 0, got %d (stderr: %s)", res.code, res.stderr)
-	testing.expectf(t, res.stdout == "two = p ( a | b ) q;\n", "got %q", res.stdout)
+	testing.expectf(
+		t,
+		res.stdout == "two = p\n      ( a | b )\n      q\n    ;\n",
+		"got %q",
+		res.stdout,
+	)
 }
 
 // The file may be named by the path the input printed, or by its last segment
@@ -403,7 +429,12 @@ test_normalize_select_accepts_a_full_path_for_the_file :: proc(t: ^testing.T) {
 	)
 	defer destroy_result(&res)
 	testing.expectf(t, res.code == 0, "exit 0, got %d (stderr: %s)", res.code, res.stderr)
-	testing.expectf(t, res.stdout == "two = p ( a | b ) q;\n", "got %q", res.stdout)
+	testing.expectf(
+		t,
+		res.stdout == "two = p\n      ( a | b )\n      q\n    ;\n",
+		"got %q",
+		res.stdout,
+	)
 }
 
 // A file no selection names is left alone rather than reported, so the selection
@@ -419,7 +450,12 @@ test_normalize_select_leaves_the_other_files_quiet :: proc(t: ^testing.T) {
 	defer destroy_result(&res)
 	testing.expectf(t, res.code == 0, "the unselected file must not be reported: %s", res.stderr)
 	testing.expect(t, res.stderr == "", "nothing should be reported")
-	testing.expectf(t, res.stdout == "two = p ( a | b ) q;\n", "got %q", res.stdout)
+	testing.expectf(
+		t,
+		res.stdout == "two = p\n      ( a | b )\n      q\n    ;\n",
+		"got %q",
+		res.stdout,
+	)
 }
 
 // A file that is not part of the input is a mistake worth saying so about.
@@ -447,8 +483,16 @@ test_normalize_select_bare_position_applies_to_every_file :: proc(t: ^testing.T)
 	res := run_normalize([]string{"--select", "1:1", dir}, stdin_unused())
 	defer destroy_result(&res)
 	testing.expectf(t, res.code == 0, "exit 0, got %d (stderr: %s)", res.code, res.stderr)
-	testing.expect(t, strings.contains(res.stdout, "one = p ( a | b ) q;"), res.stdout)
-	testing.expect(t, strings.contains(res.stdout, "two = p ( a | b ) q;"), res.stdout)
+	testing.expect(
+		t,
+		strings.contains(res.stdout, "one = p\n      ( a | b )\n      q\n    ;"),
+		res.stdout,
+	)
+	testing.expect(
+		t,
+		strings.contains(res.stdout, "two = p\n      ( a | b )\n      q\n    ;"),
+		res.stdout,
+	)
 }
 
 // A file of a directory that does not reach the line a bare position names is passed
@@ -464,7 +508,12 @@ test_normalize_select_bare_position_passes_over_a_short_file :: proc(t: ^testing
 	res := run_normalize([]string{"--select", "2:1", dir}, stdin_unused())
 	defer destroy_result(&res)
 	testing.expectf(t, res.code == 0, "exit 0, got %d (stderr: %s)", res.code, res.stderr)
-	testing.expectf(t, res.stdout == "two = p ( x | y );\n", "got %q", res.stdout)
+	testing.expectf(
+		t,
+		res.stdout == "two = p\n      ( x | y )\n    ;\n",
+		"got %q",
+		res.stdout,
+	)
 }
 
 // The file of a selection is a path like any other.

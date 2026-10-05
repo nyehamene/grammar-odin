@@ -141,9 +141,26 @@ test_write_rule_keeps_the_parameters_it_declares :: proc(t: ^testing.T) {
 	expect_written(t, "p x y = x y;", "p", "p x y = x y;\n")
 }
 
+// The branches of an alternative go one to a line, since one line hides them among
+// each other. The `|` and the `;` line up one column past the name, which is where
+// the formatter puts them (rule 4 of implementation/08-fmt.md).
 @(test)
-test_write_rule_writes_an_alternative_with_pipes :: proc(t: ^testing.T) {
-	expect_written(t, "r = a | b | c;", "r", "r = a | b | c;\n")
+test_write_rule_writes_an_alternative_one_branch_to_a_line :: proc(t: ^testing.T) {
+	expect_written(t, "r = a | b | c;", "r", "r = a\n  | b\n  | c\n  ;\n")
+}
+
+// The columns follow the name and the parameters the rule is declared with.
+@(test)
+test_write_rule_lines_up_on_a_name_with_parameters :: proc(t: ^testing.T) {
+	expect_written(t, "rule x = a | b;", "rule", "rule x = a\n       | b\n       ;\n")
+}
+
+// A body that is not an alternative of branches stays on one line, however long it
+// is: there is nothing to choose between, so nothing is gained by a line each.
+@(test)
+test_write_rule_leaves_a_body_that_is_not_an_alternative_on_one_line :: proc(t: ^testing.T) {
+	expect_written(t, "r = a b { c d } [ e ];", "r", "r = a b { c d } [ e ];\n")
+	expect_written(t, "r = ( a | b ) c;", "r", "r = ( a | b ) c;\n")
 }
 
 // A rule with no call in it comes back as it stands, which is what makes
@@ -167,7 +184,51 @@ test_write_normalized_rule_writes_leading_a_group_and_trailing :: proc(t: ^testi
 		t,
 		"use = p a q | p b q;",
 		"use",
-		"use = p ( a | b ) q;\n",
+		"use = p\n      ( a | b )\n      q\n    ;\n",
+		.Strip,
+	)
+}
+
+// A rule with a leading and no trailing, or a trailing and no leading, is the same
+// rule with a part left out, so it loses a line and nothing else.
+@(test)
+test_write_normalized_rule_writes_one_line_per_part_it_has :: proc(t: ^testing.T) {
+	expect_written_normalized(
+		t,
+		"use = p a q | p b q;",
+		"use",
+		"use = p\n      ( a | b )\n      q\n    ;\n",
+		.Strip,
+	)
+	expect_written_normalized(
+		t,
+		"use = p a b | p c d;",
+		"use",
+		"use = p\n      ( a b | c d )\n    ;\n",
+		.Strip,
+	)
+	expect_written_normalized(
+		t,
+		"use = a b q | a c q;",
+		"use",
+		"use = a\n      ( b | c )\n      q\n    ;\n",
+		.Strip,
+	)
+}
+
+// A rule with no leading and no trailing is one part, and stays on one line however
+// many branches the choice has.
+@(test)
+test_write_normalized_rule_leaves_a_choice_with_no_parts_around_it_on_one_line :: proc(
+	t: ^testing.T,
+) {
+	expect_written_normalized(t, "use = a;", "use", "use = a;\n", .Strip)
+	expect_written_normalized(t, "use = a | b;", "use", "use = ( a | b );\n", .Strip)
+	expect_written_normalized(
+		t,
+		"use = a | b | c;",
+		"use",
+		"use = ( a | b | c );\n",
 		.Strip,
 	)
 }
@@ -186,14 +247,14 @@ test_write_normalized_rule_writes_branches_when_a_middle_is_empty :: proc(t: ^te
 		t,
 		"use = a b | a b c;",
 		"use",
-		"use = a b | a b c;\n",
+		"use = a b\n    | a b c\n    ;\n",
 		.Strip,
 	)
 	expect_written_normalized(
 		t,
 		"call = p ( a q ) | p;",
 		"call",
-		"call = p ( a q ) | p;\n",
+		"call = p ( a q )\n     | p\n     ;\n",
 		.Strip,
 	)
 }
@@ -279,14 +340,41 @@ test_has_empty_middle_is_false_without_one :: proc(t: ^testing.T) {
 }
 
 // A rule that survives factoring unchanged writes back as it stands, so normalizing
-// is idempotent on anything without an empty middle.
+// A factored rule written out is a sequence holding a group, and factoring only ever
+// looks at alternatives, so the parts it was factored into cannot be read back out of
+// it: the second pass writes the same rule as the sequence it now reads as. The third
+// pass is the one that settles, which is what `grammar normalize --write` takes.
 @(test)
-test_write_normalized_rule_is_idempotent :: proc(t: ^testing.T) {
+test_write_normalized_rule_settles_after_a_second_pass :: proc(t: ^testing.T) {
 	once := write_normalized_text(t, "use = p a q | p b q;", "use", .Strip)
 	defer delete(once)
 	twice := write_normalized_text(t, once, "use", .Strip)
 	defer delete(twice)
-	testing.expectf(t, once == twice, "got %q then %q", once, twice)
+	thrice := write_normalized_text(t, twice, "use", .Strip)
+	defer delete(thrice)
+	testing.expectf(t, twice == thrice, "got %q then %q", twice, thrice)
+}
+
+// Settling takes one pass whatever the rule looks like, so it holds for a rule that
+// writes as its branches and for one with a nested alternative in it.
+@(test)
+test_write_normalized_rule_settles_whatever_the_rule_is :: proc(t: ^testing.T) {
+	srcs := []string{
+		"use = a b | a b c;",
+		"use = p a q | p b q;",
+		"use = { x a | x b };",
+		"use = p ( a | b ) q;",
+		"use = a | b | c;",
+	}
+	for src in srcs {
+		once := write_normalized_text(t, src, "use", .Strip)
+		defer delete(once)
+		twice := write_normalized_text(t, once, "use", .Strip)
+		defer delete(twice)
+		thrice := write_normalized_text(t, twice, "use", .Strip)
+		defer delete(thrice)
+		testing.expectf(t, twice == thrice, "%q: got %q then %q", src, twice, thrice)
+	}
 }
 
 // A nested alternative is factored and written back where it stood, keeping the
@@ -302,6 +390,9 @@ test_write_normalized_rule_writes_a_nested_group_with_its_parts :: proc(t: ^test
 		"use = [ x ( a | b ) ];\n",
 		.Strip,
 	)
+	// The branches share `q` at the end and nothing at the start, so the group the
+	// factored form writes is the middle and `q` is a trailing of the nested
+	// production, which has to be written for the rule to mean what it meant.
 	expect_written_normalized(
 		t,
 		"use = x { a q | b q };",

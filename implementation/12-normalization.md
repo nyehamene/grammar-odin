@@ -188,6 +188,40 @@ tree is a parallel type rather than a variant of `Production`, which keeps the
 checker's and the language server's switches over `Production` as they are: none of
 them has a meaningful answer for a normalized node, since nothing consumes one yet.
 
+### Writing the form out
+
+`Write_Normalized_Rule` puts the three parts on lines of their own, since showing them
+apart is what writing a factored rule is for:
+
+```
+use = p
+      ( a | b )
+      q
+    ;
+```
+
+The leading shares the line the `=` ends and each part after it is indented a column
+further, which is where `grammar fmt` puts a continuation line carrying no `|` (rule 5
+of `implementation/08-fmt.md`). A rule with no leading and no trailing is one part and
+stays on one line, so `use = ( a | b );` is written as it is. `Write_Rule` gives an
+alternative the same treatment, one branch to a line with a `|` on the branch lines,
+and leaves any other body alone, which puts it in step with `grammar expand`.
+
+The `=`, the `|` and the `;` line up one past the name and the parameters, the column
+`grammar fmt` writes them on (rule 4). They are worked out per rule, so the `=` of two
+rules of a file need not line up with one another: `grammar fmt` also pads the names in
+a file so that they do (rule 6), and aligns tags across the alternatives of a rule
+(rule 8). Neither is written here, so `grammar fmt` over the output of either command
+still changes it, for a file of more than one rule.
+
+Written out, a factored rule is a sequence holding a group, and factoring only ever
+looks at alternatives, so the parts cannot be read back out of it: normalizing the
+output again gives the same rule as an ordinary sequence with no leading and no
+trailing, which is written on one line. So `grammar normalize --write` settles on its
+second run, not its first. Reading a rule of that shape back as the parts it was
+factored into would fix it, and is not attempted: it is a normalizer, not a parser with
+a memory.
+
 ### Ownership
 
 Normalization takes the tree expansion produced over, as `expand_production` does.

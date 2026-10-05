@@ -28,6 +28,23 @@ Expansion is lossy in two ways: a comment written inside a rule body is dropped,
 because the parser never keeps one, and a rule is rewritten whatever it looked
 like before.
 
+The branches of a rule go one to a line, and a factored rule goes one part to a
+line, so that what the rule offers a reader to choose between, or what it was
+factored into, is not hidden among itself:
+
+    use = p x
+      | p y
+      ;
+    other = p
+            ( x | y )
+            q
+          ;
+
+The `=`, the `|` of a branch line and the `;` line up one column past the name and
+the parameters, which is where `grammar fmt` puts them. A rule whose body is not a
+choice of branches, and a factored rule with nothing around its choice, stay on one
+line.
+
 The exit code is non-zero when a call could not be expanded, when a file could
 not be read or parsed, or when a file could not be written. The output is
 produced either way, so that a call which survived can be seen.

@@ -113,7 +113,13 @@ test_expand_inlines_a_call_among_others :: proc(t: ^testing.T) {
 @(test)
 test_expand_leaves_a_call_free_file_alone :: proc(t: ^testing.T) {
 	src := "a = \"x\" | \"y\";\nb = a { a };\n"
-	expect_stdin(t, []string{"--stdin"}, src, 0, "== <stdin> ==\na = \"x\" | \"y\";\nb = a { a };\n")
+	expect_stdin(
+		t,
+		[]string{"--stdin"},
+		src,
+		0,
+		"== <stdin> ==\na = \"x\"\n  | \"y\"\n  ;\nb = a { a };\n",
+	)
 }
 
 // A comment on a line of its own is a declaration of its own, so it survives, and a

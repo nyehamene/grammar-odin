@@ -57,5 +57,28 @@ duplicate cannot change what the rule matches. Branches that overlap without
 being equal are both kept. A comment written inside a rule body is dropped,
 because the parser never keeps one.
 
+The branches of a rule go one to a line, and a factored rule goes one part to a
+line, so that what the rule offers a reader to choose between, or what it was
+factored into, is not hidden among itself:
+
+    use = p x
+      | p y
+      ;
+    other = p
+            ( x | y )
+            q
+          ;
+
+The `=`, the `|` of a branch line and the `;` line up one column past the name and
+the parameters, which is where `grammar fmt` puts them. A rule whose body is not a
+choice of branches, and a factored rule with nothing around its choice, stay on one
+line.
+
+A factored rule written out is a sequence holding a group, and factoring only ever
+looks at alternatives, so the parts it was factored into cannot be read back out of
+it. --write therefore settles on its second run: the first writes the rule with its
+parts on lines of their own, the second writes it as the sequence it now reads as,
+and a third finds nothing left to change.
+
 The exit code is non-zero when a call could not be expanded, when a rule factored
 into something that will not parse back, or when a file could not be written.

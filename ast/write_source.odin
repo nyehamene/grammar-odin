@@ -11,6 +11,24 @@ import "core:strings"
 //	ident [param...] "=" production ";"
 //	ident "=" "@import" "(" string ")" ";"
 //
+// A body that takes more than one line is written on lines of its own, the way the
+// example grammars and the formatter write one:
+//
+//	expr = a
+//	     | b
+//	     ;
+//	use  = p
+//	       ( a | b )
+//	       q
+//	     ;
+//
+// The columns are the formatter's: the `=`, every `|` and the `;` sit one past the
+// rule's name and parameters, and a production or a part that follows one of them
+// starts a column further in (rules 4 and 5 of implementation/08-fmt.md). They are
+// worked out per rule, so the `=` of two rules of a file do not necessarily line up
+// with one another, which is the one thing the formatter does that this does not: it
+// pads the names in a file so that they do (rule 6).
+//
 // Two things cannot survive the round trip, and neither is this writer's fault:
 //
 //   - A comment written inside a rule body. The parser drops those, so the tree
@@ -46,17 +64,76 @@ is_nothing :: proc(n: Normalized_Production) -> bool {
 	return absent
 }
 
-// Write_Rule writes the canonical source of a rule, terminated by a semicolon and
-// a newline. The rule is only read.
-Write_Rule :: proc(w: io.Writer, r: Rule) {
-	io.write_string(w, r.ident.name)
-	for param in r.params {
+// lhs_width returns how wide the name and parameters a rule is declared with are,
+// which is what the separators of the rule are lined up past.
+lhs_width :: proc(ident: Ident, params: []Ident) -> int {
+	width := len(ident.name)
+	for param in params {
+		width += 1 + len(param.name)
+	}
+	return width
+}
+
+// separator_column returns the column the `=`, the `|` of every alternative line and
+// the `;` of a rule are written at: one past the rule's name and parameters.
+separator_column :: proc(width: int) -> int {
+	return width + 1
+}
+
+// write_lhs writes the name and parameters a rule is declared with.
+write_lhs :: proc(w: io.Writer, ident: Ident, params: []Ident) {
+	io.write_string(w, ident.name)
+	for param in params {
 		io.write_string(w, " ")
 		io.write_string(w, param.name)
 	}
-	io.write_string(w, " = ")
-	write_production(w, r.expr)
+}
+
+// write_pad writes count spaces, which is how the writer reaches the column the
+// separators of a rule line up on.
+write_pad :: proc(w: io.Writer, count: int) {
+	for _ in 0 ..< count do io.write_string(w, " ")
+}
+
+// write_terminator ends a rule whose body took more than one line, putting the `;`
+// on a line of its own at the separator column.
+write_terminator :: proc(w: io.Writer, col: int) {
+	io.write_string(w, "\n")
+	write_pad(w, col)
 	io.write_string(w, ";\n")
+}
+
+// Write_Rule writes the canonical source of a rule, terminated by a semicolon and
+// a newline. A rule whose body is an alternative is written on a line per branch,
+// since the branches are what the rule offers a reader to choose between and one line
+// hides them among each other. Any other body is written on one line, as it stands.
+// The rule is only read.
+Write_Rule :: proc(w: io.Writer, r: Rule) {
+	col := separator_column(lhs_width(r.ident, r.params[:]))
+
+	// Only a body that is an alternative of branches is written on lines of its own.
+	// An alternative nested in a group keeps the line it has always had, since the
+	// writer has no bracket depth to indent it by and a `|` line inside parentheses
+	// would read as an alternative of the rule rather than of the group.
+	branches, is_branches := r.expr.(Alternative)
+	if !is_branches || len(branches.exprs) < 2 {
+		write_lhs(w, r.ident, r.params[:])
+		io.write_string(w, " = ")
+		write_production(w, r.expr)
+		io.write_string(w, ";\n")
+		return
+	}
+
+	write_lhs(w, r.ident, r.params[:])
+	io.write_string(w, " = ")
+	write_production(w, branches.exprs[0])
+	for branch in branches.exprs[1:] {
+		io.write_string(w, "\n")
+		write_pad(w, col)
+		io.write_string(w, "| ")
+		write_production(w, branch)
+	}
+	write_terminator(w, col)
 }
 
 // Write_Binding writes the canonical source of an import binding. It is written
@@ -80,14 +157,22 @@ Write_Comment_Group :: proc(w: io.Writer, group: Comment_Group) {
 	}
 }
 
-// Write_Normalized_Rule writes the canonical source of a factored rule. The
-// leading and the trailing are written either side of the middles, which go in a
-// group holding an alternative:
+// Write_Normalized_Rule writes the canonical source of a factored rule. The leading
+// and the trailing are written either side of the middles, which go in a group holding
+// an alternative:
 //
 //	a b c ( d e | f ) y z
 //
 // A group is left off when there is one middle and it is not empty, so a rule with a
 // single branch is written as it stands.
+//
+// A rule that has a leading or a trailing takes more than one line, one part to a
+// line, since showing the parts apart is the point of writing a factored rule:
+//
+//	use = p
+//	      ( a | b )
+//	      q
+//	    ;
 //
 // A rule with an empty middle is written as its branches whole instead, since the
 // factored form would not parse and dropping the branch would leave out a language
@@ -213,44 +298,64 @@ write_external :: proc(w: io.Writer, e: External_Value) {
 // write_normalized_rule writes a factored rule as its leading, its middles, and its
 // trailing, or as its branches whole when one of them has nothing in the middle.
 write_normalized_rule :: proc(w: io.Writer, n: Normalized_Rule) {
-	io.write_string(w, n.ident.name)
-	for param in n.params {
-		io.write_string(w, " ")
-		io.write_string(w, param.name)
-	}
-	io.write_string(w, " = ")
+	col := separator_column(lhs_width(n.ident, n.params[:]))
 
 	if Has_Empty_Middle(n) {
-		write_branches(w, n)
-	} else {
-		if !is_nothing(n.leading) {
-			write_normalized(w, n.leading)
-			io.write_string(w, " ")
-		}
-		write_middles(w, n.body[:])
-		if !is_nothing(n.trailing) {
-			io.write_string(w, " ")
-			write_normalized(w, n.trailing)
-		}
+		write_branch_lines(w, col, n)
+		return
 	}
-	io.write_string(w, ";\n")
+
+	// A rule with no leading and no trailing is one part, and is written as one line.
+	if is_nothing(n.leading) && is_nothing(n.trailing) {
+		write_lhs(w, n.ident, n.params[:])
+		io.write_string(w, " = ")
+		write_middles(w, n.body[:])
+		io.write_string(w, ";\n")
+		return
+	}
+
+	// Otherwise the parts go one to a line: the leading shares the line the `=` ends,
+	// and each part after it is indented a column further, which is where the
+	// formatter puts a continuation line that carries no `|` (rule 5 of
+	// implementation/08-fmt.md). Showing the parts apart is the point, since they are
+	// what the rule was factored into.
+	write_lhs(w, n.ident, n.params[:])
+	io.write_string(w, " = ")
+	if !is_nothing(n.leading) {
+		write_normalized(w, n.leading)
+		io.write_string(w, "\n")
+		write_pad(w, col + 2)
+	}
+	write_middles(w, n.body[:])
+	if !is_nothing(n.trailing) {
+		io.write_string(w, "\n")
+		write_pad(w, col + 2)
+		write_normalized(w, n.trailing)
+	}
+	write_terminator(w, col)
 }
 
-// write_branches writes a rule as the branches it was factored from, each one the
-// leading, its own middle and the trailing put back together. This is what a rule
-// with an empty middle is written as: the middle has no productions to write in the
-// factored form, and leaving the branch out would drop a language the rule matches.
-write_branches :: proc(w: io.Writer, n: Normalized_Rule) {
-	for middle, i in n.body {
-		if i > 0 do io.write_string(w, " | ")
+// write_branch_lines writes a rule as the branches it was factored from, one to a
+// line. This is what a rule with an empty middle is written as: the middle has no
+// productions to write in the factored form, and leaving the branch out would drop a
+// language the rule matches. The branches are alternatives of one another, so they
+// get the layout an alternative gets.
+write_branch_lines :: proc(w: io.Writer, col: int, n: Normalized_Rule) {
+	write_lhs(w, n.ident, n.params[:])
+	io.write_string(w, " = ")
+	write_branch(w, n.leading, n.body[0], n.trailing)
+	for middle in n.body[1:] {
+		io.write_string(w, "\n")
+		write_pad(w, col)
+		io.write_string(w, "| ")
 		write_branch(w, n.leading, middle, n.trailing)
 	}
+	write_terminator(w, col)
 }
 
-// write_branch writes one branch of a factored production put back together: the
-// leading, its own middle and the trailing, in that order and each one left out when
-// it is absent. It takes the three parts rather than the rule they came from, so that
-// a production nested in a group is written the same way a rule is.
+// write_branch writes one branch of a factored rule put back together: the leading,
+// its own middle and the trailing, in that order and each one left out when it is
+// absent.
 write_branch :: proc(
 	w: io.Writer,
 	leading, middle, trailing: Normalized_Production,
@@ -311,9 +416,8 @@ write_normalized :: proc(w: io.Writer, n: Normalized_Production) {
 	case Production:
 		write_production(w, it)
 	case ^Factored:
-		// A production with an empty middle has no factored form to write, since
-		// `( | x )` does not parse, so it is written as its branches whole, the same
-		// as a rule that has one.
+		// A production with an empty middle has no factored form to write, so it is
+		// written as its branches whole, the same as a rule that has one.
 		if has_empty_middle(it.body[:]) {
 			for middle, i in it.body {
 				if i > 0 do io.write_string(w, " | ")
