@@ -793,7 +793,7 @@ test_import_cycle :: proc(t: ^testing.T) {
 
 @(test)
 test_check_cli_reports_semantic_errors :: proc(t: ^testing.T) {
-	ok_dir := "cmd/check/testdata/scratch/cli_ok"
+	ok_dir := "cmd/check/testdata/cli_scratch_ok"
 	os.remove_all(ok_dir)
 	defer os.remove_all(ok_dir)
 	os.make_directory_all(ok_dir)
@@ -815,7 +815,7 @@ test_check_cli_reports_semantic_errors :: proc(t: ^testing.T) {
 		"no diagnostics on a valid package",
 	)
 
-	bad_dir := "cmd/check/testdata/scratch/cli_bad"
+	bad_dir := "cmd/check/testdata/cli_scratch_bad"
 	os.remove_all(bad_dir)
 	defer os.remove_all(bad_dir)
 	os.make_directory_all(bad_dir)
@@ -840,7 +840,7 @@ test_check_cli_reports_semantic_errors :: proc(t: ^testing.T) {
 
 @(test)
 test_check_cli_warnings_do_not_fail_the_run :: proc(t: ^testing.T) {
-	warn_dir := "cmd/check/testdata/scratch/cli_warn"
+	warn_dir := "cmd/check/testdata/cli_scratch_warn"
 	os.remove_all(warn_dir)
 	defer os.remove_all(warn_dir)
 	os.make_directory_all(warn_dir)
