@@ -3,12 +3,14 @@ Usage: grammar COMMAND
 A tool for describing the syntax of programming languages.
 
 Command:
-fmt      Format grammar files inplace.
-check    Validate grammar files and report diagnostic errors.
-print    Print tokens or Ast nodes.
-diff     Compare 2 input files.
-lsp      Start a language server.
-help     Print this message.
-version  Print version infomation.
+fmt        Format grammar files inplace.
+check      Validate grammar files and report diagnostic errors.
+print      Print tokens or Ast nodes.
+expand     Inline the calls of a rule, printing the source it becomes.
+normalize  Factor a rule body into a leading, middles and a trailing.
+diff       Compare 2 input files.
+lsp        Start a language server.
+help       Print this message.
+version    Print version infomation.
 
 An grammar file is any file with the file extension .grammar.

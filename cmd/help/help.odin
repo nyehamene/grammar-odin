@@ -8,6 +8,8 @@ GRAMMAR :: string(#load("../../command/grammar.txt"))
 CHECK   :: string(#load("../../command/check.txt"))
 FMT     :: string(#load("../../command/fmt.txt"))
 PRINT   :: string(#load("../../command/print.txt"))
+EXPAND  :: string(#load("../../command/expand.txt"))
+NORMALIZE :: string(#load("../../command/normalize.txt"))
 DIFF    :: string(#load("../../command/diff.txt"))
 LSP     :: string(#load("../../command/lsp.txt"))
 
@@ -21,6 +23,10 @@ text_for :: proc(command: string) -> string {
 		return FMT
 	case "print":
 		return PRINT
+	case "expand":
+		return EXPAND
+	case "normalize":
+		return NORMALIZE
 	case "diff":
 		return DIFF
 	case "lsp":

@@ -1,0 +1,33 @@
+Usage: grammar expand ARGUMENT [ OPTION ] PATH
+
+Replaces every call in a rule with the body of the rule it names, so that the
+result holds no calls. Expansion is against the rules of the same directory: a
+call into a sibling namespace is reported rather than resolved.
+
+Argument:
+PATH                Path to a file or directory.
+-w, --write         Write the result back to the file it came from.
+    --tree          Print the resulting AST instead of source.
+    --stdin         Read the source from stdin and print the result.
+    --select POS    Transform only the declaration POS falls in. POS is written
+                    as line:column, or as file:line:column to pick one file
+                    of a directory: the file may be named by its last segment
+                    or by any tail of its path. The result goes to stdout with
+                    no heading. The rest of the input is still read, so a call
+                    in the selected declaration resolves as it would anywhere
+                    else.
+-h, --help          Print this message.
+
+Without --write the result goes to stdout, one file per `== path ==` heading.
+A position in a blank line between two declarations belongs to the one before
+it. A file the selection does not name is passed over, so a call that cannot
+be expanded in some other file of the input is neither reported nor written.
+A selection that reaches nothing at all is an error. --select cannot be
+combined with --write or --stdin.
+Expansion is lossy in two ways: a comment written inside a rule body is dropped,
+because the parser never keeps one, and a rule is rewritten whatever it looked
+like before.
+
+The exit code is non-zero when a call could not be expanded, when a file could
+not be read or parsed, or when a file could not be written. The output is
+produced either way, so that a call which survived can be seen.

@@ -7,9 +7,11 @@ import "core:os"
 import "log"
 
 import "cmd/check"
+import expandcmd "cmd/expand"
 import fmtcmd "cmd/fmt"
 import "cmd/help"
 import "cmd/lsp"
+import normalizecmd "cmd/normalize"
 import "cmd/print"
 import "cmd/version"
 
@@ -55,6 +57,12 @@ run :: proc(args: []string, stdin: io.Reader, stdout, stderr: io.Writer) -> int 
 
 	case "check":
 		return check.run(rest, stdin, stdout, stderr)
+
+	case "expand":
+		return expandcmd.run(rest, stdin, stdout, stderr)
+
+	case "normalize":
+		return normalizecmd.run(rest, stdin, stdout, stderr)
 
 	case "print":
 		return print.run(rest, stdin, stdout, stderr)

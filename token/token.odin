@@ -1,6 +1,7 @@
 package token
 
 import "core:io"
+import "core:strconv"
 import "core:strings"
 
 // Kind enumerates the token kinds produced by the tokenizer.
@@ -134,4 +135,72 @@ position_at :: proc(src: string, offset_arg: int) -> Position {
 		}
 	}
 	return Position{line = line, column = column}
+}
+
+// Parse_Position reads a position written as `line:column`, and ok is false when the
+// text is not that shape or a part is not a positive number. It is the text form of
+// Position, which offset_at takes.
+Parse_Position :: proc(text: string) -> (pos: Position, ok: bool) {
+	colon := strings.index(text, ":")
+	if colon < 1 || colon == len(text) - 1 do return Position{}, false
+
+	line, line_ok := strconv.parse_int(text[:colon])
+	column, column_ok := strconv.parse_int(text[colon + 1:])
+	if !line_ok || !column_ok do return Position{}, false
+	if line < 1 || column < 1 do return Position{}, false
+
+	return Position{line = line, column = column}, true
+}
+
+// offset_at returns the byte offset of pos in src. ok is false when src has no such
+// line or the column falls past the end of it. It is the inverse of position_at,
+// which counts a line break as the end of the line before it.
+offset_at :: proc(src: string, pos: Position) -> (offset: int, ok: bool) {
+	if pos.line < 1 || pos.column < 1 do return 0, false
+
+	line := 1
+	i := 0
+	for i < len(src) && line < pos.line {
+		if src[i] == '\n' do line += 1
+		i += 1
+	}
+	if line != pos.line do return 0, false
+
+	at := i + pos.column - 1
+	if at > len(src) do return 0, false
+	return at, true
+}
+
+// Selection is a position together with the file it was written against. file is
+// empty when the text named no file, in which case the selection applies to every
+// file loaded.
+Selection :: struct {
+	file: string,
+	pos:  Position,
+}
+
+// Parse_Selection reads a selection written as `line:column` or as
+// `file:line:column`. ok is false when the text is neither shape, or when a part is
+// not a positive number.
+//
+// The file is taken as everything before the last two colons, so a path that holds
+// a colon does not confuse it. An empty file part, as in `:3:1`, is the same as
+// writing none at all.
+Parse_Selection :: proc(text: string) -> (sel: Selection, ok: bool) {
+	column_at := strings.last_index(text, ":")
+	if column_at < 0 do return Selection{}, false
+
+	line_at := strings.last_index(text[:column_at], ":")
+	if line_at < 0 {
+		// Only one colon, so the text is a bare position.
+		pos, pos_ok := Parse_Position(text)
+		return Selection{pos = pos}, pos_ok
+	}
+
+	pos, pos_ok := Parse_Position(text[line_at+1:])
+	if !pos_ok do return Selection{}, false
+
+	file := text[:line_at]
+	if len(file) == 0 do return Selection{pos = pos}, true
+	return Selection{file = file, pos = pos}, true
 }

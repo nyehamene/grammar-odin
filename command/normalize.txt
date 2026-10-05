@@ -1,0 +1,57 @@
+Usage: grammar normalize ARGUMENT [ OPTION ] PATH
+
+Expands a rule and then factors it. Every alternative in the body becomes the
+productions its branches share at the start, the productions they do not share,
+and the productions they share at the end:
+
+    use = p a q
+        | p b q
+        ;
+
+is written as
+
+    use = p ( a | b ) q;
+
+which means what the branches it came from meant, since a group holding an
+alternative is a choice.
+
+A branch with nothing left in the middle has no factored form at all: the
+leading and the trailing matched that branch on their own, and the middle has
+nowhere to go. Dropping the branch is not an option either, since `a b | a b c`
+matches `ab` as well as `abc`. Such a rule is written as its branches whole,
+which is what it said, and reported, since the normal form was not reached
+for it.
+
+Argument:
+PATH                Path to a file or directory.
+-w, --write         Write the result back to the file it came from.
+    --tree          Print the resulting AST instead of source.
+    --stdin         Read the source from stdin and print the result.
+    --select POS    Factor only the declaration POS falls in. POS is written
+                    as line:column, or as file:line:column to pick one file
+                    of a directory: the file may be named by its last segment
+                    or by any tail of its path. The result goes to stdout with
+                    no heading. The rest of the input is still read, so a call
+                    in the selected declaration resolves as it would anywhere
+                    else.
+    --tags POLICY   What factoring does with a tag: strip (the default), block
+                    or keep. Strip compares and drops tags, so two branches
+                    tagged differently are the same production. Block does the
+                    same but reports every tag it had to drop. Keep counts tags,
+                    so a differing tag is not common and nothing is lost.
+-h, --help          Print this message.
+
+Without --write the result goes to stdout, one file per `== path ==` heading.
+A position in a blank line between two declarations belongs to the one before
+it. A file the selection does not name is passed over, so a call that cannot
+be expanded in some other file of the input is neither reported nor written.
+A selection that reaches nothing at all is an error. --select cannot be
+combined with --write or --stdin.
+
+A duplicate branch is dropped, since only one branch is ever reachable and a
+duplicate cannot change what the rule matches. Branches that overlap without
+being equal are both kept. A comment written inside a rule body is dropped,
+because the parser never keeps one.
+
+The exit code is non-zero when a call could not be expanded, when a rule factored
+into something that will not parse back, or when a file could not be written.

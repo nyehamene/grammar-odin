@@ -18,8 +18,10 @@ test_run_writes_to_writer :: proc(t: ^testing.T) {
 @(test)
 test_grammar_help_text :: proc(t: ^testing.T) {
 	testing.expect(t, strings.has_prefix(GRAMMAR, "Usage: grammar COMMAND"), "main help should begin with usage")
-	testing.expect(t, strings.contains(GRAMMAR, "fmt      Format grammar files inplace."), "main help should list fmt")
-	testing.expect(t, strings.contains(GRAMMAR, "version  Print version infomation."), "main help should list version")
+	testing.expect(t, strings.contains(GRAMMAR, "fmt        Format grammar files inplace."), "main help should list fmt")
+	testing.expect(t, strings.contains(GRAMMAR, "version    Print version infomation."), "main help should list version")
+	testing.expect(t, strings.contains(GRAMMAR, "expand"), "main help should list expand")
+	testing.expect(t, strings.contains(GRAMMAR, "normalize"), "main help should list normalize")
 }
 
 @(test)
@@ -33,6 +35,23 @@ test_check_help_text :: proc(t: ^testing.T) {
 test_fmt_help_text :: proc(t: ^testing.T) {
 	testing.expect(t, strings.has_prefix(FMT, "Usage: grammar fmt ARGUMENT"), "fmt help should begin with usage")
 	testing.expect(t, strings.contains(FMT, "--stdout"), "fmt help should mention --stdout")
+}
+
+@(test)
+test_expand_help_text :: proc(t: ^testing.T) {
+	testing.expect(t, strings.has_prefix(EXPAND, "Usage: grammar expand ARGUMENT"), "expand help should begin with usage")
+	testing.expect(t, strings.contains(EXPAND, "--write"), "expand help should mention --write")
+	testing.expect(t, strings.contains(EXPAND, "--tree"), "expand help should mention --tree")
+	testing.expect(t, strings.contains(EXPAND, "--stdin"), "expand help should mention --stdin")
+	testing.expect(t, strings.contains(EXPAND, "--select"), "expand help should mention --select")
+}
+
+@(test)
+test_normalize_help_text :: proc(t: ^testing.T) {
+	testing.expect(t, strings.has_prefix(NORMALIZE, "Usage: grammar normalize ARGUMENT"), "normalize help should begin with usage")
+	testing.expect(t, strings.contains(NORMALIZE, "--tags"), "normalize help should mention --tags")
+	testing.expect(t, strings.contains(NORMALIZE, "strip"), "normalize help should name the default policy")
+	testing.expect(t, strings.contains(NORMALIZE, "--select"), "normalize help should mention --select")
 }
 
 @(test)

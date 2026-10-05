@@ -279,3 +279,19 @@ destroy_expr :: proc(expr: Production) {
 		delete(v.tag)
 	}
 }
+
+// Decl_Index_At returns the index of the declaration that covers offset, and ok is
+// false when the offset falls outside every declaration, which is past the end of
+// the file or inside the run of whitespace between two of them.
+//
+// Declarations are in source order and none spans another, so the one that covers
+// an offset is the last one that starts at or before it. A position in a blank line
+// between two declarations therefore belongs to the one before it.
+Decl_Index_At :: proc(file: ^File, offset: int) -> (index: int, ok: bool) {
+	found := -1
+	for d, i in file.decls {
+		if decl_pos(d) > offset do break
+		found = i
+	}
+	return found, found >= 0
+}
