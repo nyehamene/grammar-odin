@@ -17,9 +17,15 @@ Tokenizer :: struct {
 // scan breaks src into a slice of tokens. Unterminated literals and illegal
 // characters produce a corresponding diagnostic in errors. The returned
 // slices must be freed with delete.
-scan :: proc(src: string) -> (tokens: [dynamic]Token, errors: [dynamic]Error) {
-	tokens = make([dynamic]Token)
-	errors = make([dynamic]Error)
+scan :: proc(
+	src: string,
+	allocator := context.allocator,
+) -> (
+	tokens: [dynamic]Token,
+	errors: [dynamic]Error,
+) {
+	tokens = make([dynamic]Token, allocator)
+	errors = make([dynamic]Error, allocator)
 	t := Tokenizer {
 		src = src,
 	}

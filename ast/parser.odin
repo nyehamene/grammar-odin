@@ -1,5 +1,6 @@
 package ast
 
+import "base:runtime"
 import "core:fmt"
 import "core:log"
 
@@ -7,6 +8,7 @@ import "../token"
 
 // Parser is a recursive descent parser over a tokenized grammar source.
 Parser :: struct {
+	allocator:     runtime.Allocator,
 	src:           string,
 	tokens:        []token.Token,
 	pos:           int,
@@ -17,10 +19,23 @@ Parser :: struct {
 
 // parse_file parses the tokenized source into a File. Syntax diagnostics are
 // appended to errors. If errors is non-empty the returned File may be partial.
-parse_file :: proc(src: string, tokens: []token.Token) -> (file: File, errors: [dynamic]Error) {
+parse_file :: proc(
+	src: string,
+	tokens: []token.Token,
+	allocator := context.allocator,
+) -> (
+	File,
+	[dynamic]Error,
+) {
+
+	file: File
+	file.decls = make([dynamic]Decl, allocator)
+	errors := make([dynamic]Error, allocator)
+
 	p := Parser {
-		src    = src,
-		tokens = tokens,
+		allocator = allocator,
+		src       = src,
+		tokens    = tokens,
 	}
 
 	for peek(&p).kind != .EOF {
@@ -28,10 +43,10 @@ parse_file :: proc(src: string, tokens: []token.Token) -> (file: File, errors: [
 			append(&file.decls, decl)
 		}
 	}
-	file.end_pos = peek(&p).end
 
+	file.end_pos = peek(&p).end
 	errors = p.errors
-	return
+	return file, errors
 }
 
 parse_decl :: proc(p: ^Parser) -> (Decl, bool) {
@@ -61,7 +76,7 @@ parse_decl :: proc(p: ^Parser) -> (Decl, bool) {
 	p.skip_comments = true
 	defer p.skip_comments = outer_skip
 
-	params := make([dynamic]Ident)
+	params := make([dynamic]Ident, p.allocator)
 	defer delete(params)
 	for peek(p).kind == .Ident {
 		tok := next(p)
@@ -118,7 +133,7 @@ parse_rule :: proc(p: ^Parser, name: token.Token, params: []Ident) -> Decl {
 		expect(p, .Semicolon)
 		return Rule {
 			ident = ident_node(name, p.src),
-			params = clone_idents(params),
+			params = clone_idents(params, p.allocator),
 			pos = name.start,
 		}
 	}
@@ -129,7 +144,7 @@ parse_rule :: proc(p: ^Parser, name: token.Token, params: []Ident) -> Decl {
 
 	return Rule {
 		ident = ident_node(name, p.src),
-		params = clone_idents(params),
+		params = clone_idents(params, p.allocator),
 		expr = expr,
 		pos = name.start,
 	}
@@ -137,7 +152,7 @@ parse_rule :: proc(p: ^Parser, name: token.Token, params: []Ident) -> Decl {
 
 // parse_comment_group consumes consecutive comment tokens into a Comment_Group.
 parse_comment_group :: proc(p: ^Parser) -> Decl {
-	list := make([dynamic]Comment)
+	list := make([dynamic]Comment, p.allocator)
 	for peek(p).kind == .Comment {
 		t := next(p)
 		append(&list, Comment{pos = t.start, text = token.lexeme(t, p.src)})
@@ -149,7 +164,7 @@ parse_comment_group :: proc(p: ^Parser) -> Decl {
 parse_production :: proc(p: ^Parser) -> Production {
 	expr := parse_sequence(p)
 	if peek(p).kind == .Pipe {
-		alts := make([dynamic]Production)
+		alts := make([dynamic]Production, p.allocator)
 		append(&alts, expr)
 		for peek(p).kind == .Pipe {
 			next(p)
@@ -182,7 +197,7 @@ parse_sequence :: proc(p: ^Parser) -> Production {
 		return first
 	}
 
-	terms := make([dynamic]Production)
+	terms := make([dynamic]Production, p.allocator)
 	append(&terms, first)
 	tag_seen := false
 	for !is_sequence_end(peek(p)) {
@@ -200,7 +215,7 @@ parse_sequence :: proc(p: ^Parser) -> Production {
 			// Everything parsed so far becomes the annotated production, so a tag
 			// over `a b c` wraps the sequence and not just its last element.
 			annotated := sequence_or_single(terms)
-			terms = make([dynamic]Production)
+			terms = make([dynamic]Production, p.allocator)
 			append(
 				&terms,
 				Tagged_Production {
@@ -245,7 +260,7 @@ parse_tag_pairs :: proc(p: ^Parser, t: token.Token) -> [dynamic]Tag_Pair {
 	scanned, ok := token.parse_tag(lex[1:len(lex) - 1])
 	defer delete(scanned)
 
-	pairs := make([dynamic]Tag_Pair, 0, len(scanned))
+	pairs := make([dynamic]Tag_Pair, 0, len(scanned), p.allocator)
 	if !ok {
 		return pairs
 	}
@@ -351,7 +366,7 @@ parse_directive :: proc(p: ^Parser) -> Production {
 	at := expect(p, .At)
 	name := expect(p, .Ident)
 
-	args := make([dynamic]Production)
+	args := make([dynamic]Production, p.allocator)
 	if peek(p).kind == .LParen {
 		next(p)
 		t := expect(p, .String)
@@ -399,7 +414,7 @@ parse_call :: proc(p: ^Parser) -> Production {
 	lt := expect(p, .Lt)
 	name := parse_non_terminal(p)
 
-	args := make([dynamic]Production)
+	args := make([dynamic]Production, p.allocator)
 	for peek(p).kind != .Gt {
 		if peek(p).kind == .EOF {
 			error_at(p, lt.start, "unterminated rule call")
@@ -419,7 +434,7 @@ parse_call :: proc(p: ^Parser) -> Production {
 	}
 	expect(p, .Gt)
 
-	call := new(Call)
+	call := new(Call, p.allocator)
 	call.ident = name
 	call.args = args
 	call.pos = lt.start
@@ -432,7 +447,7 @@ parse_optional :: proc(p: ^Parser) -> Production {
 	inner := parse_production(p)
 	reject_inner_tag(p, inner)
 	expect(p, .RBrack)
-	return Optional{exprs = unpack_sequence(inner), pos = start.start}
+	return Optional{exprs = unpack_sequence(inner, p.allocator), pos = start.start}
 }
 
 // parse_repetition parses `{ production }`, e.g. `{ one two }`.
@@ -441,7 +456,7 @@ parse_repetition :: proc(p: ^Parser) -> Production {
 	inner := parse_production(p)
 	reject_inner_tag(p, inner)
 	expect(p, .RBrace)
-	return Repetition{exprs = unpack_sequence(inner), pos = start.start}
+	return Repetition{exprs = unpack_sequence(inner, p.allocator), pos = start.start}
 }
 
 // parse_group parses `( production )`, e.g. `( a b )`.
@@ -450,7 +465,7 @@ parse_group :: proc(p: ^Parser) -> Production {
 	inner := parse_production(p)
 	reject_inner_tag(p, inner)
 	expect(p, .RParen)
-	return Group{exprs = unpack_sequence(inner), pos = start.start}
+	return Group{exprs = unpack_sequence(inner, p.allocator), pos = start.start}
 }
 
 // reject_inner_tag reports a tag found at the end of a production nested inside
@@ -466,11 +481,11 @@ reject_inner_tag :: proc(p: ^Parser, inner: Production) {
 // unpack_sequence converts a production into a list of expressions. If the
 // production is itself a Sequence, its elements are transferred directly,
 // otherwise the production is wrapped in a single-element list.
-unpack_sequence :: proc(expr: Production) -> [dynamic]Production {
+unpack_sequence :: proc(expr: Production, allocator := context.allocator) -> [dynamic]Production {
 	if seq, ok := expr.(Sequence); ok {
 		return seq.exprs
 	}
-	list := make([dynamic]Production)
+	list := make([dynamic]Production, allocator)
 	append(&list, expr)
 	return list
 }
