@@ -605,7 +605,7 @@ uses_param :: proc(production: ast.Production, param: string) -> bool {
 	case ast.Sequence:
 		return productions_use_param(v.productions[:], param)
 	case ast.Alternative:
-		return productions_use_param(v.productions[:], param)
+		return uses_param(v.lhs^, param) || uses_param(v.rhs^, param)
 	case ast.Optional:
 		return uses_param(v.production^, param)
 	case ast.Repetition:
@@ -811,7 +811,8 @@ check_production_scoped :: proc(
 		check_production_group(cu, fi, params, v.pos, v.productions[:], o)
 
 	case ast.Alternative:
-		check_production_group(cu, fi, params, v.pos, v.productions[:], o)
+		check_production_scoped(cu, fi, params, v.lhs^, o)
+		check_production_scoped(cu, fi, params, v.rhs^, o)
 
 	case ast.Optional:
 		check_production_scoped(cu, fi, params, v.production^, o)

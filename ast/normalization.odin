@@ -8,16 +8,6 @@ import "core:log"
 // place rather than dropped silently.
 MAX_EXPANSION_DEPTH :: 256
 
-// Nesting says what becomes of a production that an expansion turned into a
-// sequence. Flatten splices it into the list it joins, which is what the parser
-// does with a group and what keeps one sequence from nesting inside
-// another. Keep leaves it a single element, which an alternative needs, since the
-// elements of an alternative are whole branches.
-Nesting :: enum {
-	Keep,
-	Flatten,
-}
-
 // Scope is the set of rules an expansion resolves a call against.
 Scope :: struct {
 	rules_by_name: map[string]Rule,
@@ -199,14 +189,23 @@ expand_production :: proc(p: Production, s: ^Scope, depth: int) -> (Production, 
 		return expand_call(it, s, depth)
 
 	case Sequence:
-		productions, ok := expand_production_list(it.productions[:], s, depth, .Flatten)
+		productions, ok := expand_production_list(it.productions[:], s, depth)
 		delete(it.productions)
 		return Sequence{productions = productions, pos = it.pos}, ok
 
 	case Alternative:
-		productions, ok := expand_production_list(it.productions[:], s, depth, .Keep)
-		delete(it.productions)
-		return Alternative{productions = productions, pos = it.pos}, ok
+		// Each side of the chain is expanded on its own, which keeps a branch whole
+		// the way holding the alternatives apart used to insist on.
+		lhs, lhs_ok := expand_production(it.lhs^, s, depth)
+		rhs, rhs_ok := expand_production(it.rhs^, s, depth)
+		free(it.lhs)
+		free(it.rhs)
+		expanded := it
+		expanded.lhs = new(Production)
+		expanded.lhs^ = lhs
+		expanded.rhs = new(Production)
+		expanded.rhs^ = rhs
+		return expanded, lhs_ok && rhs_ok
 
 	case Optional:
 		// The production is behind a box, so the box is replaced and the one it held
@@ -292,43 +291,31 @@ expand_call :: proc(call: ^Call, s: ^Scope, depth: int) -> (Production, bool) {
 	return expand_production(body, s, depth - 1)
 }
 
-// expand_production_list expands every production of a body and returns them as a new list.
-// nesting says whether a production that came back as a sequence joins the list or
-// stands as one element of it.
+// expand_production_list expands every production of a sequence and returns them as a
+// new list. A production that came back as a sequence is spliced into the list it
+// joins rather than nested inside it, so one sequence never nests in another. A
+// spliced list belongs to this expansion and is freed here.
 expand_production_list :: proc(
 	prods: []Production,
 	s: ^Scope,
 	depth: int,
-	nesting: Nesting,
 ) -> ([dynamic]Production, bool) {
 	productions := make([dynamic]Production, 0, len(prods))
 	ok := true
 	for prod in prods {
 		expanded, expanded_ok := expand_production(prod, s, depth)
 		ok = ok && expanded_ok
-		switch nesting {
-		case .Keep:
+		seq, is_sequence := expanded.(Sequence)
+		if !is_sequence {
 			append(&productions, expanded)
-		case .Flatten:
-			append_flattened(&productions, expanded)
+			continue
 		}
+		for inner in seq.productions {
+			append(&productions, inner)
+		}
+		delete(seq.productions)
 	}
 	return productions, ok
-}
-
-// append_flattened appends e to productions, splicing a sequence into the list instead of
-// nesting one sequence inside another. The spliced list was made by expand_production_list,
-// so it belongs to this expansion and is freed here.
-append_flattened :: proc(productions: ^[dynamic]Production, e: Production) {
-	seq, is_sequence := e.(Sequence)
-	if !is_sequence {
-		append(productions, e)
-		return
-	}
-	for inner in seq.productions {
-		append(productions, inner)
-	}
-	delete(seq.productions)
 }
 
 // substitute_parameter returns p with every reference to one of args replaced by
@@ -367,7 +354,8 @@ substitute_parameter :: proc(p: Production, args: map[string]Production) -> Prod
 		return it
 
 	case Alternative:
-		substitute_into(it.productions[:], args)
+		it.lhs^ = substitute_parameter(it.lhs^, args)
+		it.rhs^ = substitute_parameter(it.rhs^, args)
 		return it
 
 	case Optional:
@@ -438,7 +426,12 @@ clone_production :: proc(p: Production) -> Production {
 	case Sequence:
 		return Sequence{productions = clone_production_list(it.productions[:]), pos = it.pos}
 	case Alternative:
-		return Alternative{productions = clone_production_list(it.productions[:]), pos = it.pos}
+		cloned := it
+		cloned.lhs = new(Production)
+		cloned.lhs^ = clone_production(it.lhs^)
+		cloned.rhs = new(Production)
+		cloned.rhs^ = clone_production(it.rhs^)
+		return cloned
 	case Optional:
 		cloned := it
 		cloned.production = new(Production)
@@ -496,7 +489,7 @@ has_call :: proc(p: Production) -> bool {
 		return has_call_any(it.productions[:])
 
 	case Alternative:
-		return has_call_any(it.productions[:])
+		return has_call(it.lhs^) || has_call(it.rhs^)
 
 	case Optional:
 		return has_call(it.production^)
@@ -766,13 +759,15 @@ sequence_elements :: proc(
 //
 // The alternative is taken over.
 factor :: proc(alts: Alternative, opts: ^Normalize_Options) -> Normalized_Production {
-	// A branch owns its list: sequence_elements hands the sequence's own list over and
+	// The chain of choices is read back into the branches it was written from, and a
+	// branch owns its list: sequence_elements hands the sequence's own list over and
 	// wraps anything else in a new one, so every list here has exactly one owner.
-	branches := make([dynamic][dynamic]Production, 0, len(alts.productions))
-	for branch in alts.productions[:] {
+	alts_branches := collect_branches(alts)
+	branches := make([dynamic][dynamic]Production, 0, len(alts_branches))
+	for branch in alts_branches {
 		append(&branches, sequence_elements(branch))
 	}
-	delete(alts.productions)
+	delete(alts_branches)
 
 	kept := make([dynamic][dynamic]Production, 0, len(branches))
 	for branch in branches {
@@ -1023,7 +1018,9 @@ equal_production :: proc(a, b: Production, opts: ^Normalize_Options) -> bool {
 		return ok && equal_production_list(x.productions[:], y.productions[:], opts)
 	case Alternative:
 		y, ok := b.(Alternative)
-		return ok && equal_production_list(x.productions[:], y.productions[:], opts)
+		return ok &&
+			equal_production(x.lhs^, y.lhs^, opts) &&
+			equal_production(x.rhs^, y.rhs^, opts)
 	case Optional:
 		y, ok := b.(Optional)
 		return ok && equal_production(x.production^, y.production^, opts)

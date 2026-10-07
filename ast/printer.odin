@@ -70,9 +70,8 @@ print_production :: proc(p: ^Printer, production: Production) {
 	case Alternative:
 		print_header(p, v.pos, "AlternativeProduction")
 		p.indent += 1
-		for e in v.productions {
-			print_production(p, e)
-		}
+		print_production(p, v.lhs^)
+		print_production(p, v.rhs^)
 		p.indent -= 1
 	case Optional:
 		print_header(p, v.pos, "OptionalProduction")

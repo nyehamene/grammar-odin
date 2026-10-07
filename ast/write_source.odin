@@ -116,7 +116,7 @@ Write_Rule :: proc(w: io.Writer, r: Rule) {
 	// writer has no bracket depth to indent it by and a `|` line inside parentheses
 	// would read as an alternative of the rule rather than of the group.
 	branches, is_branches := r.production.(Alternative)
-	if !is_branches || len(branches.productions) < 2 {
+	if !is_branches {
 		write_lhs(w, r.ident, r.params[:])
 		io.write_string(w, " = ")
 		write_production(w, r.production)
@@ -124,10 +124,13 @@ Write_Rule :: proc(w: io.Writer, r: Rule) {
 		return
 	}
 
+	list := collect_branches(branches)
+	defer delete(list)
+
 	write_lhs(w, r.ident, r.params[:])
 	io.write_string(w, " = ")
-	write_production(w, branches.productions[0])
-	for branch in branches.productions[1:] {
+	write_production(w, list[0])
+	for branch in list[1:] {
 		io.write_string(w, "\n")
 		write_pad(w, col)
 		io.write_string(w, "| ")
@@ -211,7 +214,11 @@ write_production :: proc(w: io.Writer, p: Production) {
 	case Sequence:
 		write_production_list(w, it.productions[:], " ")
 	case Alternative:
-		write_production_list(w, it.productions[:], " | ")
+		// The chain leans left, so writing the left then the right gives
+		// `a | b | c` with no parentheses between the branches.
+		write_production(w, it.lhs^)
+		io.write_string(w, " | ")
+		write_production(w, it.rhs^)
 	case Optional:
 		write_wrapped_production(w, "[", "]", it.production^)
 	case Repetition:

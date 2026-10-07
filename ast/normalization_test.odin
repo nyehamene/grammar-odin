@@ -57,7 +57,12 @@ shape_into :: proc(b: ^strings.Builder, p: Production) {
 	case Sequence:
 		shape_group(b, "seq", it.productions[:])
 	case Alternative:
-		shape_group(b, "alt", it.productions[:])
+		// The chain leans left, so it prints as a nested choice.
+		strings.write_string(b, "alt(")
+		shape_into(b, it.lhs^)
+		strings.write_rune(b, ' ')
+		shape_into(b, it.rhs^)
+		strings.write_rune(b, ')')
 	case Optional:
 		strings.write_string(b, "opt(")
 		shape_into(b, it.production^)

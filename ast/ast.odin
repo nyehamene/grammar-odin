@@ -91,10 +91,13 @@ Sequence :: struct {
 	pos:         int,
 }
 
-// Alternative is a set of alternatives, e.g. `a | b | c`.
+// Alternative is a choice between two productions, e.g. `a | b`. A run of them
+// is a chain leaning left, so `a | b | c` is `( a | b ) | c`, and a branch in
+// parentheses is a Group rather than part of the chain.
 Alternative :: struct {
-	productions: [dynamic]Production,
-	pos:         int,
+	lhs: ^Production,
+	rhs: ^Production,
+	pos:  int,
 }
 
 // Optional is a zero-or-one production, e.g. `[ a b ]`.
@@ -233,6 +236,26 @@ destroy_decl :: proc(decl: Decl) {
 	}
 }
 
+// collect_branches returns the branches of an alternative as a flat list. The chain
+// of choices leans left, so the branches are read by walking the left spine down and
+// taking the right side at each step. Each branch is handed over to the caller, and
+// the chain holds nothing of its own to free. The list belongs to the caller.
+collect_branches :: proc(alternative: Alternative) -> [dynamic]Production {
+	branches := make([dynamic]Production)
+	collect_branches_into(alternative, &branches)
+	return branches
+}
+
+collect_branches_into :: proc(alternative: Alternative, branches: ^[dynamic]Production) {
+	inner, is_chain := alternative.lhs^.(Alternative)
+	if is_chain {
+		collect_branches_into(inner, branches)
+	} else {
+		append(branches, alternative.lhs^)
+	}
+	append(branches, alternative.rhs^)
+}
+
 destroy_production :: proc(production: Production) {
 	switch v in production {
 	case Ident, String_Lit, Regex_Lit, External_Value:
@@ -242,10 +265,10 @@ destroy_production :: proc(production: Production) {
 		}
 		delete(v.productions)
 	case Alternative:
-		for e in v.productions {
-			destroy_production(e)
-		}
-		delete(v.productions)
+		destroy_production(v.lhs^)
+		free(v.lhs)
+		destroy_production(v.rhs^)
+		free(v.rhs)
 	case Optional:
 		destroy_production(v.production^)
 		free(v.production)

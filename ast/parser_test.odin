@@ -21,14 +21,51 @@ test_parse_hello :: proc(t: ^testing.T) {
 
 	alts, ok3 := rule.production.(Alternative)
 	testing.expect(t, ok3, "expected Alternative")
-	testing.expect(t, len(alts.productions) == 2, "expected two alternatives")
+	branches := collect_branches(alts)
+	defer delete(branches)
+	testing.expect(t, len(branches) == 2, "expected two alternatives")
 
-	s1, ok4 := alts.productions[0].(String_Lit)
+	s1, ok4 := branches[0].(String_Lit)
 	testing.expect(t, ok4, "first alt should be String_Lit")
 	testing.expect(t, s1.value == `"Hello"`, "wrong value for first alt")
-	s2, ok5 := alts.productions[1].(String_Lit)
+	s2, ok5 := branches[1].(String_Lit)
 	testing.expect(t, ok5, "second alt should be String_Lit")
 	testing.expect(t, s2.value == `"Hi"`, "wrong value for second alt")
+}
+
+// An alternative is a chain of choices leaning left, so `a | b | c` is
+// `( a | b ) | c` and the branches are read back by walking the left spine. A
+// branch in parentheses is a group, so it never looks like part of the chain.
+@(test)
+test_parse_alternative_is_a_left_leaning_chain :: proc(t: ^testing.T) {
+	file := must_parse(t, `r = a | b | c;`)
+	defer destroy_file(&file)
+
+	rule := must_rule(t, file, "r")
+	outer, ok := rule.production.(Alternative)
+	testing.expect(t, ok, "expected Alternative")
+
+	inner, is_chain := outer.lhs^.(Alternative)
+	testing.expect(t, is_chain, "the left of the chain is the first two branches")
+	_, still_chain := inner.lhs^.(Alternative)
+	testing.expect(t, !still_chain, "two branches is the end of the chain")
+
+	branches := collect_branches(outer)
+	defer delete(branches)
+	testing.expect(t, len(branches) == 3, "expected three branches")
+
+	names := make([dynamic]string, 0, len(branches))
+	defer delete(names)
+	for branch in branches {
+		ident, is_ident := branch.(Ident)
+		testing.expect(t, is_ident, "every branch is an identifier here")
+		append(&names, ident.name)
+	}
+	testing.expect(
+		t,
+		names[0] == "a" && names[1] == "b" && names[2] == "c",
+		"the branches come back in the order they were written",
+	)
 }
 
 @(test)
@@ -136,7 +173,9 @@ rule2 = a // comment
 	// Both alternatives survive the trailing comments.
 	alt, ok3 := rule1.production.(Alternative)
 	testing.expect(t, ok3, "expected Alternative for rule1")
-	testing.expect(t, len(alt.productions) == 2, "expected two alternatives")
+	branches := collect_branches(alt)
+	defer delete(branches)
+	testing.expect(t, len(branches) == 2, "expected two alternatives")
 
 	rule2, ok4 := file.decls[1].(Rule)
 	testing.expect(t, ok4, "expected Rule for rule2")
@@ -357,16 +396,18 @@ test_parse_tag_wraps_each_alternative_sequence :: proc(t: ^testing.T) {
 	rule := must_rule(t, file, "foo")
 	alts, ok := must_production(t, rule).(Alternative)
 	testing.expect(t, ok, "expected Alternative")
-	testing.expect(t, len(alts.productions) == 2, "expected two alternatives")
+	branches := collect_branches(alts)
+	defer delete(branches)
+	testing.expect(t, len(branches) == 2, "expected two alternatives")
 
-	first, ok2 := alts.productions[0].(Tagged_Production)
+	first, ok2 := branches[0].(Tagged_Production)
 	testing.expect(t, ok2, "the first alternative should be tagged")
 	first_seq, ok3 := first.production^.(Sequence)
 	testing.expect(t, ok3, "the first alternative should be a sequence")
 	testing.expect(t, len(first_seq.productions) == 2, "the first alternative has two elements")
 	testing.expect(t, first.tag[0].ident.name == "first", "wrong first tag")
 
-	second, ok4 := alts.productions[1].(Tagged_Production)
+	second, ok4 := branches[1].(Tagged_Production)
 	testing.expect(t, ok4, "the second alternative should be tagged")
 	second_seq, ok5 := second.production^.(Sequence)
 	testing.expect(t, ok5, "the second alternative should be a sequence")
@@ -416,13 +457,15 @@ test_parse_tag_on_each_alternative :: proc(t: ^testing.T) {
 	rule := must_rule(t, file, "foo")
 	alts, ok := must_production(t, rule).(Alternative)
 	testing.expect(t, ok, "expected Alternative")
-	testing.expect(t, len(alts.productions) == 2, "expected two alternatives")
+	branches := collect_branches(alts)
+	defer delete(branches)
+	testing.expect(t, len(branches) == 2, "expected two alternatives")
 
-	first, ok2 := alts.productions[0].(Tagged_Production)
+	first, ok2 := branches[0].(Tagged_Production)
 	testing.expect(t, ok2, "the first alternative should be tagged")
 	testing.expect(t, first.tag[0].ident.name == "a", "wrong first tag")
 
-	second, ok3 := alts.productions[1].(Tagged_Production)
+	second, ok3 := branches[1].(Tagged_Production)
 	testing.expect(t, ok3, "the second alternative should be tagged")
 	testing.expect(t, second.tag[0].ident.name == "b", "wrong second tag")
 }

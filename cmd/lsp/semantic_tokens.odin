@@ -174,9 +174,8 @@ classify_production :: proc(production: ast.Production, types: ^map[int]Sem_Toke
 			classify_production(e, types)
 		}
 	case ast.Alternative:
-		for e in v.productions {
-			classify_production(e, types)
-		}
+		classify_production(v.lhs^, types)
+		classify_production(v.rhs^, types)
 	case ast.Optional:
 		classify_production(v.production^, types)
 	case ast.Repetition:

@@ -120,11 +120,10 @@ find_hit_production :: proc(production: ast.Production, offset: int) -> Hit {
 			}
 		}
 	case ast.Alternative:
-		for e in v.productions {
-			if h := find_hit_production(e, offset); found(h) {
-				return h
-			}
+		if h := find_hit_production(v.lhs^, offset); found(h) {
+			return h
 		}
+		return find_hit_production(v.rhs^, offset)
 	case ast.Optional:
 		return find_hit_production(v.production^, offset)
 	case ast.Repetition:

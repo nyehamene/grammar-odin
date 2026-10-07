@@ -162,17 +162,22 @@ parse_comment_group :: proc(p: ^Parser) -> Decl {
 
 // parse_production parses a production: a sequence or a set of alternatives.
 parse_production :: proc(p: ^Parser) -> Production {
-	production := parse_sequence(p)
-	if peek(p).kind == .Pipe {
-		alts := make([dynamic]Production, p.allocator)
-		append(&alts, production)
-		for peek(p).kind == .Pipe {
-			next(p)
-			append(&alts, parse_sequence(p))
+	lhs := parse_sequence(p)
+	if peek(p).kind != .Pipe do return lhs
+
+	// Each branch folds into the left of the one before it, so `a | b | c` is
+	// `( a | b ) | c`. pos is that of the first branch, which is what a single
+	// alternative over the same branches reported before it became a chain.
+	pos := production_pos(lhs)
+	for peek(p).kind == .Pipe {
+		next(p)
+		lhs = Alternative {
+			lhs = alloc_production(lhs, p.allocator),
+			rhs = alloc_production(parse_sequence(p), p.allocator),
+			pos = pos,
 		}
-		return Alternative{productions = alts, pos = production_pos(production)}
 	}
-	return production
+	return lhs
 }
 
 // parse_sequence parses `basic { basic } [ tag ]`. A tag annotates the production
@@ -292,9 +297,9 @@ trailing_tag_pos :: proc(production: Production) -> (int, bool) {
 			return trailing_tag_pos(v.productions[len(v.productions) - 1])
 		}
 	case Alternative:
-		if len(v.productions) > 0 {
-			return trailing_tag_pos(v.productions[len(v.productions) - 1])
-		}
+		// The chain leans left, so its last branch is the one the right
+		// spine reaches.
+		return trailing_tag_pos(v.rhs^)
 	case Group:
 		return trailing_tag_pos(v.production^)
 	case Optional:

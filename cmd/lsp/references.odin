@@ -275,9 +275,8 @@ rule_ref_in_production :: proc(
 			rule_ref_in_production(f, target_ns_dir, name, e, uris, out, private)
 		}
 	case ast.Alternative:
-		for e in v.productions {
-			rule_ref_in_production(f, target_ns_dir, name, e, uris, out, private)
-		}
+		rule_ref_in_production(f, target_ns_dir, name, v.lhs^, uris, out, private)
+		rule_ref_in_production(f, target_ns_dir, name, v.rhs^, uris, out, private)
 	case ast.Optional:
 		rule_ref_in_production(f, target_ns_dir, name, v.production^, uris, out, private)
 	case ast.Repetition:
@@ -329,9 +328,8 @@ binding_ref_in_production :: proc(
 			binding_ref_in_production(f, name, e, uris, out)
 		}
 	case ast.Alternative:
-		for e in v.productions {
-			binding_ref_in_production(f, name, e, uris, out)
-		}
+		binding_ref_in_production(f, name, v.lhs^, uris, out)
+		binding_ref_in_production(f, name, v.rhs^, uris, out)
 	case ast.Optional:
 		binding_ref_in_production(f, name, v.production^, uris, out)
 	case ast.Repetition:
