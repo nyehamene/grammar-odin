@@ -28,6 +28,34 @@ see ../grammar.txt
 - Optional - Ex `[ a ]` zero or one
 - Member_Access - Ex `foo.bar`
 
+## What holds what
+
+`Production` is a union of the kinds above, and how many productions each one holds
+is what the shapes are for:
+
+| kind | holds | note |
+|---|---|---|
+| `Sequence` | `productions: [dynamic]Production` | the only list in the tree |
+| `Group`, `Optional`, `Repetition` | `production: ^Production` | one production, not a list of them |
+| `Alternative` | `lhs: ^Production`, `rhs: ^Production` | a choice between two |
+| `Tagged_Production` | `production: ^Production`, `tag` | a tag annotates one production |
+| `Rule` | `production: Production` | a rule names one production |
+
+A group, an optional and a repetition hold a single production because they always
+held exactly one thing. `( a b )` is a `Group` holding the `Sequence` a b, rather
+than a group holding a list of two.
+
+An alternative is a pair, so a run of them is a chain. The chain leans left, because
+that is what folding each branch into the one before it gives: `a | b | c` is
+`( a | b ) | c`. A branch in parentheses is a `Group`, not part of the chain, so
+`( a | b ) | c` is a two-branch choice whose first branch is a group.
+`collect_branches` walks the left spine to read the branches back out.
+
+The fields holding a production are pointers because a union cannot hold itself by
+value: `Group` is a member of `Production` and holds one, so the indirection is what
+gives the type a size. `alloc_production` builds the box and `destroy_production`
+frees it after recursing into what it holds.
+
 ## Rule
 
 A rule is an identifier follow by zero or more parameters, an equal (=) and a body terminated by semicolon (;).
@@ -73,11 +101,11 @@ A tag annotates the production it follows, so it wraps the whole sequence instea
 of standing on its own.
 
 ```
-foo = a `name="value"`;   // Tagged_Expr { expr = a, tag = [name="value"] }
-bar = a b `name="value"`; // Tagged_Expr { expr = Sequence_Expr { a, b }, tag }
+foo = a `name="value"`;   // Tagged_Production { production = a, tag = [name="value"] }
+bar = a b `name="value"`; // Tagged_Production { production = Sequence { a, b }, tag }
 ```
 
-`Tagged_Expr` holds the annotated production and one entry per `name="value"`
+`Tagged_Production` holds the annotated production and one entry per `name="value"`
 pair, each with its own position so a diagnostic can point at it. The wrapper
 reports the position of the production it annotates, not that of the tag written
 after it. A tag changes nothing about the production it annotates: the checker

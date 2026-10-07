@@ -113,7 +113,7 @@ for the same reason a string literal may not.
 
 - [x] `token`: `.Tag` kind, `scan_tag`, and the shared `parse_tag`/`write_tag`
       split in `token/tag.odin`
-- [x] `ast`: `Tagged_Expr` wrapping the annotated production, and one `Tag_Pair`
+- [x] `ast`: `Tagged_Production` wrapping the annotated production, and one `Tag_Pair`
       per entry, each with its own position
 - [x] `ast`: rules 1 to 5 enforced, with the diagnostic pointing at the tag
 - [x] `check`: a tagged production yields the operand of the element it

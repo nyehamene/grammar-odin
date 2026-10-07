@@ -22,7 +22,7 @@ use = "p" { "p" } "q" "z";
 A call anywhere in a body is expanded, not only one standing on its own, and a
 callee body that comes out as a sequence is spliced into the body that called it
 rather than nested inside it, so a sequence never nests inside another. That is the
-invariant the parser keeps with `unpack_sequence`, and an expansion that broke it
+invariant the tree keeps by construction, and an expansion that broke it
 would hand the rest of the tool a shape it cannot produce.
 
 An alternative is the exception: its elements are whole branches, so a callee body
@@ -69,7 +69,7 @@ and a parameter left over keeps its own name in the body.
 
 `expand_production` takes its argument over: the result is built from what the
 argument held, whatever the argument owned is freed along the way, and the result
-belongs to the caller, who frees it with `destroy_expr`. `expand_rule` returns a
+belongs to the caller, who frees it with `destroy_production`. `expand_rule` returns a
 rule that owns its parameter list and its body outright.
 
 This is what lets one rule be expanded more than once. Expansion substitutes into a

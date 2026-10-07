@@ -8,7 +8,7 @@ The language server protocol implementation code and API should be placed in 'se
 
 - [x] **1. `textDocument/hover`** (implemented in `cmd/lsp/hover.odin`)
     - [x] **Types**: `Hover`, `Marked_String`, and position parsing in `cmd/lsp/hover.odin`.
-    - [x] **AST Position Logic**: `find_hit`/`find_hit_expr` in `cmd/lsp/find.odin` find the most specific token under an offset.
+    - [x] **AST Position Logic**: `find_hit`/`find_hit_production` in `cmd/lsp/find.odin` find the most specific token under an offset.
     - [x] **Handler**: `handleHover` uses the position logic to identify the node under the cursor.
     - [x] **Type Formatting**: The handler describes literals, directives, parameters, and resolves rule names, import bindings, and namespace members to their declaration locations.
     - [x] **Dispatcher**: `textDocument/hover` is wired in `cmd/lsp/server.odin`.
