@@ -473,10 +473,10 @@ check_file :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File) {
 			// Record which rule is being walked so that a reference can tell
 			// whether it came from the declaring rule itself.
 			fi.enclosing_rule = d.ident.name
-			check_body(cu, fi, d.params[:], d.production)
+			check_body(cu, fi, d.params, d.production)
 			fi.enclosing_rule = ""
 			if len(d.params) > 0 {
-				check_unused_params(cu, fi, d.params[:], d.production)
+				check_unused_params(cu, fi, d.params, d.production)
 			}
 		}
 	}
@@ -600,10 +600,10 @@ uses_param :: proc(production: ast.Production, param: string) -> bool {
 		case ast.Qual_Ident:
 			if uses_param(it.lhs, param) do return true
 		}
-		return productions_use_param(v.args[:], param)
+		return productions_use_param(v.args, param)
 
 	case ast.Sequence:
-		return productions_use_param(v.productions[:], param)
+		return productions_use_param(v.productions, param)
 	case ^ast.Alternative:
 		return uses_param(v.lhs, param) || uses_param(v.rhs, param)
 	case ^ast.Optional:
@@ -808,7 +808,7 @@ check_production_scoped :: proc(
 		}
 
 	case ast.Sequence:
-		check_production_group(cu, fi, params, v.pos, v.productions[:], o)
+		check_production_group(cu, fi, params, v.pos, v.productions, o)
 
 	case ^ast.Alternative:
 		check_production_scoped(cu, fi, params, v.lhs, o)

@@ -26,7 +26,7 @@ Decl :: union {
 
 // File is the root node of a parsed grammar source.
 File :: struct {
-	decls:   [dynamic]Decl,
+	decls:   []Decl,
 	end_pos: int,
 }
 
@@ -36,7 +36,7 @@ File :: struct {
 //   greet name title    = "hello" name title;
 Rule :: struct {
 	ident:      Ident,
-	params:     [dynamic]Ident,
+	params:     []Ident,
 	production: Production,
 	pos:        int,
 }
@@ -52,7 +52,7 @@ Binding :: struct {
 
 // Comment_Group is a run of consecutive comments.
 Comment_Group :: struct {
-	list: [dynamic]Comment,
+	list: []Comment,
 	pos:  int,
 }
 
@@ -87,7 +87,7 @@ External_Value :: struct {
 
 // Sequence is a sequence of productions, e.g. `a b c`.
 Sequence :: struct {
-	productions: [dynamic]Production,
+	productions: []Production,
 	pos:         int,
 }
 
@@ -135,14 +135,14 @@ Any_Ident :: union {
 Call :: struct {
 	// name: Production,
 	ident: Any_Ident,
-	args:  [dynamic]Production,
+	args:  []Production,
 	pos:   int,
 }
 
 // Directive is a directive, e.g. `@import("base")`.
 Directive :: struct {
 	ident: Ident,
-	args:  [dynamic]Production,
+	args:  []Production,
 	pos:   int,
 }
 
@@ -152,7 +152,7 @@ Directive :: struct {
 // the tag written after it.
 Tagged_Production :: struct {
 	production: Production,
-	tag:        [dynamic]Tag_Pair,
+	tag:        []Tag_Pair,
 	pos:        int,
 }
 
@@ -162,11 +162,7 @@ Tagged_Production :: struct {
 
 // alternative returns a choice between two productions. A run of them is a chain
 // leaning left, so `a | b | c` is `( a | b ) | c`.
-alternative :: proc(
-	lhs, rhs: Production,
-	pos: int,
-	allocator := context.allocator,
-) -> Production {
+alternative :: proc(lhs, rhs: Production, pos: int, allocator := context.allocator) -> Production {
 	node := new(Alternative, allocator)
 	node.lhs = lhs
 	node.rhs = rhs
@@ -175,11 +171,7 @@ alternative :: proc(
 }
 
 // optional returns a zero-or-one production, e.g. `[ a b ]`.
-optional :: proc(
-	production: Production,
-	pos: int,
-	allocator := context.allocator,
-) -> Production {
+optional :: proc(production: Production, pos: int, allocator := context.allocator) -> Production {
 	node := new(Optional, allocator)
 	node.production = production
 	node.pos = pos
@@ -199,11 +191,7 @@ repetition :: proc(
 }
 
 // group returns a grouped production, e.g. `( a b )`.
-group :: proc(
-	production: Production,
-	pos: int,
-	allocator := context.allocator,
-) -> Production {
+group :: proc(production: Production, pos: int, allocator := context.allocator) -> Production {
 	node := new(Group, allocator)
 	node.production = production
 	node.pos = pos
@@ -213,7 +201,7 @@ group :: proc(
 // tagged_production returns a production annotated with one or more tags.
 tagged_production :: proc(
 	production: Production,
-	tag: [dynamic]Tag_Pair,
+	tag: []Tag_Pair,
 	pos: int,
 	allocator := context.allocator,
 ) -> Production {
@@ -284,6 +272,41 @@ decl_pos :: proc(decl: Decl) -> int {
 	return 0
 }
 
+// A node holds its lists as slices rather than as dynamic arrays, because a slice can
+// be freed with the allocator it was built with and a dynamic array cannot. A list
+// whose length is known before it is built is allocated as a slice and filled in
+// place. One whose length is only known once it has been read is accumulated in a
+// dynamic array and copied into a slice of exactly its length by one of the three
+// below, once the node that owns it is built. The dynamic array stays with whoever
+// built it: a list handed to a node has already been taken over by that builder.
+
+// to_slice_decls copies a working list into a slice of exactly its length.
+to_slice_decls :: proc(list: [dynamic]Decl, allocator := context.allocator) -> []Decl {
+	sliced := make([]Decl, len(list), allocator)
+	copy(sliced, list[:])
+	return sliced
+}
+
+// to_slice_comments copies a working list into a slice of exactly its length.
+to_slice_comments :: proc(
+	list: [dynamic]Comment,
+	allocator := context.allocator,
+) -> []Comment {
+	sliced := make([]Comment, len(list), allocator)
+	copy(sliced, list[:])
+	return sliced
+}
+
+// to_slice_productions copies a working list into a slice of exactly its length.
+to_slice_productions :: proc(
+	list: [dynamic]Production,
+	allocator := context.allocator,
+) -> []Production {
+	sliced := make([]Production, len(list), allocator)
+	copy(sliced, list[:])
+	return sliced
+}
+
 // destroy_file frees all allocations owned by file.
 destroy_file :: proc(file: ^File) {
 	for decl in file.decls {
@@ -304,6 +327,14 @@ destroy_decl :: proc(decl: Decl) {
 	}
 }
 
+// branch_count returns the number of branches a chain of choices holds. The chain
+// leans left, so counting is walking the left spine down and adding the right side at
+// each step.
+branch_count :: proc(alternative: ^Alternative) -> int {
+	inner, is_chain := alternative.lhs.(^Alternative)
+	return (is_chain ? branch_count(inner) : 1) + 1
+}
+
 // collect_branches returns the branches of an alternative as a flat list. The chain
 // of choices leans left, so the branches are read by walking the left spine down and
 // taking the right side at each step.
@@ -311,21 +342,30 @@ destroy_decl :: proc(decl: Decl) {
 // It only reads: the chain and its branches still belong to the caller, which frees
 // them with destroy_production. A caller that owns the alternative instead frees just
 // the chain nodes with destroy_alternative_chain, once the branches are held.
-collect_branches :: proc(alternative: ^Alternative) -> [dynamic]Production {
-	branches := make([dynamic]Production)
-	collect_branches_into(alternative, &branches)
+collect_branches :: proc(
+	alternative: ^Alternative,
+	allocator := context.allocator,
+) -> []Production {
+	branches := make([]Production, branch_count(alternative), allocator)
+	collect_branches_into(alternative, branches[:])
 	return branches
 }
 
-collect_branches_into :: proc(alternative: ^Alternative, branches: ^[dynamic]Production) {
+// collect_branches_into writes the branches of a chain into the front of branches and
+// returns the rest of it, so that a link further left writes before this one. The
+// list must be as long as branch_count reports.
+collect_branches_into :: proc(alternative: ^Alternative, branches: []Production) -> []Production {
 	// The left side is either a further link of the chain or a branch.
 	inner, is_chain := alternative.lhs.(^Alternative)
+	rest := branches
 	if is_chain {
-		collect_branches_into(inner, branches)
+		rest = collect_branches_into(inner, branches)
 	} else {
-		append(branches, alternative.lhs)
+		rest[0] = alternative.lhs
+		rest = rest[1:]
 	}
-	append(branches, alternative.rhs)
+	rest[0] = alternative.rhs
+	return rest[1:]
 }
 
 // destroy_alternative_chain frees the nodes of a chain of choices and nothing else: the

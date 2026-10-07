@@ -29,7 +29,7 @@ parse_file :: proc(
 ) {
 
 	file: File
-	file.decls = make([dynamic]Decl, allocator)
+	decls := make([dynamic]Decl, allocator)
 	errors := make([dynamic]Error, allocator)
 
 	p := Parser {
@@ -40,10 +40,12 @@ parse_file :: proc(
 
 	for peek(&p).kind != .EOF {
 		if decl, ok := parse_decl(&p); ok {
-			append(&file.decls, decl)
+			append(&decls, decl)
 		}
 	}
 
+	file.decls = to_slice_decls(decls, allocator)
+	delete(decls)
 	file.end_pos = peek(&p).end
 	errors = p.errors
 	return file, errors
@@ -157,7 +159,10 @@ parse_comment_group :: proc(p: ^Parser) -> Decl {
 		t := next(p)
 		append(&list, Comment{pos = t.start, text = token.lexeme(t, p.src)})
 	}
-	return Comment_Group{list = list, pos = list[0].pos}
+	pos := list[0].pos
+	group := to_slice_comments(list, p.allocator)
+	delete(list)
+	return Comment_Group{list = group, pos = pos}
 }
 
 // parse_production parses a production: a sequence or a set of alternatives.
@@ -215,7 +220,7 @@ parse_sequence :: proc(p: ^Parser) -> Production {
 			tag_seen = true
 			// Everything parsed so far becomes the annotated production, so a tag
 			// over `a b c` wraps the sequence and not just its last element.
-			annotated := sequence_or_single(terms)
+			annotated := sequence_or_single(terms, p.allocator)
 			terms = make([dynamic]Production, p.allocator)
 			append(
 				&terms,
@@ -231,47 +236,50 @@ parse_sequence :: proc(p: ^Parser) -> Production {
 		append(&terms, parse_basic(p))
 	}
 
-	return sequence_or_single(terms)
+	return sequence_or_single(terms, p.allocator)
 }
 
 // sequence_or_single turns the elements collected for a sequence into the
 // production they describe: a single element stands alone, several make a
-// Sequence. The list is handed over to the result rather than copied, and
+// Sequence. The elements are handed over to the result rather than copied, and
 // freed when there is nothing to keep.
-sequence_or_single :: proc(terms: [dynamic]Production) -> Production {
+sequence_or_single :: proc(
+	terms: [dynamic]Production,
+	allocator := context.allocator,
+) -> Production {
 	if len(terms) == 1 {
 		only := terms[0]
 		delete(terms)
 		return only
 	}
-	return Sequence{productions = terms, pos = production_pos(terms[0])}
+	pos := production_pos(terms[0])
+	productions := to_slice_productions(terms, allocator)
+	delete(terms)
+	return Sequence{productions = productions, pos = pos}
 }
 
 // parse_tag_pairs splits the scanned tag into its pairs, one per `name="value"`
 // entry. The tokenizer has already reported a malformed tag, so a body it
 // rejected yields no pairs here rather than a second diagnostic for the same
 // offset. The returned list is owned by the caller.
-parse_tag_pairs :: proc(p: ^Parser, t: token.Token) -> [dynamic]Tag_Pair {
+parse_tag_pairs :: proc(p: ^Parser, t: token.Token) -> []Tag_Pair {
 	lex := token.lexeme(t, p.src)
 	// Strip the backticks: the first opens the tag and the last closes it.
 	scanned, ok := token.parse_tag(lex[1:len(lex) - 1])
 	defer delete(scanned)
 
-	pairs := make([dynamic]Tag_Pair, 0, len(scanned), p.allocator)
 	if !ok {
-		return pairs
+		return nil
 	}
-	for pair in scanned {
+	pairs := make([]Tag_Pair, len(scanned), p.allocator)
+	for pair, i in scanned {
 		// The opening backtick sits between the token start and the body.
 		pos := t.start + 1 + pair.pos
-		append(
-			&pairs,
-			Tag_Pair {
-				ident = Ident{pos = pos, name = pair.name},
-				value = String_Lit{pos = pos, value = pair.value},
-				pos = pos,
-			},
-		)
+		pairs[i] = Tag_Pair {
+			ident = Ident{pos = pos, name = pair.name},
+			value = String_Lit{pos = pos, value = pair.value},
+			pos = pos,
+		}
 	}
 	return pairs
 }
@@ -369,13 +377,16 @@ parse_directive :: proc(p: ^Parser) -> Production {
 	at := expect(p, .At)
 	name := expect(p, .Ident)
 
-	args := make([dynamic]Production, p.allocator)
-	if peek(p).kind == .LParen {
-		next(p)
-		t := expect(p, .String)
-		append(&args, String_Lit{pos = t.start, value = token.lexeme(t, p.src)})
-		expect(p, .RParen)
+	if peek(p).kind != .LParen {
+		return Directive{ident = ident_node(name, p.src), pos = at.start}
 	}
+
+	next(p)
+	t := expect(p, .String)
+	expect(p, .RParen)
+	// A directive takes at most one argument, so its list is sized for that one.
+	args := make([]Production, 1, p.allocator)
+	args[0] = String_Lit{pos = t.start, value = token.lexeme(t, p.src)}
 
 	return Directive{ident = ident_node(name, p.src), args = args, pos = at.start}
 }
@@ -439,7 +450,8 @@ parse_call :: proc(p: ^Parser) -> Production {
 
 	call := new(Call, p.allocator)
 	call.ident = name
-	call.args = args
+	call.args = to_slice_productions(args, p.allocator)
+	delete(args)
 	call.pos = lt.start
 	return call
 }
@@ -545,10 +557,10 @@ ident_node :: proc(t: token.Token, src: string) -> Ident {
 	return Ident{pos = t.start, name = token.lexeme(t, src)}
 }
 
-clone_idents :: proc(params: []Ident, allocator := context.allocator) -> [dynamic]Ident {
-	out := make([dynamic]Ident, 0, len(params), allocator)
-	for p in params {
-		append(&out, p)
+clone_idents :: proc(params: []Ident, allocator := context.allocator) -> []Ident {
+	out := make([]Ident, len(params), allocator)
+	for p, i in params {
+		out[i] = p
 	}
 	return out
 }

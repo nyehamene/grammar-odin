@@ -260,14 +260,14 @@ print_grouped :: proc(p: ^Printer, g: ^Grouped) {
 		print_text(p, "NormalizedTaggedProduction")
 	}
 	p.indent += 1
-	for pair in g.tag[:] {
+	for pair in g.tag {
 		print_header(
 			p,
 			pair.pos,
 			fmt.tprintf("TagPair: %s=%s", pair.ident.name, pair.value.value),
 		)
 	}
-	for production in g.productions[:] {
+	for production in g.productions {
 		print_normalized(p, production)
 	}
 	p.indent -= 1

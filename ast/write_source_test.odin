@@ -483,9 +483,9 @@ test_write_comment_group_round_trips :: proc(t: ^testing.T) {
 	defer bytes.buffer_destroy(&buf)
 
 	group := Comment_Group{}
-	group.list = make([dynamic]Comment)
-	append(&group.list, Comment{text = "// one"})
-	append(&group.list, Comment{text = "// two\n"})
+	group.list = make([]Comment, 2)
+	group.list[0] = Comment{text = "// one"}
+	group.list[1] = Comment{text = "// two\n"}
 	defer delete(group.list)
 	Write_Comment_Group(bytes.buffer_to_stream(&buf), group)
 	got := strings.clone(bytes.buffer_to_string(&buf))

@@ -44,7 +44,7 @@ import "core:strings"
 // that writes a normalized rule uses this to say so rather than to leave the
 // reader with a file that will not load.
 Has_Empty_Middle :: proc(n: Normalized_Rule) -> bool {
-	return has_empty_middle(n.body[:])
+	return has_empty_middle(n.body)
 }
 
 // has_empty_middle reports whether a factored production holds a middle that its
@@ -109,7 +109,7 @@ write_terminator :: proc(w: io.Writer, col: int) {
 // hides them among each other. Any other body is written on one line, as it stands.
 // The rule is only read.
 Write_Rule :: proc(w: io.Writer, r: Rule) {
-	col := separator_column(lhs_width(r.ident, r.params[:]))
+	col := separator_column(lhs_width(r.ident, r.params))
 
 	// Only a body that is an alternative of branches is written on lines of its own.
 	// An alternative nested in a group keeps the line it has always had, since the
@@ -117,7 +117,7 @@ Write_Rule :: proc(w: io.Writer, r: Rule) {
 	// would read as an alternative of the rule rather than of the group.
 	branches, is_branches := r.production.(^Alternative)
 	if !is_branches {
-		write_lhs(w, r.ident, r.params[:])
+		write_lhs(w, r.ident, r.params)
 		io.write_string(w, " = ")
 		write_production(w, r.production)
 		io.write_string(w, ";\n")
@@ -127,7 +127,7 @@ Write_Rule :: proc(w: io.Writer, r: Rule) {
 	list := collect_branches(branches)
 	defer delete(list)
 
-	write_lhs(w, r.ident, r.params[:])
+	write_lhs(w, r.ident, r.params)
 	io.write_string(w, " = ")
 	write_production(w, list[0])
 	for branch in list[1:] {
@@ -152,7 +152,7 @@ Write_Binding :: proc(w: io.Writer, b: Binding) {
 // line. A comment the scanner kept its line break is written as it stands, and one
 // that did not gets a break of its own.
 Write_Comment_Group :: proc(w: io.Writer, group: Comment_Group) {
-	for comment in group.list[:] {
+	for comment in group.list {
 		io.write_string(w, comment.text)
 		if !strings.has_suffix(comment.text, "\n") {
 			io.write_string(w, "\n")
@@ -204,15 +204,15 @@ write_production :: proc(w: io.Writer, p: Production) {
 		io.write_string(w, "@")
 		io.write_string(w, it.ident.name)
 		io.write_string(w, "(")
-		write_production_list(w, it.args[:], " ")
+		write_production_list(w, it.args, " ")
 		io.write_string(w, ")")
 	case ^Call:
 		write_call(w, it)
 	case ^Tagged_Production:
 		write_production(w, it.production)
-		write_tag_pairs(w, it.tag[:])
+		write_tag_pairs(w, it.tag)
 	case Sequence:
-		write_production_list(w, it.productions[:], " ")
+		write_production_list(w, it.productions, " ")
 	case ^Alternative:
 		// The chain leans left, so writing the left then the right gives
 		// `a | b | c` with no parentheses between the branches.
@@ -278,7 +278,7 @@ write_call :: proc(w: io.Writer, call: ^Call) {
 		io.write_string(w, ".")
 		io.write_string(w, name.rhs.name)
 	}
-	for arg in call.args[:] {
+	for arg in call.args {
 		io.write_string(w, " ")
 		write_production(w, arg)
 	}
@@ -314,7 +314,7 @@ write_external :: proc(w: io.Writer, e: External_Value) {
 // write_normalized_rule writes a factored rule as its leading, its middles, and its
 // trailing, or as its branches whole when one of them has nothing in the middle.
 write_normalized_rule :: proc(w: io.Writer, n: Normalized_Rule) {
-	col := separator_column(lhs_width(n.ident, n.params[:]))
+	col := separator_column(lhs_width(n.ident, n.params))
 
 	if Has_Empty_Middle(n) {
 		write_branch_lines(w, col, n)
@@ -323,9 +323,9 @@ write_normalized_rule :: proc(w: io.Writer, n: Normalized_Rule) {
 
 	// A rule with no leading and no trailing is one part, and is written as one line.
 	if is_nothing(n.leading) && is_nothing(n.trailing) {
-		write_lhs(w, n.ident, n.params[:])
+		write_lhs(w, n.ident, n.params)
 		io.write_string(w, " = ")
-		write_middles(w, n.body[:])
+		write_middles(w, n.body)
 		io.write_string(w, ";\n")
 		return
 	}
@@ -335,14 +335,14 @@ write_normalized_rule :: proc(w: io.Writer, n: Normalized_Rule) {
 	// formatter puts a continuation line that carries no `|` (rule 5 of
 	// implementation/08-fmt.md). Showing the parts apart is the point, since they are
 	// what the rule was factored into.
-	write_lhs(w, n.ident, n.params[:])
+	write_lhs(w, n.ident, n.params)
 	io.write_string(w, " = ")
 	if !is_nothing(n.leading) {
 		write_normalized(w, n.leading)
 		io.write_string(w, "\n")
 		write_pad(w, col + 2)
 	}
-	write_middles(w, n.body[:])
+	write_middles(w, n.body)
 	if !is_nothing(n.trailing) {
 		io.write_string(w, "\n")
 		write_pad(w, col + 2)
@@ -357,7 +357,7 @@ write_normalized_rule :: proc(w: io.Writer, n: Normalized_Rule) {
 // language the rule matches. The branches are alternatives of one another, so they
 // get the layout an alternative gets.
 write_branch_lines :: proc(w: io.Writer, col: int, n: Normalized_Rule) {
-	write_lhs(w, n.ident, n.params[:])
+	write_lhs(w, n.ident, n.params)
 	io.write_string(w, " = ")
 	write_branch(w, n.leading, n.body[0], n.trailing)
 	for middle in n.body[1:] {
@@ -434,7 +434,7 @@ write_normalized :: proc(w: io.Writer, n: Normalized_Production) {
 	case ^Factored:
 		// A production with an empty middle has no factored form to write, so it is
 		// written as its branches whole, the same as a rule that has one.
-		if has_empty_middle(it.body[:]) {
+		if has_empty_middle(it.body) {
 			for middle, i in it.body {
 				if i > 0 do io.write_string(w, " | ")
 				write_branch(w, it.leading, middle, it.trailing)
@@ -450,7 +450,7 @@ write_normalized :: proc(w: io.Writer, n: Normalized_Production) {
 			io.write_string(w, " ")
 		}
 		io.write_string(w, "( ")
-		write_choice(w, it.body[:])
+		write_choice(w, it.body)
 		io.write_string(w, " )")
 		if !is_nothing(it.trailing) {
 			io.write_string(w, " ")
@@ -465,7 +465,7 @@ write_normalized :: proc(w: io.Writer, n: Normalized_Production) {
 write_grouped :: proc(w: io.Writer, g: ^Grouped) {
 	switch g.shape {
 	case .Sequence:
-		write_normalized_list(w, g.productions[:], " ")
+		write_normalized_list(w, g.productions, " ")
 	case .Group:
 		// A group holding a factored alternative already carries the parentheses
 		// that a factored form writes for itself, so they are not doubled. Any other
@@ -478,18 +478,18 @@ write_grouped :: proc(w: io.Writer, g: ^Grouped) {
 				return
 			}
 		}
-		write_wrapped(w, g.productions[:], "(", ")", " ")
+		write_wrapped(w, g.productions, "(", ")", " ")
 	case .Optional:
-		write_wrapped(w, g.productions[:], "[", "]", " ")
+		write_wrapped(w, g.productions, "[", "]", " ")
 	case .Repetition:
-		write_wrapped(w, g.productions[:], "{", "}", " ")
+		write_wrapped(w, g.productions, "{", "}", " ")
 	case .Tagged:
 		// A tag annotates the sequence it closes, so it is written after the
 		// production it annotates rather than inside a group.
-		for production, i in g.productions[:] {
+		for production, i in g.productions {
 			if i > 0 do io.write_string(w, " ")
 			write_normalized(w, production)
-			if i == 0 do write_tag_pairs(w, g.tag[:])
+			if i == 0 do write_tag_pairs(w, g.tag)
 		}
 	}
 }

@@ -422,7 +422,7 @@ production_containing_call :: proc(production: ast.Production, src: string, offs
 	case ast.Qual_Ident:
 		return production_containing_call(v.lhs, src, offset)
 	case ast.Sequence:
-		return productions_containing_call(v.productions[:], src, offset)
+		return productions_containing_call(v.productions, src, offset)
 	case ^ast.Alternative:
 		if call := production_containing_call(v.lhs, src, offset); call != nil {
 			return call

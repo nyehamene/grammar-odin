@@ -55,7 +55,7 @@ shape_into :: proc(b: ^strings.Builder, p: Production) {
 		strings.write_rune(b, '.')
 		strings.write_string(b, it.rhs.name)
 	case Sequence:
-		shape_group(b, "seq", it.productions[:])
+		shape_group(b, "seq", it.productions)
 	case ^Alternative:
 		// The chain leans left, so it prints as a nested choice.
 		strings.write_string(b, "alt(")
@@ -311,7 +311,7 @@ shape_normalized_into :: proc(b: ^strings.Builder, n: Normalized_Production) {
 	case ^Factored:
 		strings.write_string(b, "factor(")
 		shape_normalized_into(b, it.leading)
-		for part in it.body[:] {
+		for part in it.body {
 			strings.write_string(b, " | ")
 			shape_normalized_into(b, part)
 		}
@@ -321,22 +321,22 @@ shape_normalized_into :: proc(b: ^strings.Builder, n: Normalized_Production) {
 	case ^Grouped:
 		switch it.shape {
 		case .Sequence:
-			shape_normalized_group(b, "seq", it.productions[:])
+			shape_normalized_group(b, "seq", it.productions)
 		case .Group:
-			shape_normalized_group(b, "grp", it.productions[:])
+			shape_normalized_group(b, "grp", it.productions)
 		case .Optional:
-			shape_normalized_group(b, "opt", it.productions[:])
+			shape_normalized_group(b, "opt", it.productions)
 		case .Repetition:
-			shape_normalized_group(b, "rep", it.productions[:])
+			shape_normalized_group(b, "rep", it.productions)
 		case .Tagged:
 			strings.write_string(b, "tag(")
-			for pair, i in it.tag[:] {
+			for pair, i in it.tag {
 				if i > 0 do strings.write_rune(b, ' ')
 				strings.write_string(b, pair.ident.name)
 				strings.write_rune(b, '=')
 				strings.write_string(b, pair.value.value)
 			}
-			for production in it.productions[:] {
+			for production in it.productions {
 				strings.write_rune(b, ' ')
 				shape_normalized_into(b, production)
 			}
@@ -376,7 +376,7 @@ branch_shapes_into :: proc(b: ^strings.Builder, n: Normalized_Production) {
 		strings.write_rune(b, ' ')
 	case ^Grouped:
 		if it.shape == .Sequence || it.shape == .Tagged {
-			for production in it.productions[:] do branch_shapes_into(b, production)
+			for production in it.productions do branch_shapes_into(b, production)
 			break
 		}
 		shape_normalized_into(b, n)
@@ -398,7 +398,7 @@ shape_rule :: proc(n: ^Normalized_Rule) -> string {
 	branch_shapes_into(&leading, n.leading)
 	branch_shapes_into(&trailing, n.trailing)
 
-	for middle, i in n.body[:] {
+	for middle, i in n.body {
 		if i > 0 do strings.write_string(&branches, "| ")
 		strings.write_string(&branches, strings.to_string(leading))
 		branch_shapes_into(&branches, middle)
@@ -775,7 +775,7 @@ tagged_pair :: proc(name, value: string) -> Tag_Pair {
 // annotated builds a production annotating name with pairs, for a test. The caller
 // owns what it ends up holding, which destroy_tagged frees.
 annotated :: proc(name: string, pairs: ..Tag_Pair) -> Production {
-	run := make([dynamic]Tag_Pair, len(pairs))
+	run := make([]Tag_Pair, len(pairs))
 	for pair, i in pairs {
 		run[i] = pair
 	}

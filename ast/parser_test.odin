@@ -380,7 +380,7 @@ test_parse_tag_wraps_a_three_element_sequence :: proc(t: ^testing.T) {
 	want := []string{"a", "b", "c"}
 	testing.expect(t, len(seq.productions) == len(want), "expected three elements")
 
-	for production, i in seq.productions[:] {
+	for production, i in seq.productions {
 		ident, is_ident := production.(Ident)
 		testing.expect(t, is_ident, "every element should be an Ident")
 		testing.expect(t, ident.name == want[i], "wrong element name")
