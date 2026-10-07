@@ -77,23 +77,17 @@ print_production :: proc(p: ^Printer, production: Production) {
 	case Optional:
 		print_header(p, v.pos, "OptionalProduction")
 		p.indent += 1
-		for e in v.productions {
-			print_production(p, e)
-		}
+		print_production(p, v.production^)
 		p.indent -= 1
 	case Repetition:
 		print_header(p, v.pos, "RepetitionProduction")
 		p.indent += 1
-		for e in v.productions {
-			print_production(p, e)
-		}
+		print_production(p, v.production^)
 		p.indent -= 1
 	case Group:
 		print_header(p, v.pos, "GroupProduction")
 		p.indent += 1
-		for e in v.productions {
-			print_production(p, e)
-		}
+		print_production(p, v.production^)
 		p.indent -= 1
 	case Qual_Ident:
 		print_header(p, v.pos, "MemberExpr")

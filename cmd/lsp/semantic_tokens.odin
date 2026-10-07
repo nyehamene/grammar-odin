@@ -178,17 +178,11 @@ classify_production :: proc(production: ast.Production, types: ^map[int]Sem_Toke
 			classify_production(e, types)
 		}
 	case ast.Optional:
-		for e in v.productions {
-			classify_production(e, types)
-		}
+		classify_production(v.production^, types)
 	case ast.Repetition:
-		for e in v.productions {
-			classify_production(e, types)
-		}
+		classify_production(v.production^, types)
 	case ast.Group:
-		for e in v.productions {
-			classify_production(e, types)
-		}
+		classify_production(v.production^, types)
 	case ast.Directive:
 		for arg in v.args {
 			classify_production(arg, types)

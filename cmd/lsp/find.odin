@@ -126,23 +126,11 @@ find_hit_production :: proc(production: ast.Production, offset: int) -> Hit {
 			}
 		}
 	case ast.Optional:
-		for e in v.productions {
-			if h := find_hit_production(e, offset); found(h) {
-				return h
-			}
-		}
+		return find_hit_production(v.production^, offset)
 	case ast.Repetition:
-		for e in v.productions {
-			if h := find_hit_production(e, offset); found(h) {
-				return h
-			}
-		}
+		return find_hit_production(v.production^, offset)
 	case ast.Group:
-		for e in v.productions {
-			if h := find_hit_production(e, offset); found(h) {
-				return h
-			}
-		}
+		return find_hit_production(v.production^, offset)
 	case ast.String_Lit:
 		if offset >= v.pos && offset < v.pos + len(v.value) {
 			return Hit{kind = .String, literal = v.value}

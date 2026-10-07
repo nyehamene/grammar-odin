@@ -59,11 +59,17 @@ shape_into :: proc(b: ^strings.Builder, p: Production) {
 	case Alternative:
 		shape_group(b, "alt", it.productions[:])
 	case Optional:
-		shape_group(b, "opt", it.productions[:])
+		strings.write_string(b, "opt(")
+		shape_into(b, it.production^)
+		strings.write_rune(b, ')')
 	case Repetition:
-		shape_group(b, "rep", it.productions[:])
+		strings.write_string(b, "rep(")
+		shape_into(b, it.production^)
+		strings.write_rune(b, ')')
 	case Group:
-		shape_group(b, "grp", it.productions[:])
+		strings.write_string(b, "grp(")
+		shape_into(b, it.production^)
+		strings.write_rune(b, ')')
 	case Tagged_Production:
 		strings.write_string(b, "tag(")
 		shape_into(b, it.production^)

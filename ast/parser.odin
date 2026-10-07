@@ -295,6 +295,12 @@ trailing_tag_pos :: proc(production: Production) -> (int, bool) {
 		if len(v.productions) > 0 {
 			return trailing_tag_pos(v.productions[len(v.productions) - 1])
 		}
+	case Group:
+		return trailing_tag_pos(v.production^)
+	case Optional:
+		return trailing_tag_pos(v.production^)
+	case Repetition:
+		return trailing_tag_pos(v.production^)
 	}
 	return 0, false
 }
@@ -447,7 +453,7 @@ parse_optional :: proc(p: ^Parser) -> Production {
 	inner := parse_production(p)
 	reject_inner_tag(p, inner)
 	expect(p, .RBrack)
-	return Optional{productions = unpack_sequence(inner, p.allocator), pos = start.start}
+	return Optional{production = alloc_production(inner, p.allocator), pos = start.start}
 }
 
 // parse_repetition parses `{ production }`, e.g. `{ one two }`.
@@ -456,7 +462,7 @@ parse_repetition :: proc(p: ^Parser) -> Production {
 	inner := parse_production(p)
 	reject_inner_tag(p, inner)
 	expect(p, .RBrace)
-	return Repetition{productions = unpack_sequence(inner, p.allocator), pos = start.start}
+	return Repetition{production = alloc_production(inner, p.allocator), pos = start.start}
 }
 
 // parse_group parses `( production )`, e.g. `( a b )`.
@@ -465,7 +471,7 @@ parse_group :: proc(p: ^Parser) -> Production {
 	inner := parse_production(p)
 	reject_inner_tag(p, inner)
 	expect(p, .RParen)
-	return Group{productions = unpack_sequence(inner, p.allocator), pos = start.start}
+	return Group{production = alloc_production(inner, p.allocator), pos = start.start}
 }
 
 // reject_inner_tag reports a tag found at the end of a production nested inside
@@ -478,17 +484,6 @@ reject_inner_tag :: proc(p: ^Parser, inner: Production) {
 	}
 }
 
-// unpack_sequence converts a production into a list of expressions. If the
-// production is itself a Sequence, its elements are transferred directly,
-// otherwise the production is wrapped in a single-element list.
-unpack_sequence :: proc(production: Production, allocator := context.allocator) -> [dynamic]Production {
-	if seq, ok := production.(Sequence); ok {
-		return seq.productions
-	}
-	list := make([dynamic]Production, allocator)
-	append(&list, production)
-	return list
-}
 
 // skip_trivia advances past the comment tokens that stand in for whitespace.
 // Comments are trivia only inside a declaration: at the top level a comment is a

@@ -99,20 +99,20 @@ Alternative :: struct {
 
 // Optional is a zero-or-one production, e.g. `[ a b ]`.
 Optional :: struct {
-	productions: [dynamic]Production,
-	pos:         int,
+	production: ^Production,
+	pos:        int,
 }
 
 // Repetition is a zero-or-more production, e.g. `{ one two }`.
 Repetition :: struct {
-	productions: [dynamic]Production,
-	pos:         int,
+	production: ^Production,
+	pos:        int,
 }
 
 // Group is a grouped production, e.g. `( a b )`.
 Group :: struct {
-	productions: [dynamic]Production,
-	pos:         int,
+	production: ^Production,
+	pos:        int,
 }
 
 // Qual_Ident is a member access, e.g. `foo.bar`. It is left-associative, so
@@ -247,20 +247,14 @@ destroy_production :: proc(production: Production) {
 		}
 		delete(v.productions)
 	case Optional:
-		for e in v.productions {
-			destroy_production(e)
-		}
-		delete(v.productions)
+		destroy_production(v.production^)
+		free(v.production)
 	case Repetition:
-		for e in v.productions {
-			destroy_production(e)
-		}
-		delete(v.productions)
+		destroy_production(v.production^)
+		free(v.production)
 	case Group:
-		for e in v.productions {
-			destroy_production(e)
-		}
-		delete(v.productions)
+		destroy_production(v.production^)
+		free(v.production)
 	case Qual_Ident:
 	case ^Call:
 		for e in v.args {

@@ -10,7 +10,7 @@ MAX_EXPANSION_DEPTH :: 256
 
 // Nesting says what becomes of a production that an expansion turned into a
 // sequence. Flatten splices it into the list it joins, which is what the parser
-// does with unpack_sequence and what keeps one sequence from nesting inside
+// does with a group and what keeps one sequence from nesting inside
 // another. Keep leaves it a single element, which an alternative needs, since the
 // elements of an alternative are whole branches.
 Nesting :: enum {
@@ -209,19 +209,34 @@ expand_production :: proc(p: Production, s: ^Scope, depth: int) -> (Production, 
 		return Alternative{productions = productions, pos = it.pos}, ok
 
 	case Optional:
-		productions, ok := expand_production_list(it.productions[:], s, depth, .Flatten)
-		delete(it.productions)
-		return Optional{productions = productions, pos = it.pos}, ok
+		// The production is behind a box, so the box is replaced and the one it held
+		// is freed, exactly as a tagged production's is.
+		production, ok := expand_production(it.production^, s, depth)
+		expanded := it
+		free(it.production)
+		expanded.production = new(Production)
+		expanded.production^ = production
+		return expanded, ok
 
 	case Repetition:
-		productions, ok := expand_production_list(it.productions[:], s, depth, .Flatten)
-		delete(it.productions)
-		return Repetition{productions = productions, pos = it.pos}, ok
+		// The production is behind a box, so the box is replaced and the one it held
+		// is freed, exactly as a tagged production's is.
+		production, ok := expand_production(it.production^, s, depth)
+		expanded := it
+		free(it.production)
+		expanded.production = new(Production)
+		expanded.production^ = production
+		return expanded, ok
 
 	case Group:
-		productions, ok := expand_production_list(it.productions[:], s, depth, .Flatten)
-		delete(it.productions)
-		return Group{productions = productions, pos = it.pos}, ok
+		// The production is behind a box, so the box is replaced and the one it held
+		// is freed, exactly as a tagged production's is.
+		production, ok := expand_production(it.production^, s, depth)
+		expanded := it
+		free(it.production)
+		expanded.production = new(Production)
+		expanded.production^ = production
+		return expanded, ok
 
 	case Tagged_Production:
 		// The node is a value in the union, so it is copied rather than pointed at:
@@ -356,15 +371,15 @@ substitute_parameter :: proc(p: Production, args: map[string]Production) -> Prod
 		return it
 
 	case Optional:
-		substitute_into(it.productions[:], args)
+		it.production^ = substitute_parameter(it.production^, args)
 		return it
 
 	case Repetition:
-		substitute_into(it.productions[:], args)
+		it.production^ = substitute_parameter(it.production^, args)
 		return it
 
 	case Group:
-		substitute_into(it.productions[:], args)
+		it.production^ = substitute_parameter(it.production^, args)
 		return it
 
 	case ^Call:
@@ -425,11 +440,20 @@ clone_production :: proc(p: Production) -> Production {
 	case Alternative:
 		return Alternative{productions = clone_production_list(it.productions[:]), pos = it.pos}
 	case Optional:
-		return Optional{productions = clone_production_list(it.productions[:]), pos = it.pos}
+		cloned := it
+		cloned.production = new(Production)
+		cloned.production^ = clone_production(it.production^)
+		return cloned
 	case Repetition:
-		return Repetition{productions = clone_production_list(it.productions[:]), pos = it.pos}
+		cloned := it
+		cloned.production = new(Production)
+		cloned.production^ = clone_production(it.production^)
+		return cloned
 	case Group:
-		return Group{productions = clone_production_list(it.productions[:]), pos = it.pos}
+		cloned := it
+		cloned.production = new(Production)
+		cloned.production^ = clone_production(it.production^)
+		return cloned
 
 	case Ident, String_Lit, Regex_Lit, External_Value, Qual_Ident, Directive:
 		return p
@@ -475,13 +499,13 @@ has_call :: proc(p: Production) -> bool {
 		return has_call_any(it.productions[:])
 
 	case Optional:
-		return has_call_any(it.productions[:])
+		return has_call(it.production^)
 
 	case Repetition:
-		return has_call_any(it.productions[:])
+		return has_call(it.production^)
 
 	case Group:
-		return has_call_any(it.productions[:])
+		return has_call(it.production^)
 
 	case Directive:
 	case Tagged_Production:
@@ -605,17 +629,17 @@ normalize_production :: proc(p: Production, opts: ^Normalize_Options) -> Normali
 		delete(it.productions)
 		return part
 	case Group:
-		part := grouped(.Group, it.productions[:], it.pos, opts, nil)
-		delete(it.productions)
-		return part
+		inner := normalize_production(it.production^, opts)
+		free(it.production)
+		return grouped_one(.Group, inner, it.pos, nil)
 	case Optional:
-		part := grouped(.Optional, it.productions[:], it.pos, opts, nil)
-		delete(it.productions)
-		return part
+		inner := normalize_production(it.production^, opts)
+		free(it.production)
+		return grouped_one(.Optional, inner, it.pos, nil)
 	case Repetition:
-		part := grouped(.Repetition, it.productions[:], it.pos, opts, nil)
-		delete(it.productions)
-		return part
+		inner := normalize_production(it.production^, opts)
+		free(it.production)
+		return grouped_one(.Repetition, inner, it.pos, nil)
 	case Tagged_Production:
 		return normalize_tagged(it, opts)
 
@@ -645,6 +669,28 @@ grouped :: proc(
 		productions = parts,
 		tag   = tag,
 		pos   = pos,
+	}
+	return Normalized_Production{kind = group}
+}
+
+// grouped_one builds a grouping production of the given shape around a production
+// that has already been normalized. A group, an optional and a repetition hold
+// exactly one production, so there is no list of them to normalize and hand over the
+// way a sequence has.
+grouped_one :: proc(
+	shape: Group_Shape,
+	inner: Normalized_Production,
+	pos: int,
+	tag: [dynamic]Tag_Pair,
+) -> Normalized_Production {
+	productions := make([dynamic]Normalized_Production, 1)
+	productions[0] = inner
+	group := new(Grouped)
+	group^ = Grouped {
+		shape       = shape,
+		productions = productions,
+		tag         = tag,
+		pos         = pos,
 	}
 	return Normalized_Production{kind = group}
 }
@@ -692,6 +738,21 @@ normalized_list :: proc(
 	return grouped(.Sequence, elems, pos, opts, nil)
 }
 
+// sequence_elements returns the productions a production is made of, as a list. A
+// sequence hands over its own list and anything else is wrapped in one of its own, so
+// every list handed back has exactly one owner: a factored branch owns its list, and
+// factorization frees the lists it does not keep.
+sequence_elements :: proc(
+	production: Production,
+	allocator := context.allocator,
+) -> [dynamic]Production {
+	seq, is_sequence := production.(Sequence)
+	if is_sequence do return seq.productions
+	list := make([dynamic]Production, allocator)
+	append(&list, production)
+	return list
+}
+
 // factor splits an alternative into the productions every branch shares at its
 // start, the productions they do not share, and the productions every branch shares
 // at its end.
@@ -705,11 +766,11 @@ normalized_list :: proc(
 //
 // The alternative is taken over.
 factor :: proc(alts: Alternative, opts: ^Normalize_Options) -> Normalized_Production {
-	// A branch owns its list: unpack_sequence hands the sequence's own list over and
+	// A branch owns its list: sequence_elements hands the sequence's own list over and
 	// wraps anything else in a new one, so every list here has exactly one owner.
 	branches := make([dynamic][dynamic]Production, 0, len(alts.productions))
 	for branch in alts.productions[:] {
-		append(&branches, unpack_sequence(branch))
+		append(&branches, sequence_elements(branch))
 	}
 	delete(alts.productions)
 
@@ -965,13 +1026,13 @@ equal_production :: proc(a, b: Production, opts: ^Normalize_Options) -> bool {
 		return ok && equal_production_list(x.productions[:], y.productions[:], opts)
 	case Optional:
 		y, ok := b.(Optional)
-		return ok && equal_production_list(x.productions[:], y.productions[:], opts)
+		return ok && equal_production(x.production^, y.production^, opts)
 	case Repetition:
 		y, ok := b.(Repetition)
-		return ok && equal_production_list(x.productions[:], y.productions[:], opts)
+		return ok && equal_production(x.production^, y.production^, opts)
 	case Group:
 		y, ok := b.(Group)
-		return ok && equal_production_list(x.productions[:], y.productions[:], opts)
+		return ok && equal_production(x.production^, y.production^, opts)
 	case Directive:
 		y, ok := b.(Directive)
 		return ok && x.ident.name == y.ident.name

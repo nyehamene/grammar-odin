@@ -279,17 +279,11 @@ rule_ref_in_production :: proc(
 			rule_ref_in_production(f, target_ns_dir, name, e, uris, out, private)
 		}
 	case ast.Optional:
-		for e in v.productions {
-			rule_ref_in_production(f, target_ns_dir, name, e, uris, out, private)
-		}
+		rule_ref_in_production(f, target_ns_dir, name, v.production^, uris, out, private)
 	case ast.Repetition:
-		for e in v.productions {
-			rule_ref_in_production(f, target_ns_dir, name, e, uris, out, private)
-		}
+		rule_ref_in_production(f, target_ns_dir, name, v.production^, uris, out, private)
 	case ast.Group:
-		for e in v.productions {
-			rule_ref_in_production(f, target_ns_dir, name, e, uris, out, private)
-		}
+		rule_ref_in_production(f, target_ns_dir, name, v.production^, uris, out, private)
 	case ast.Directive:
 		for arg in v.args {
 			rule_ref_in_production(f, target_ns_dir, name, arg, uris, out, private)
@@ -339,17 +333,11 @@ binding_ref_in_production :: proc(
 			binding_ref_in_production(f, name, e, uris, out)
 		}
 	case ast.Optional:
-		for e in v.productions {
-			binding_ref_in_production(f, name, e, uris, out)
-		}
+		binding_ref_in_production(f, name, v.production^, uris, out)
 	case ast.Repetition:
-		for e in v.productions {
-			binding_ref_in_production(f, name, e, uris, out)
-		}
+		binding_ref_in_production(f, name, v.production^, uris, out)
 	case ast.Group:
-		for e in v.productions {
-			binding_ref_in_production(f, name, e, uris, out)
-		}
+		binding_ref_in_production(f, name, v.production^, uris, out)
 	case ast.Directive:
 		for arg in v.args {
 			binding_ref_in_production(f, name, arg, uris, out)

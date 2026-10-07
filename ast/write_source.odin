@@ -213,23 +213,11 @@ write_production :: proc(w: io.Writer, p: Production) {
 	case Alternative:
 		write_production_list(w, it.productions[:], " | ")
 	case Optional:
-		io.write_string(w, "[")
-		io.write_string(w, inner_space(len(it.productions)))
-		write_production_list(w, it.productions[:], " ")
-		io.write_string(w, inner_space(len(it.productions)))
-		io.write_string(w, "]")
+		write_wrapped_production(w, "[", "]", it.production^)
 	case Repetition:
-		io.write_string(w, "{")
-		io.write_string(w, inner_space(len(it.productions)))
-		write_production_list(w, it.productions[:], " ")
-		io.write_string(w, inner_space(len(it.productions)))
-		io.write_string(w, "}")
+		write_wrapped_production(w, "{", "}", it.production^)
 	case Group:
-		io.write_string(w, "(")
-		io.write_string(w, inner_space(len(it.productions)))
-		write_production_list(w, it.productions[:], " ")
-		io.write_string(w, inner_space(len(it.productions)))
-		io.write_string(w, ")")
+		write_wrapped_production(w, "(", ")", it.production^)
 	}
 }
 
@@ -238,6 +226,27 @@ write_production :: proc(w: io.Writer, p: Production) {
 // `( a )` and not `(a)`.
 inner_space :: proc(count: int) -> string {
 	return " " if count > 0 else ""
+}
+
+// production_len returns how many productions a production is written as inside a
+// grouping symbol: a sequence is written as its own productions, and anything else
+// stands as one of them.
+production_len :: proc(production: Production) -> int {
+	seq, is_sequence := production.(Sequence)
+	if !is_sequence do return 1
+	return len(seq.productions)
+}
+
+// write_wrapped_production writes a production between grouping symbols, with a space
+// just inside them when it is written as more than one production, which is how the
+// formatter writes them: `[ a b ]` and not `[a b]`, and `( a )` rather than `(a)`.
+write_wrapped_production :: proc(w: io.Writer, open, closing: string, production: Production) {
+	inner := inner_space(production_len(production))
+	io.write_string(w, open)
+	io.write_string(w, inner)
+	write_production(w, production)
+	io.write_string(w, inner)
+	io.write_string(w, closing)
 }
 
 // write_production_list writes the productions of a list separated by sep.

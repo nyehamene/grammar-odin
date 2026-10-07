@@ -607,11 +607,11 @@ uses_param :: proc(production: ast.Production, param: string) -> bool {
 	case ast.Alternative:
 		return productions_use_param(v.productions[:], param)
 	case ast.Optional:
-		return productions_use_param(v.productions[:], param)
+		return uses_param(v.production^, param)
 	case ast.Repetition:
-		return productions_use_param(v.productions[:], param)
+		return uses_param(v.production^, param)
 	case ast.Group:
-		return productions_use_param(v.productions[:], param)
+		return uses_param(v.production^, param)
 	case ast.Tagged_Production:
 		return uses_param(v.production^, param)
 	}
@@ -814,13 +814,13 @@ check_production_scoped :: proc(
 		check_production_group(cu, fi, params, v.pos, v.productions[:], o)
 
 	case ast.Optional:
-		check_production_group(cu, fi, params, v.pos, v.productions[:], o)
+		check_production_scoped(cu, fi, params, v.production^, o)
 
 	case ast.Repetition:
-		check_production_group(cu, fi, params, v.pos, v.productions[:], o)
+		check_production_scoped(cu, fi, params, v.production^, o)
 
 	case ast.Group:
-		check_production_group(cu, fi, params, v.pos, v.productions[:], o)
+		check_production_scoped(cu, fi, params, v.production^, o)
 
 	case ast.Tagged_Production:
 		// A tag annotates the production it follows, so it is checked, and

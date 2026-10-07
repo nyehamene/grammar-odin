@@ -173,8 +173,10 @@ grouped = ( a // one
 	testing.expect(t, ok7, "expected Sequence for grouped")
 	testing.expect(t, len(seq2.productions) == 3, "a comment must not add a sequence element")
 	group, ok8 := seq2.productions[0].(Group)
-	testing.expect(t, ok8, "expected Group_Expr")
-	testing.expect(t, len(group.productions) == 2, "a comment must not add a group element")
+	testing.expect(t, ok8, "expected Group")
+	group_seq, ok9 := group.production^.(Sequence)
+	testing.expect(t, ok9, "the group holds a sequence")
+	testing.expect(t, len(group_seq.productions) == 2, "a comment must not add a group element")
 }
 
 @(test)
@@ -184,25 +186,32 @@ test_parse_group_repetition_optional :: proc(t: ^testing.T) {
 
 	rule, _ := file.decls[0].(Rule)
 	group, ok := rule.production.(Group)
-	testing.expect(t, ok, "expected Group_Expr")
-	testing.expect(t, len(group.productions) == 3, "expected three elements in group")
+	testing.expect(t, ok, "expected Group")
+	// A group holds one production, and `a { b c } [ d e ]` is a sequence of three.
+	group_seq, ok2 := group.production^.(Sequence)
+	testing.expect(t, ok2, "the group holds a sequence")
+	testing.expect(t, len(group_seq.productions) == 3, "expected three elements in group")
 
-	lit, ok2 := group.productions[0].(String_Lit)
-	testing.expect(t, ok2, "first element should be String_Lit")
+	lit, ok3 := group_seq.productions[0].(String_Lit)
+	testing.expect(t, ok3, "first element should be String_Lit")
 	testing.expect(t, lit.value == `"a"`, "wrong first element")
 
-	rep, ok3 := group.productions[1].(Repetition)
-	testing.expect(t, ok3, "second element should be Repetition")
-	testing.expect(t, len(rep.productions) == 2, "repetition should hold two expressions")
-	lit2, ok4 := rep.productions[0].(String_Lit)
-	testing.expect(t, ok4, "repetition element should be String_Lit")
+	rep, ok4 := group_seq.productions[1].(Repetition)
+	testing.expect(t, ok4, "second element should be Repetition")
+	rep_seq, ok5 := rep.production^.(Sequence)
+	testing.expect(t, ok5, "the repetition holds a sequence")
+	testing.expect(t, len(rep_seq.productions) == 2, "repetition should hold two productions")
+	lit2, ok6 := rep_seq.productions[0].(String_Lit)
+	testing.expect(t, ok6, "repetition element should be String_Lit")
 	testing.expect(t, lit2.value == `"b"`, "wrong repetition element")
 
-	opt, ok5 := group.productions[2].(Optional)
-	testing.expect(t, ok5, "third element should be Optional")
-	testing.expect(t, len(opt.productions) == 2, "optional should hold two expressions")
-	lit3, ok6 := opt.productions[0].(String_Lit)
-	testing.expect(t, ok6, "optional element should be String_Lit")
+	opt, ok7 := group_seq.productions[2].(Optional)
+	testing.expect(t, ok7, "third element should be Optional")
+	opt_seq, ok8 := opt.production^.(Sequence)
+	testing.expect(t, ok8, "the optional holds a sequence")
+	testing.expect(t, len(opt_seq.productions) == 2, "optional should hold two productions")
+	lit3, ok9 := opt_seq.productions[0].(String_Lit)
+	testing.expect(t, ok9, "optional element should be String_Lit")
 	testing.expect(t, lit3.value == `"d"`, "wrong optional element")
 }
 
@@ -428,7 +437,9 @@ test_parse_tag_outside_a_group :: proc(t: ^testing.T) {
 	tagged := must_tagged(t, file, "foo")
 	group, ok := tagged.production^.(Group)
 	testing.expect(t, ok, "the tagged element should be the group")
-	testing.expect(t, len(group.productions) == 1, "expected one element in the group")
+	// `(x)` holds the single production x, so the group is not a sequence.
+	_, is_sequence := group.production^.(Sequence)
+	testing.expect(t, !is_sequence, "a group of one production holds it directly")
 }
 
 @(test)

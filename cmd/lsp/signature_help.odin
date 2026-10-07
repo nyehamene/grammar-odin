@@ -426,11 +426,11 @@ production_containing_call :: proc(production: ast.Production, src: string, offs
 	case ast.Alternative:
 		return productions_containing_call(v.productions[:], src, offset)
 	case ast.Optional:
-		return productions_containing_call(v.productions[:], src, offset)
+		return production_containing_call(v.production^, src, offset)
 	case ast.Repetition:
-		return productions_containing_call(v.productions[:], src, offset)
+		return production_containing_call(v.production^, src, offset)
 	case ast.Group:
-		return productions_containing_call(v.productions[:], src, offset)
+		return production_containing_call(v.production^, src, offset)
 	case ast.Directive:
 		for arg in v.args {
 			if call := production_containing_call(arg, src, offset); call != nil {
