@@ -193,59 +193,35 @@ expand_production :: proc(p: Production, s: ^Scope, depth: int) -> (Production, 
 		delete(it.productions)
 		return Sequence{productions = productions, pos = it.pos}, ok
 
-	case Alternative:
+	case ^Alternative:
 		// Each side of the chain is expanded on its own, which keeps a branch whole
-		// the way holding the alternatives apart used to insist on.
-		lhs, lhs_ok := expand_production(it.lhs^, s, depth)
-		rhs, rhs_ok := expand_production(it.rhs^, s, depth)
-		free(it.lhs)
-		free(it.rhs)
-		expanded := it
-		expanded.lhs = new(Production)
-		expanded.lhs^ = lhs
-		expanded.rhs = new(Production)
-		expanded.rhs^ = rhs
-		return expanded, lhs_ok && rhs_ok
+		// the way holding the alternatives apart used to insist on. The node is
+		// behind a pointer, so it is edited in place rather than rebuilt.
+		lhs, lhs_ok := expand_production(it.lhs, s, depth)
+		rhs, rhs_ok := expand_production(it.rhs, s, depth)
+		it.lhs = lhs
+		it.rhs = rhs
+		return it, lhs_ok && rhs_ok
 
-	case Optional:
-		// The production is behind a box, so the box is replaced and the one it held
-		// is freed, exactly as a tagged production's is.
-		production, ok := expand_production(it.production^, s, depth)
-		expanded := it
-		free(it.production)
-		expanded.production = new(Production)
-		expanded.production^ = production
-		return expanded, ok
+	case ^Optional:
+		production, ok := expand_production(it.production, s, depth)
+		it.production = production
+		return it, ok
 
-	case Repetition:
-		// The production is behind a box, so the box is replaced and the one it held
-		// is freed, exactly as a tagged production's is.
-		production, ok := expand_production(it.production^, s, depth)
-		expanded := it
-		free(it.production)
-		expanded.production = new(Production)
-		expanded.production^ = production
-		return expanded, ok
+	case ^Repetition:
+		production, ok := expand_production(it.production, s, depth)
+		it.production = production
+		return it, ok
 
-	case Group:
-		// The production is behind a box, so the box is replaced and the one it held
-		// is freed, exactly as a tagged production's is.
-		production, ok := expand_production(it.production^, s, depth)
-		expanded := it
-		free(it.production)
-		expanded.production = new(Production)
-		expanded.production^ = production
-		return expanded, ok
+	case ^Group:
+		production, ok := expand_production(it.production, s, depth)
+		it.production = production
+		return it, ok
 
-	case Tagged_Production:
-		// The node is a value in the union, so it is copied rather than pointed at:
-		// only the box holding the production it annotates is replaced.
-		production, ok := expand_production(it.production^, s, depth)
-		tagged := it
-		free(it.production)
-		tagged.production = new(Production)
-		tagged.production^ = production
-		return tagged, ok
+	case ^Tagged_Production:
+		production, ok := expand_production(it.production, s, depth)
+		it.production = production
+		return it, ok
 
 	// A leaf holds nothing but its position and its view of the source, so there
 	// is nothing to take over. A directive holds productions, but one only ever
@@ -344,30 +320,30 @@ substitute_parameter :: proc(p: Production, args: map[string]Production) -> Prod
 		}
 		return p
 
-	case Tagged_Production:
+	case ^Tagged_Production:
 		prod := it
-		prod.production^ = substitute_parameter(it.production^, args)
+		prod.production = substitute_parameter(it.production, args)
 		return prod
 
 	case Sequence:
 		substitute_into(it.productions[:], args)
 		return it
 
-	case Alternative:
-		it.lhs^ = substitute_parameter(it.lhs^, args)
-		it.rhs^ = substitute_parameter(it.rhs^, args)
+	case ^Alternative:
+		it.lhs = substitute_parameter(it.lhs, args)
+		it.rhs = substitute_parameter(it.rhs, args)
 		return it
 
-	case Optional:
-		it.production^ = substitute_parameter(it.production^, args)
+	case ^Optional:
+		it.production = substitute_parameter(it.production, args)
 		return it
 
-	case Repetition:
-		it.production^ = substitute_parameter(it.production^, args)
+	case ^Repetition:
+		it.production = substitute_parameter(it.production, args)
 		return it
 
-	case Group:
-		it.production^ = substitute_parameter(it.production^, args)
+	case ^Group:
+		it.production = substitute_parameter(it.production, args)
 		return it
 
 	case ^Call:
@@ -414,39 +390,26 @@ clone_production :: proc(p: Production) -> Production {
 		call^ = it^
 		call.args = clone_production_list(it.args[:])
 		return call
-	case Tagged_Production:
-		tagged := it
-		// The run of pairs is copied rather than shared: both the copy and the
-		// original would otherwise free the one the parser allocated.
-		tagged.tag = clone_tag_pairs(it.tag[:])
-		tagged.production = new(Production)
-		tagged.production^ = clone_production(it.production^)
-		return tagged
+	case ^Tagged_Production:
+		// A copy is a new node, not the one it was copied from. The run of pairs
+		// is copied rather than shared: both the copy and the original would
+		// otherwise free the one the parser allocated.
+		return tagged_production(
+			clone_production(it.production),
+			clone_tag_pairs(it.tag[:]),
+			it.pos,
+		)
 
 	case Sequence:
 		return Sequence{productions = clone_production_list(it.productions[:]), pos = it.pos}
-	case Alternative:
-		cloned := it
-		cloned.lhs = new(Production)
-		cloned.lhs^ = clone_production(it.lhs^)
-		cloned.rhs = new(Production)
-		cloned.rhs^ = clone_production(it.rhs^)
-		return cloned
-	case Optional:
-		cloned := it
-		cloned.production = new(Production)
-		cloned.production^ = clone_production(it.production^)
-		return cloned
-	case Repetition:
-		cloned := it
-		cloned.production = new(Production)
-		cloned.production^ = clone_production(it.production^)
-		return cloned
-	case Group:
-		cloned := it
-		cloned.production = new(Production)
-		cloned.production^ = clone_production(it.production^)
-		return cloned
+	case ^Alternative:
+		return alternative(clone_production(it.lhs), clone_production(it.rhs), it.pos)
+	case ^Optional:
+		return optional(clone_production(it.production), it.pos)
+	case ^Repetition:
+		return repetition(clone_production(it.production), it.pos)
+	case ^Group:
+		return group(clone_production(it.production), it.pos)
 
 	case Ident, String_Lit, Regex_Lit, External_Value, Qual_Ident, Directive:
 		return p
@@ -488,21 +451,21 @@ has_call :: proc(p: Production) -> bool {
 	case Sequence:
 		return has_call_any(it.productions[:])
 
-	case Alternative:
-		return has_call(it.lhs^) || has_call(it.rhs^)
+	case ^Alternative:
+		return has_call(it.lhs) || has_call(it.rhs)
 
-	case Optional:
-		return has_call(it.production^)
+	case ^Optional:
+		return has_call(it.production)
 
-	case Repetition:
-		return has_call(it.production^)
+	case ^Repetition:
+		return has_call(it.production)
 
-	case Group:
-		return has_call(it.production^)
+	case ^Group:
+		return has_call(it.production)
 
 	case Directive:
-	case Tagged_Production:
-		return has_call(it.production^)
+	case ^Tagged_Production:
+		return has_call(it.production)
 
 	case ^Call:
 		return true
@@ -615,25 +578,34 @@ destroy_normalized_list :: proc(prods: []Normalized_Production) {
 // array and box along the way is freed.
 normalize_production :: proc(p: Production, opts: ^Normalize_Options) -> Normalized_Production {
 	switch it in p {
-	case Alternative:
+	case ^Alternative:
 		return factor(it, opts)
 	case Sequence:
 		part := grouped(.Sequence, it.productions[:], it.pos, opts, nil)
 		delete(it.productions)
 		return part
-	case Group:
-		inner := normalize_production(it.production^, opts)
-		free(it.production)
-		return grouped_one(.Group, inner, it.pos, nil)
-	case Optional:
-		inner := normalize_production(it.production^, opts)
-		free(it.production)
-		return grouped_one(.Optional, inner, it.pos, nil)
-	case Repetition:
-		inner := normalize_production(it.production^, opts)
-		free(it.production)
-		return grouped_one(.Repetition, inner, it.pos, nil)
-	case Tagged_Production:
+	case ^Group:
+		// The inner production is consumed and the node left holding nothing,
+		// so pos is read before the node goes.
+		pos := it.pos
+		inner := normalize_production(it.production, opts)
+		free(it)
+		return grouped_one(.Group, inner, pos, nil)
+	case ^Optional:
+		// The inner production is consumed and the node left holding nothing,
+		// so pos is read before the node goes.
+		pos := it.pos
+		inner := normalize_production(it.production, opts)
+		free(it)
+		return grouped_one(.Optional, inner, pos, nil)
+	case ^Repetition:
+		// The inner production is consumed and the node left holding nothing,
+		// so pos is read before the node goes.
+		pos := it.pos
+		inner := normalize_production(it.production, opts)
+		free(it)
+		return grouped_one(.Repetition, inner, pos, nil)
+	case ^Tagged_Production:
 		return normalize_tagged(it, opts)
 
 	// A leaf, and a call: one only survives an expansion that did not finish.
@@ -690,16 +662,18 @@ grouped_one :: proc(
 
 // normalize_tagged returns the normalized production a tag annotates. A tag is
 // dropped unless the policy keeps it, in which case it becomes part of the shape so
-// that the pair survives with the production it names.
+// that the pair survives with the production it names. The node is taken over: the
+// run of pairs is handed on to the result or dropped with it.
 normalize_tagged :: proc(
-	tagged: Tagged_Production,
+	tagged: ^Tagged_Production,
 	opts: ^Normalize_Options,
 ) -> Normalized_Production {
-	inner := normalize_production(tagged.production^, opts)
-	free(tagged.production)
+	pos := tagged.pos
+	inner := normalize_production(tagged.production, opts)
 
 	if !tags_survive(opts.tags) {
 		delete(tagged.tag)
+		free(tagged)
 		return inner
 	}
 
@@ -707,13 +681,15 @@ normalize_tagged :: proc(
 	parts[0] = inner
 	group := new(Grouped)
 	group^ = Grouped {
-		shape = .Tagged,
+		shape       = .Tagged,
 		productions = parts,
-		tag   = tagged.tag,
-		pos   = tagged.pos,
+		tag         = tagged.tag,
+		pos         = pos,
 	}
+	free(tagged)
 	return Normalized_Production{kind = group}
 }
+
 
 // normalized_list returns the one production a list of elements describes, with each
 // element normalized. A single element stands alone, as it does in a parsed branch.
@@ -758,11 +734,12 @@ sequence_elements :: proc(
 // matched, which nothing here decides.
 //
 // The alternative is taken over.
-factor :: proc(alts: Alternative, opts: ^Normalize_Options) -> Normalized_Production {
+factor :: proc(alts: ^Alternative, opts: ^Normalize_Options) -> Normalized_Production {
 	// The chain of choices is read back into the branches it was written from, and a
 	// branch owns its list: sequence_elements hands the sequence's own list over and
 	// wraps anything else in a new one, so every list here has exactly one owner.
 	alts_branches := collect_branches(alts)
+	destroy_alternative_chain(alts)
 	branches := make([dynamic][dynamic]Production, 0, len(alts_branches))
 	for branch in alts_branches {
 		append(&branches, sequence_elements(branch))
@@ -892,9 +869,9 @@ merge_branch_tags :: proc(
 merge_tag_into :: proc(dst: ^Production, src: Production, opts: ^Normalize_Options) {
 	if opts.tags != .Merge do return
 
-	into, is_into := dst^.(Tagged_Production)
+	into, is_into := dst^.(^Tagged_Production)
 	if !is_into do return
-	from, is_from := src.(Tagged_Production)
+	from, is_from := src.(^Tagged_Production)
 	if !is_from do return
 	if len(from.tag) == 0 do return
 
@@ -909,8 +886,9 @@ merge_tag_into :: proc(dst: ^Production, src: Production, opts: ^Normalize_Optio
 	}
 	delete(old)
 
+	// The node is shared with the tree, so writing the run through it is
+	// enough: there is no copy to hand back to the caller.
 	into.tag = merged
-	dst^ = into
 }
 
 // pair_index returns where a run of tag pairs carries one of the given name, and ok
@@ -1016,20 +994,20 @@ equal_production :: proc(a, b: Production, opts: ^Normalize_Options) -> bool {
 	case Sequence:
 		y, ok := b.(Sequence)
 		return ok && equal_production_list(x.productions[:], y.productions[:], opts)
-	case Alternative:
-		y, ok := b.(Alternative)
+	case ^Alternative:
+		y, ok := b.(^Alternative)
 		return ok &&
-			equal_production(x.lhs^, y.lhs^, opts) &&
-			equal_production(x.rhs^, y.rhs^, opts)
-	case Optional:
-		y, ok := b.(Optional)
-		return ok && equal_production(x.production^, y.production^, opts)
-	case Repetition:
-		y, ok := b.(Repetition)
-		return ok && equal_production(x.production^, y.production^, opts)
-	case Group:
-		y, ok := b.(Group)
-		return ok && equal_production(x.production^, y.production^, opts)
+			equal_production(x.lhs, y.lhs, opts) &&
+			equal_production(x.rhs, y.rhs, opts)
+	case ^Optional:
+		y, ok := b.(^Optional)
+		return ok && equal_production(x.production, y.production, opts)
+	case ^Repetition:
+		y, ok := b.(^Repetition)
+		return ok && equal_production(x.production, y.production, opts)
+	case ^Group:
+		y, ok := b.(^Group)
+		return ok && equal_production(x.production, y.production, opts)
 	case Directive:
 		y, ok := b.(Directive)
 		return ok && x.ident.name == y.ident.name
@@ -1038,10 +1016,10 @@ equal_production :: proc(a, b: Production, opts: ^Normalize_Options) -> bool {
 		if !ok do return false
 		if !equal_name(x.ident, y.ident) do return false
 		return equal_production_list(x.args[:], y.args[:], opts)
-	case Tagged_Production:
-		y, ok := b.(Tagged_Production)
+	case ^Tagged_Production:
+		y, ok := b.(^Tagged_Production)
 		if !ok do return false
-		if !equal_production(x.production^, y.production^, opts) do return false
+		if !equal_production(x.production, y.production, opts) do return false
 		switch opts.tags {
 		case .Strip:
 			return true
@@ -1083,7 +1061,7 @@ equal_tag :: proc(a, b: []Tag_Pair) -> bool {
 
 // record_tag_conflict notes the first tag two tagged productions disagree on, once
 // per shared element however many comparisons find it.
-record_tag_conflict :: proc(a, b: Tagged_Production, opts: ^Normalize_Options) {
+record_tag_conflict :: proc(a, b: ^Tagged_Production, opts: ^Normalize_Options) {
 	// Under .Merge a pair name the other run does not carry is added rather than
 	// dropped, so it is not a conflict: only a name both runs carry with a different
 	// value is, because that is the one thing merging cannot hold. The other policies

@@ -173,21 +173,21 @@ classify_production :: proc(production: ast.Production, types: ^map[int]Sem_Toke
 		for e in v.productions {
 			classify_production(e, types)
 		}
-	case ast.Alternative:
-		classify_production(v.lhs^, types)
-		classify_production(v.rhs^, types)
-	case ast.Optional:
-		classify_production(v.production^, types)
-	case ast.Repetition:
-		classify_production(v.production^, types)
-	case ast.Group:
-		classify_production(v.production^, types)
+	case ^ast.Alternative:
+		classify_production(v.lhs, types)
+		classify_production(v.rhs, types)
+	case ^ast.Optional:
+		classify_production(v.production, types)
+	case ^ast.Repetition:
+		classify_production(v.production, types)
+	case ^ast.Group:
+		classify_production(v.production, types)
 	case ast.Directive:
 		for arg in v.args {
 			classify_production(arg, types)
 		}
-	case ast.Tagged_Production:
-		classify_production(v.production^, types)
+	case ^ast.Tagged_Production:
+		classify_production(v.production, types)
 	case ast.String_Lit, ast.Regex_Lit, ast.External_Value:
 	}
 }

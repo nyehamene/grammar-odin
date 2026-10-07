@@ -6,14 +6,14 @@ Production :: union {
 	String_Lit,
 	Regex_Lit,
 	External_Value,
-	Sequence,
-	Alternative,
-	Optional,
-	Repetition,
-	Group,
 	Qual_Ident,
 	Directive,
-	Tagged_Production,
+	Sequence,
+	^Alternative,
+	^Optional,
+	^Repetition,
+	^Group,
+	^Tagged_Production,
 	^Call,
 }
 
@@ -95,26 +95,26 @@ Sequence :: struct {
 // is a chain leaning left, so `a | b | c` is `( a | b ) | c`, and a branch in
 // parentheses is a Group rather than part of the chain.
 Alternative :: struct {
-	lhs: ^Production,
-	rhs: ^Production,
-	pos:  int,
+	lhs: Production,
+	rhs: Production,
+	pos: int,
 }
 
 // Optional is a zero-or-one production, e.g. `[ a b ]`.
 Optional :: struct {
-	production: ^Production,
+	production: Production,
 	pos:        int,
 }
 
 // Repetition is a zero-or-more production, e.g. `{ one two }`.
 Repetition :: struct {
-	production: ^Production,
+	production: Production,
 	pos:        int,
 }
 
 // Group is a grouped production, e.g. `( a b )`.
 Group :: struct {
-	production: ^Production,
+	production: Production,
 	pos:        int,
 }
 
@@ -151,9 +151,77 @@ Directive :: struct {
 // production reports the position of the element it wraps rather than that of
 // the tag written after it.
 Tagged_Production :: struct {
-	production: ^Production,
+	production: Production,
 	tag:        [dynamic]Tag_Pair,
 	pos:        int,
+}
+
+// The five kinds below are members of the union as pointers, because each of them
+// holds a Production and a union cannot hold itself by value. That makes building one
+// an allocation, so each is built here rather than at the places that want one.
+
+// alternative returns a choice between two productions. A run of them is a chain
+// leaning left, so `a | b | c` is `( a | b ) | c`.
+alternative :: proc(
+	lhs, rhs: Production,
+	pos: int,
+	allocator := context.allocator,
+) -> Production {
+	node := new(Alternative, allocator)
+	node.lhs = lhs
+	node.rhs = rhs
+	node.pos = pos
+	return node
+}
+
+// optional returns a zero-or-one production, e.g. `[ a b ]`.
+optional :: proc(
+	production: Production,
+	pos: int,
+	allocator := context.allocator,
+) -> Production {
+	node := new(Optional, allocator)
+	node.production = production
+	node.pos = pos
+	return node
+}
+
+// repetition returns a zero-or-more production, e.g. `{ one two }`.
+repetition :: proc(
+	production: Production,
+	pos: int,
+	allocator := context.allocator,
+) -> Production {
+	node := new(Repetition, allocator)
+	node.production = production
+	node.pos = pos
+	return node
+}
+
+// group returns a grouped production, e.g. `( a b )`.
+group :: proc(
+	production: Production,
+	pos: int,
+	allocator := context.allocator,
+) -> Production {
+	node := new(Group, allocator)
+	node.production = production
+	node.pos = pos
+	return node
+}
+
+// tagged_production returns a production annotated with one or more tags.
+tagged_production :: proc(
+	production: Production,
+	tag: [dynamic]Tag_Pair,
+	pos: int,
+	allocator := context.allocator,
+) -> Production {
+	node := new(Tagged_Production, allocator)
+	node.production = production
+	node.tag = tag
+	node.pos = pos
+	return node
 }
 
 // Tag_Pair is one `name="value"` entry of a tag. value keeps its quotes, like
@@ -183,13 +251,13 @@ production_pos :: proc(production: Production) -> int {
 		return v.pos
 	case Sequence:
 		return v.pos
-	case Alternative:
+	case ^Alternative:
 		return v.pos
-	case Optional:
+	case ^Optional:
 		return v.pos
-	case Repetition:
+	case ^Repetition:
 		return v.pos
-	case Group:
+	case ^Group:
 		return v.pos
 	case Qual_Ident:
 		return v.pos
@@ -197,7 +265,7 @@ production_pos :: proc(production: Production) -> int {
 		return v.pos
 	case Directive:
 		return v.pos
-	case Tagged_Production:
+	case ^Tagged_Production:
 		return v.pos
 	}
 	return 0
@@ -238,22 +306,34 @@ destroy_decl :: proc(decl: Decl) {
 
 // collect_branches returns the branches of an alternative as a flat list. The chain
 // of choices leans left, so the branches are read by walking the left spine down and
-// taking the right side at each step. Each branch is handed over to the caller, and
-// the chain holds nothing of its own to free. The list belongs to the caller.
-collect_branches :: proc(alternative: Alternative) -> [dynamic]Production {
+// taking the right side at each step.
+//
+// It only reads: the chain and its branches still belong to the caller, which frees
+// them with destroy_production. A caller that owns the alternative instead frees just
+// the chain nodes with destroy_alternative_chain, once the branches are held.
+collect_branches :: proc(alternative: ^Alternative) -> [dynamic]Production {
 	branches := make([dynamic]Production)
 	collect_branches_into(alternative, &branches)
 	return branches
 }
 
-collect_branches_into :: proc(alternative: Alternative, branches: ^[dynamic]Production) {
-	inner, is_chain := alternative.lhs^.(Alternative)
+collect_branches_into :: proc(alternative: ^Alternative, branches: ^[dynamic]Production) {
+	// The left side is either a further link of the chain or a branch.
+	inner, is_chain := alternative.lhs.(^Alternative)
 	if is_chain {
 		collect_branches_into(inner, branches)
 	} else {
-		append(branches, alternative.lhs^)
+		append(branches, alternative.lhs)
 	}
-	append(branches, alternative.rhs^)
+	append(branches, alternative.rhs)
+}
+
+// destroy_alternative_chain frees the nodes of a chain of choices and nothing else: the
+// branches they held are not freed, since whoever collected them out owns them now.
+destroy_alternative_chain :: proc(alternative: ^Alternative) {
+	inner, is_chain := alternative.lhs.(^Alternative)
+	if is_chain do destroy_alternative_chain(inner)
+	free(alternative)
 }
 
 destroy_production :: proc(production: Production) {
@@ -264,20 +344,19 @@ destroy_production :: proc(production: Production) {
 			destroy_production(e)
 		}
 		delete(v.productions)
-	case Alternative:
-		destroy_production(v.lhs^)
-		free(v.lhs)
-		destroy_production(v.rhs^)
-		free(v.rhs)
-	case Optional:
-		destroy_production(v.production^)
-		free(v.production)
-	case Repetition:
-		destroy_production(v.production^)
-		free(v.production)
-	case Group:
-		destroy_production(v.production^)
-		free(v.production)
+	case ^Alternative:
+		destroy_production(v.lhs)
+		destroy_production(v.rhs)
+		free(v)
+	case ^Optional:
+		destroy_production(v.production)
+		free(v)
+	case ^Repetition:
+		destroy_production(v.production)
+		free(v)
+	case ^Group:
+		destroy_production(v.production)
+		free(v)
 	case Qual_Ident:
 	case ^Call:
 		for e in v.args {
@@ -290,10 +369,10 @@ destroy_production :: proc(production: Production) {
 			destroy_production(e)
 		}
 		delete(v.args)
-	case Tagged_Production:
-		destroy_production(v.production^)
-		free(v.production)
+	case ^Tagged_Production:
+		destroy_production(v.production)
 		delete(v.tag)
+		free(v)
 	}
 }
 

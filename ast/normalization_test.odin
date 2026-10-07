@@ -56,28 +56,28 @@ shape_into :: proc(b: ^strings.Builder, p: Production) {
 		strings.write_string(b, it.rhs.name)
 	case Sequence:
 		shape_group(b, "seq", it.productions[:])
-	case Alternative:
+	case ^Alternative:
 		// The chain leans left, so it prints as a nested choice.
 		strings.write_string(b, "alt(")
-		shape_into(b, it.lhs^)
+		shape_into(b, it.lhs)
 		strings.write_rune(b, ' ')
-		shape_into(b, it.rhs^)
+		shape_into(b, it.rhs)
 		strings.write_rune(b, ')')
-	case Optional:
+	case ^Optional:
 		strings.write_string(b, "opt(")
-		shape_into(b, it.production^)
+		shape_into(b, it.production)
 		strings.write_rune(b, ')')
-	case Repetition:
+	case ^Repetition:
 		strings.write_string(b, "rep(")
-		shape_into(b, it.production^)
+		shape_into(b, it.production)
 		strings.write_rune(b, ')')
-	case Group:
+	case ^Group:
 		strings.write_string(b, "grp(")
-		shape_into(b, it.production^)
+		shape_into(b, it.production)
 		strings.write_rune(b, ')')
-	case Tagged_Production:
+	case ^Tagged_Production:
 		strings.write_string(b, "tag(")
-		shape_into(b, it.production^)
+		shape_into(b, it.production)
 		strings.write_rune(b, ')')
 	case Directive:
 		strings.write_rune(b, '@')
@@ -773,27 +773,25 @@ tagged_pair :: proc(name, value: string) -> Tag_Pair {
 }
 
 // annotated builds a production annotating name with pairs, for a test. The caller
-// owns the run of pairs it ends up holding, which destroy_tagged frees.
+// owns what it ends up holding, which destroy_tagged frees.
 annotated :: proc(name: string, pairs: ..Tag_Pair) -> Production {
 	run := make([dynamic]Tag_Pair, len(pairs))
 	for pair, i in pairs {
 		run[i] = pair
 	}
-	delete(pairs)
+	// pairs is the caller's variadic slice, not ours to free.
 
-	annotated_production := new(Production)
-	annotated_production^ = Production(Ident{name = name})
-	return Tagged_Production {
-		production = annotated_production,
-		tag  = run,
-	}
+	return tagged_production(Production(Ident{name = name}), run, 0)
 }
 
-// destroy_tagged frees a production made by annotated.
+// destroy_tagged frees a production made by annotated: the production it annotates,
+// and the run of pairs on the node that holds them.
 destroy_tagged :: proc(prod: Production) {
-	if tagged, is_tagged := prod.(Tagged_Production); is_tagged {
-		delete(tagged.tag)
-	}
+	tagged, is_tagged := prod.(^Tagged_Production)
+	if !is_tagged do return
+	destroy_production(tagged.production)
+	delete(tagged.tag)
+	free(tagged)
 }
 
 // Merging adds a pair that is not there yet and keeps one that is, so that which
@@ -810,7 +808,7 @@ test_merge_tag_into_combines_pairs_and_keeps_the_first_value :: proc(t: ^testing
 
 	merge_tag_into(&dst, src, &opts)
 
-	into := dst.(Tagged_Production)
+	into := dst.(^Tagged_Production)
 	testing.expectf(t, len(into.tag) == 3, "got %d pairs, want 3", len(into.tag))
 	testing.expect(t, into.tag[0].ident.name == "kind", "the pair dst had comes first")
 	testing.expect(t, into.tag[0].value.value == "x", "and keeps its value")
@@ -828,9 +826,9 @@ test_merge_tag_into_combines_pairs_and_keeps_the_first_value :: proc(t: ^testing
 
 	testing.expectf(
 		t,
-		len(other.(Tagged_Production).tag) == 1,
+		len(other.(^Tagged_Production).tag) == 1,
 		"got %d pairs, want 1",
-		len(other.(Tagged_Production).tag),
+		len(other.(^Tagged_Production).tag),
 	)
 }
 

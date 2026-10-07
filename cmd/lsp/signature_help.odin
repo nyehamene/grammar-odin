@@ -313,8 +313,8 @@ resolve_named :: proc(
 			}
 		}
 		name = v.rhs.name
-	case ast.Tagged_Production:
-		return resolve_named(cu, fi, v.production^)
+	case ^ast.Tagged_Production:
+		return resolve_named(cu, fi, v.production)
 	}
 	return name, {}, false
 }
@@ -423,25 +423,25 @@ production_containing_call :: proc(production: ast.Production, src: string, offs
 		return production_containing_call(v.lhs, src, offset)
 	case ast.Sequence:
 		return productions_containing_call(v.productions[:], src, offset)
-	case ast.Alternative:
-		if call := production_containing_call(v.lhs^, src, offset); call != nil {
+	case ^ast.Alternative:
+		if call := production_containing_call(v.lhs, src, offset); call != nil {
 			return call
 		}
-		return production_containing_call(v.rhs^, src, offset)
-	case ast.Optional:
-		return production_containing_call(v.production^, src, offset)
-	case ast.Repetition:
-		return production_containing_call(v.production^, src, offset)
-	case ast.Group:
-		return production_containing_call(v.production^, src, offset)
+		return production_containing_call(v.rhs, src, offset)
+	case ^ast.Optional:
+		return production_containing_call(v.production, src, offset)
+	case ^ast.Repetition:
+		return production_containing_call(v.production, src, offset)
+	case ^ast.Group:
+		return production_containing_call(v.production, src, offset)
 	case ast.Directive:
 		for arg in v.args {
 			if call := production_containing_call(arg, src, offset); call != nil {
 				return call
 			}
 		}
-	case ast.Tagged_Production:
-		return production_containing_call(v.production^, src, offset)
+	case ^ast.Tagged_Production:
+		return production_containing_call(v.production, src, offset)
 	case ast.Ident, ast.String_Lit, ast.Regex_Lit, ast.External_Value:
 	}
 	return nil

@@ -119,17 +119,17 @@ find_hit_production :: proc(production: ast.Production, offset: int) -> Hit {
 				return h
 			}
 		}
-	case ast.Alternative:
-		if h := find_hit_production(v.lhs^, offset); found(h) {
+	case ^ast.Alternative:
+		if h := find_hit_production(v.lhs, offset); found(h) {
 			return h
 		}
-		return find_hit_production(v.rhs^, offset)
-	case ast.Optional:
-		return find_hit_production(v.production^, offset)
-	case ast.Repetition:
-		return find_hit_production(v.production^, offset)
-	case ast.Group:
-		return find_hit_production(v.production^, offset)
+		return find_hit_production(v.rhs, offset)
+	case ^ast.Optional:
+		return find_hit_production(v.production, offset)
+	case ^ast.Repetition:
+		return find_hit_production(v.production, offset)
+	case ^ast.Group:
+		return find_hit_production(v.production, offset)
 	case ast.String_Lit:
 		if offset >= v.pos && offset < v.pos + len(v.value) {
 			return Hit{kind = .String, literal = v.value}
@@ -142,10 +142,10 @@ find_hit_production :: proc(production: ast.Production, offset: int) -> Hit {
 		if offset >= v.pos && offset < v.pos + len(v.name) {
 			return Hit{kind = .External, literal = v.name}
 		}
-	case ast.Tagged_Production:
+	case ^ast.Tagged_Production:
 		// A tag annotates the production it follows, so the annotation itself
 		// names nothing: look inside it.
-		return find_hit_production(v.production^, offset)
+		return find_hit_production(v.production, offset)
 	}
 	return Hit{kind = .None}
 }

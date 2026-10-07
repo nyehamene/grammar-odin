@@ -144,11 +144,14 @@ test_normalize_merges_tags :: proc(t: ^testing.T) {
 	testing.expectf(t, res.stderr == "", "merge reports nothing: %s", res.stderr)
 
 	clashing := "use = a `kind=\"x\"` | a `kind=\"y\"`;\n"
-	res = run_normalize([]string{"--tags", "merge", "--stdin"}, stdin_from(clashing))
-	defer destroy_result(&res)
-	testing.expectf(t, res.code == 0, "exit 0, got %d", res.code)
-	testing.expect(t, strings.contains(res.stdout, "use = a `kind=\"x\"`;"), res.stdout)
-	testing.expect(t, strings.contains(res.stderr, "kind"), res.stderr)
+	// A second result of its own, rather than reassigning the first: the first is
+	// still freed by the defer above, and a second defer on one address would free
+	// it twice.
+	clash_res := run_normalize([]string{"--tags", "merge", "--stdin"}, stdin_from(clashing))
+	defer destroy_result(&clash_res)
+	testing.expectf(t, clash_res.code == 0, "exit 0, got %d", clash_res.code)
+	testing.expect(t, strings.contains(clash_res.stdout, "use = a `kind=\"x\"`;"), clash_res.stdout)
+	testing.expect(t, strings.contains(clash_res.stderr, "kind"), clash_res.stderr)
 }
 
 // Under .Block the tag still goes, but losing it is said out loud.

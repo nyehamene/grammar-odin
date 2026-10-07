@@ -115,7 +115,7 @@ Write_Rule :: proc(w: io.Writer, r: Rule) {
 	// An alternative nested in a group keeps the line it has always had, since the
 	// writer has no bracket depth to indent it by and a `|` line inside parentheses
 	// would read as an alternative of the rule rather than of the group.
-	branches, is_branches := r.production.(Alternative)
+	branches, is_branches := r.production.(^Alternative)
 	if !is_branches {
 		write_lhs(w, r.ident, r.params[:])
 		io.write_string(w, " = ")
@@ -208,23 +208,23 @@ write_production :: proc(w: io.Writer, p: Production) {
 		io.write_string(w, ")")
 	case ^Call:
 		write_call(w, it)
-	case Tagged_Production:
-		write_production(w, it.production^)
+	case ^Tagged_Production:
+		write_production(w, it.production)
 		write_tag_pairs(w, it.tag[:])
 	case Sequence:
 		write_production_list(w, it.productions[:], " ")
-	case Alternative:
+	case ^Alternative:
 		// The chain leans left, so writing the left then the right gives
 		// `a | b | c` with no parentheses between the branches.
-		write_production(w, it.lhs^)
+		write_production(w, it.lhs)
 		io.write_string(w, " | ")
-		write_production(w, it.rhs^)
-	case Optional:
-		write_wrapped_production(w, "[", "]", it.production^)
-	case Repetition:
-		write_wrapped_production(w, "{", "}", it.production^)
-	case Group:
-		write_wrapped_production(w, "(", ")", it.production^)
+		write_production(w, it.rhs)
+	case ^Optional:
+		write_wrapped_production(w, "[", "]", it.production)
+	case ^Repetition:
+		write_wrapped_production(w, "{", "}", it.production)
+	case ^Group:
+		write_wrapped_production(w, "(", ")", it.production)
 	}
 }
 

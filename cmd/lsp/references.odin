@@ -274,21 +274,21 @@ rule_ref_in_production :: proc(
 		for e in v.productions {
 			rule_ref_in_production(f, target_ns_dir, name, e, uris, out, private)
 		}
-	case ast.Alternative:
-		rule_ref_in_production(f, target_ns_dir, name, v.lhs^, uris, out, private)
-		rule_ref_in_production(f, target_ns_dir, name, v.rhs^, uris, out, private)
-	case ast.Optional:
-		rule_ref_in_production(f, target_ns_dir, name, v.production^, uris, out, private)
-	case ast.Repetition:
-		rule_ref_in_production(f, target_ns_dir, name, v.production^, uris, out, private)
-	case ast.Group:
-		rule_ref_in_production(f, target_ns_dir, name, v.production^, uris, out, private)
+	case ^ast.Alternative:
+		rule_ref_in_production(f, target_ns_dir, name, v.lhs, uris, out, private)
+		rule_ref_in_production(f, target_ns_dir, name, v.rhs, uris, out, private)
+	case ^ast.Optional:
+		rule_ref_in_production(f, target_ns_dir, name, v.production, uris, out, private)
+	case ^ast.Repetition:
+		rule_ref_in_production(f, target_ns_dir, name, v.production, uris, out, private)
+	case ^ast.Group:
+		rule_ref_in_production(f, target_ns_dir, name, v.production, uris, out, private)
 	case ast.Directive:
 		for arg in v.args {
 			rule_ref_in_production(f, target_ns_dir, name, arg, uris, out, private)
 		}
-	case ast.Tagged_Production:
-		rule_ref_in_production(f, target_ns_dir, name, v.production^, uris, out, private)
+	case ^ast.Tagged_Production:
+		rule_ref_in_production(f, target_ns_dir, name, v.production, uris, out, private)
 	case ast.String_Lit, ast.Regex_Lit, ast.External_Value:
 	}
 }
@@ -327,21 +327,21 @@ binding_ref_in_production :: proc(
 		for e in v.productions {
 			binding_ref_in_production(f, name, e, uris, out)
 		}
-	case ast.Alternative:
-		binding_ref_in_production(f, name, v.lhs^, uris, out)
-		binding_ref_in_production(f, name, v.rhs^, uris, out)
-	case ast.Optional:
-		binding_ref_in_production(f, name, v.production^, uris, out)
-	case ast.Repetition:
-		binding_ref_in_production(f, name, v.production^, uris, out)
-	case ast.Group:
-		binding_ref_in_production(f, name, v.production^, uris, out)
+	case ^ast.Alternative:
+		binding_ref_in_production(f, name, v.lhs, uris, out)
+		binding_ref_in_production(f, name, v.rhs, uris, out)
+	case ^ast.Optional:
+		binding_ref_in_production(f, name, v.production, uris, out)
+	case ^ast.Repetition:
+		binding_ref_in_production(f, name, v.production, uris, out)
+	case ^ast.Group:
+		binding_ref_in_production(f, name, v.production, uris, out)
 	case ast.Directive:
 		for arg in v.args {
 			binding_ref_in_production(f, name, arg, uris, out)
 		}
-	case ast.Tagged_Production:
-		binding_ref_in_production(f, name, v.production^, uris, out)
+	case ^ast.Tagged_Production:
+		binding_ref_in_production(f, name, v.production, uris, out)
 	case ast.String_Lit, ast.Regex_Lit, ast.External_Value:
 	}
 }

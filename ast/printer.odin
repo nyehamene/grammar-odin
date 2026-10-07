@@ -67,26 +67,26 @@ print_production :: proc(p: ^Printer, production: Production) {
 			print_production(p, e)
 		}
 		p.indent -= 1
-	case Alternative:
+	case ^Alternative:
 		print_header(p, v.pos, "AlternativeProduction")
 		p.indent += 1
-		print_production(p, v.lhs^)
-		print_production(p, v.rhs^)
+		print_production(p, v.lhs)
+		print_production(p, v.rhs)
 		p.indent -= 1
-	case Optional:
+	case ^Optional:
 		print_header(p, v.pos, "OptionalProduction")
 		p.indent += 1
-		print_production(p, v.production^)
+		print_production(p, v.production)
 		p.indent -= 1
-	case Repetition:
+	case ^Repetition:
 		print_header(p, v.pos, "RepetitionProduction")
 		p.indent += 1
-		print_production(p, v.production^)
+		print_production(p, v.production)
 		p.indent -= 1
-	case Group:
+	case ^Group:
 		print_header(p, v.pos, "GroupProduction")
 		p.indent += 1
-		print_production(p, v.production^)
+		print_production(p, v.production)
 		p.indent -= 1
 	case Qual_Ident:
 		print_header(p, v.pos, "MemberExpr")
@@ -115,10 +115,10 @@ print_production :: proc(p: ^Printer, production: Production) {
 			print_production(p, e)
 		}
 		p.indent -= 1
-	case Tagged_Production:
+	case ^Tagged_Production:
 		print_header(p, v.pos, "TaggedProduction")
 		p.indent += 1
-		print_production(p, v.production^)
+		print_production(p, v.production)
 		for pair in v.tag {
 			print_header(
 				p,
