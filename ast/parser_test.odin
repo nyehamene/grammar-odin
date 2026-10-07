@@ -19,14 +19,14 @@ test_parse_hello :: proc(t: ^testing.T) {
 	testing.expect(t, rule.ident.name == "greeting", "wrong rule name")
 	testing.expect(t, len(rule.params) == 0, "no parameters expected")
 
-	alts, ok3 := rule.expr.(Alternative)
+	alts, ok3 := rule.production.(Alternative)
 	testing.expect(t, ok3, "expected Alternative")
-	testing.expect(t, len(alts.exprs) == 2, "expected two alternatives")
+	testing.expect(t, len(alts.productions) == 2, "expected two alternatives")
 
-	s1, ok4 := alts.exprs[0].(String_Lit)
+	s1, ok4 := alts.productions[0].(String_Lit)
 	testing.expect(t, ok4, "first alt should be String_Lit")
 	testing.expect(t, s1.value == `"Hello"`, "wrong value for first alt")
-	s2, ok5 := alts.exprs[1].(String_Lit)
+	s2, ok5 := alts.productions[1].(String_Lit)
 	testing.expect(t, ok5, "second alt should be String_Lit")
 	testing.expect(t, s2.value == `"Hi"`, "wrong value for second alt")
 }
@@ -37,11 +37,11 @@ test_parse_sequence :: proc(t: ^testing.T) {
 	defer destroy_file(&file)
 
 	rule, _ := file.decls[0].(Rule)
-	seq, ok := rule.expr.(Sequence)
+	seq, ok := rule.production.(Sequence)
 	testing.expect(t, ok, "expected Sequence")
-	testing.expect(t, len(seq.exprs) == 2, "expected two elements")
+	testing.expect(t, len(seq.productions) == 2, "expected two elements")
 
-	ident, ok2 := seq.exprs[0].(Ident)
+	ident, ok2 := seq.productions[0].(Ident)
 	testing.expect(t, ok2, "first element should be Ident")
 	testing.expect(t, ident.name == "greeting", "wrong ident name")
 }
@@ -74,7 +74,7 @@ test_parse_call :: proc(t: ^testing.T) {
 	defer destroy_file(&file)
 
 	rule, _ := file.decls[0].(Rule)
-	call, ok := rule.expr.(^Call)
+	call, ok := rule.production.(^Call)
 	testing.expect(t, ok, "expected Call")
 
 	ident, i_ok := call.ident.(Ident)
@@ -95,7 +95,7 @@ test_parse_member_access :: proc(t: ^testing.T) {
 	defer destroy_file(&file)
 
 	rule, _ := file.decls[0].(Rule)
-	ident, ok := rule.expr.(Qual_Ident)
+	ident, ok := rule.production.(Qual_Ident)
 	testing.expect(t, ok, "expected Qual_Ident")
 	testing.expect(t, ident.lhs.name == "foo", "inner member should be foo")
 	testing.expect(t, ident.rhs.name == "bar", "outer member should be bar")
@@ -134,13 +134,13 @@ rule2 = a // comment
 	testing.expect(t, rule1.ident.name == "rule1", "wrong rule1 name")
 
 	// Both alternatives survive the trailing comments.
-	alt, ok3 := rule1.expr.(Alternative)
+	alt, ok3 := rule1.production.(Alternative)
 	testing.expect(t, ok3, "expected Alternative for rule1")
-	testing.expect(t, len(alt.exprs) == 2, "expected two alternatives")
+	testing.expect(t, len(alt.productions) == 2, "expected two alternatives")
 
 	rule2, ok4 := file.decls[1].(Rule)
 	testing.expect(t, ok4, "expected Rule for rule2")
-	_, ok2p := rule2.expr.(Ident)
+	_, ok2p := rule2.production.(Ident)
 	testing.expect(t, ok2p, "expected Ident for rule2 single production")
 }
 
@@ -163,18 +163,18 @@ grouped = ( a // one
 	testing.expect(t, len(rule.params) == 1, "a comment must not be taken for a parameter")
 	testing.expect(t, rule.params[0].name == "name", "wrong parameter")
 
-	call_expr, ok3 := rule.expr.(^Call)
+	call_production, ok3 := rule.production.(^Call)
 	testing.expect(t, ok3, "expected Call")
-	testing.expect(t, len(call_expr.args) == 2, "a comment must not be counted as an argument")
+	testing.expect(t, len(call_production.args) == 2, "a comment must not be counted as an argument")
 
 	other, ok5 := file.decls[1].(Rule)
 	testing.expect(t, ok5, "expected Rule for grouped")
-	seq2, ok7 := other.expr.(Sequence)
+	seq2, ok7 := other.production.(Sequence)
 	testing.expect(t, ok7, "expected Sequence for grouped")
-	testing.expect(t, len(seq2.exprs) == 3, "a comment must not add a sequence element")
-	group, ok8 := seq2.exprs[0].(Group)
+	testing.expect(t, len(seq2.productions) == 3, "a comment must not add a sequence element")
+	group, ok8 := seq2.productions[0].(Group)
 	testing.expect(t, ok8, "expected Group_Expr")
-	testing.expect(t, len(group.exprs) == 2, "a comment must not add a group element")
+	testing.expect(t, len(group.productions) == 2, "a comment must not add a group element")
 }
 
 @(test)
@@ -183,25 +183,25 @@ test_parse_group_repetition_optional :: proc(t: ^testing.T) {
 	defer destroy_file(&file)
 
 	rule, _ := file.decls[0].(Rule)
-	group, ok := rule.expr.(Group)
+	group, ok := rule.production.(Group)
 	testing.expect(t, ok, "expected Group_Expr")
-	testing.expect(t, len(group.exprs) == 3, "expected three elements in group")
+	testing.expect(t, len(group.productions) == 3, "expected three elements in group")
 
-	lit, ok2 := group.exprs[0].(String_Lit)
+	lit, ok2 := group.productions[0].(String_Lit)
 	testing.expect(t, ok2, "first element should be String_Lit")
 	testing.expect(t, lit.value == `"a"`, "wrong first element")
 
-	rep, ok3 := group.exprs[1].(Repetition)
+	rep, ok3 := group.productions[1].(Repetition)
 	testing.expect(t, ok3, "second element should be Repetition")
-	testing.expect(t, len(rep.exprs) == 2, "repetition should hold two expressions")
-	lit2, ok4 := rep.exprs[0].(String_Lit)
+	testing.expect(t, len(rep.productions) == 2, "repetition should hold two expressions")
+	lit2, ok4 := rep.productions[0].(String_Lit)
 	testing.expect(t, ok4, "repetition element should be String_Lit")
 	testing.expect(t, lit2.value == `"b"`, "wrong repetition element")
 
-	opt, ok5 := group.exprs[2].(Optional)
+	opt, ok5 := group.productions[2].(Optional)
 	testing.expect(t, ok5, "third element should be Optional")
-	testing.expect(t, len(opt.exprs) == 2, "optional should hold two expressions")
-	lit3, ok6 := opt.exprs[0].(String_Lit)
+	testing.expect(t, len(opt.productions) == 2, "optional should hold two expressions")
+	lit3, ok6 := opt.productions[0].(String_Lit)
 	testing.expect(t, ok6, "optional element should be String_Lit")
 	testing.expect(t, lit3.value == `"d"`, "wrong optional element")
 }
@@ -214,7 +214,7 @@ test_parse_external_value :: proc(t: ^testing.T) {
 	defer destroy_file(&file)
 
 	rule, _ := file.decls[0].(Rule)
-	ext, ok := rule.expr.(External_Value)
+	ext, ok := rule.production.(External_Value)
 	testing.expect(t, ok, "expected External_Value")
 	testing.expect(t, ext.name == "name", "external name should drop the leading __")
 }
@@ -225,7 +225,7 @@ test_parse_external_value_removes_trailing_delimiter :: proc(t: ^testing.T) {
 	defer destroy_file(&file)
 
 	rule, _ := file.decls[0].(Rule)
-	ext, ok := rule.expr.(External_Value)
+	ext, ok := rule.production.(External_Value)
 	testing.expect(t, ok, "expected External_Value")
 	testing.expect(t, ext.name == "name", "a trailing __ is not part of the name")
 }
@@ -286,7 +286,7 @@ test_parse_tag_on_a_single_element :: proc(t: ^testing.T) {
 	defer destroy_file(&file)
 
 	tagged := must_tagged(t, file, "foo")
-	ident, ok := tagged.expr^.(Ident)
+	ident, ok := tagged.production^.(Ident)
 	testing.expect(t, ok, "the annotated production should be an Ident")
 	testing.expect(t, ident.name == "x", "wrong tagged name")
 
@@ -302,15 +302,15 @@ test_parse_tag_wraps_the_whole_sequence :: proc(t: ^testing.T) {
 	defer destroy_file(&file)
 
 	tagged := must_tagged(t, file, "foo")
-	seq, ok := tagged.expr^.(Sequence)
+	seq, ok := tagged.production^.(Sequence)
 	testing.expect(t, ok, "the annotated production should be the sequence")
-	testing.expect(t, len(seq.exprs) == 2, "a tag must not add an element")
+	testing.expect(t, len(seq.productions) == 2, "a tag must not add an element")
 
-	first, ok2 := seq.exprs[0].(Ident)
+	first, ok2 := seq.productions[0].(Ident)
 	testing.expect(t, ok2, "the first element should be an Ident")
 	testing.expect(t, first.name == "x", "wrong first element")
 
-	second, ok3 := seq.exprs[1].(Ident)
+	second, ok3 := seq.productions[1].(Ident)
 	testing.expect(t, ok3, "the last element should be an Ident")
 	testing.expect(t, second.name == "y", "wrong last element")
 
@@ -318,7 +318,7 @@ test_parse_tag_wraps_the_whole_sequence :: proc(t: ^testing.T) {
 	testing.expect(t, tagged.tag[0].ident.name == "name", "wrong pair name")
 	// The wrapper reports where the annotated production starts, not where the
 	// tag is written.
-	testing.expect(t, tagged.pos == expr_pos(seq), "the tag should report the production position")
+	testing.expect(t, tagged.pos == production_pos(seq), "the tag should report the production position")
 }
 
 @(test)
@@ -327,13 +327,13 @@ test_parse_tag_wraps_a_three_element_sequence :: proc(t: ^testing.T) {
 	defer destroy_file(&file)
 
 	tagged := must_tagged(t, file, "foo")
-	seq, ok := tagged.expr^.(Sequence)
+	seq, ok := tagged.production^.(Sequence)
 	testing.expect(t, ok, "the annotated production should be the sequence")
 	want := []string{"a", "b", "c"}
-	testing.expect(t, len(seq.exprs) == len(want), "expected three elements")
+	testing.expect(t, len(seq.productions) == len(want), "expected three elements")
 
-	for expr, i in seq.exprs[:] {
-		ident, is_ident := expr.(Ident)
+	for production, i in seq.productions[:] {
+		ident, is_ident := production.(Ident)
 		testing.expect(t, is_ident, "every element should be an Ident")
 		testing.expect(t, ident.name == want[i], "wrong element name")
 	}
@@ -348,20 +348,20 @@ test_parse_tag_wraps_each_alternative_sequence :: proc(t: ^testing.T) {
 	rule := must_rule(t, file, "foo")
 	alts, ok := must_production(t, rule).(Alternative)
 	testing.expect(t, ok, "expected Alternative")
-	testing.expect(t, len(alts.exprs) == 2, "expected two alternatives")
+	testing.expect(t, len(alts.productions) == 2, "expected two alternatives")
 
-	first, ok2 := alts.exprs[0].(Tagged_Production)
+	first, ok2 := alts.productions[0].(Tagged_Production)
 	testing.expect(t, ok2, "the first alternative should be tagged")
-	first_seq, ok3 := first.expr^.(Sequence)
+	first_seq, ok3 := first.production^.(Sequence)
 	testing.expect(t, ok3, "the first alternative should be a sequence")
-	testing.expect(t, len(first_seq.exprs) == 2, "the first alternative has two elements")
+	testing.expect(t, len(first_seq.productions) == 2, "the first alternative has two elements")
 	testing.expect(t, first.tag[0].ident.name == "first", "wrong first tag")
 
-	second, ok4 := alts.exprs[1].(Tagged_Production)
+	second, ok4 := alts.productions[1].(Tagged_Production)
 	testing.expect(t, ok4, "the second alternative should be tagged")
-	second_seq, ok5 := second.expr^.(Sequence)
+	second_seq, ok5 := second.production^.(Sequence)
 	testing.expect(t, ok5, "the second alternative should be a sequence")
-	testing.expect(t, len(second_seq.exprs) == 2, "the second alternative has two elements")
+	testing.expect(t, len(second_seq.productions) == 2, "the second alternative has two elements")
 	testing.expect(t, second.tag[0].ident.name == "second", "wrong second tag")
 }
 
@@ -407,13 +407,13 @@ test_parse_tag_on_each_alternative :: proc(t: ^testing.T) {
 	rule := must_rule(t, file, "foo")
 	alts, ok := must_production(t, rule).(Alternative)
 	testing.expect(t, ok, "expected Alternative")
-	testing.expect(t, len(alts.exprs) == 2, "expected two alternatives")
+	testing.expect(t, len(alts.productions) == 2, "expected two alternatives")
 
-	first, ok2 := alts.exprs[0].(Tagged_Production)
+	first, ok2 := alts.productions[0].(Tagged_Production)
 	testing.expect(t, ok2, "the first alternative should be tagged")
 	testing.expect(t, first.tag[0].ident.name == "a", "wrong first tag")
 
-	second, ok3 := alts.exprs[1].(Tagged_Production)
+	second, ok3 := alts.productions[1].(Tagged_Production)
 	testing.expect(t, ok3, "the second alternative should be tagged")
 	testing.expect(t, second.tag[0].ident.name == "b", "wrong second tag")
 }
@@ -426,9 +426,9 @@ test_parse_tag_outside_a_group :: proc(t: ^testing.T) {
 	defer destroy_file(&file)
 
 	tagged := must_tagged(t, file, "foo")
-	group, ok := tagged.expr^.(Group)
+	group, ok := tagged.production^.(Group)
 	testing.expect(t, ok, "the tagged element should be the group")
-	testing.expect(t, len(group.exprs) == 1, "expected one element in the group")
+	testing.expect(t, len(group.productions) == 1, "expected one element in the group")
 }
 
 @(test)
@@ -485,7 +485,7 @@ test_parse_malformed_tag :: proc(t: ^testing.T) {
 
 // must_production returns the single production of a rule.
 must_production :: proc(t: ^testing.T, rule: Rule) -> Production {
-	return rule.expr
+	return rule.production
 }
 
 // must_tagged parses a one rule source and returns the single Tagged_Production of its

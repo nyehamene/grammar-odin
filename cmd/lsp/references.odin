@@ -192,7 +192,7 @@ collect_rule_refs :: proc(
 			if include_declaration && d.ident.name == name {
 				push_reference(out, uris, f, d.ident.pos, d.ident.name)
 			}
-			rule_ref_in_expr(f, target_ns_dir, name, d.expr, uris, out, private)
+			rule_ref_in_production(f, target_ns_dir, name, d.production, uris, out, private)
 		case ast.Binding, ast.Comment_Group:
 		}
 	}
@@ -214,7 +214,7 @@ collect_binding_refs :: proc(
 				push_reference(out, uris, f, d.ident.pos, d.ident.name)
 			}
 		case ast.Rule:
-			binding_ref_in_expr(f, name, d.expr, uris, out)
+			binding_ref_in_production(f, name, d.production, uris, out)
 		case ast.Comment_Group:
 		}
 	}
@@ -233,22 +233,22 @@ collect_param_refs :: proc(
 	#partial switch d in decl {
 	case ast.Rule:
 		for p in d.params {
-			rule_ref_in_expr(f, "", name, p, uris, out, true)
+			rule_ref_in_production(f, "", name, p, uris, out, true)
 		}
-		rule_ref_in_expr(f, "", name, d.expr, uris, out, true)
+		rule_ref_in_production(f, "", name, d.production, uris, out, true)
 	case ast.Comment_Group:
 	}
 }
 
-rule_ref_in_expr :: proc(
+rule_ref_in_production :: proc(
 	f: ^check.Loaded_File,
 	target_ns_dir, name: string,
-	expr: ast.Production,
+	production: ast.Production,
 	uris: map[^check.Loaded_File]string,
 	out: ^[dynamic]Location,
 	private: bool,
 ) {
-	#partial switch v in expr {
+	#partial switch v in production {
 	case ast.Ident:
 		if v.name == name {
 			push_reference(out, uris, f, v.pos, v.name)
@@ -263,52 +263,52 @@ rule_ref_in_expr :: proc(
 	case ^ast.Call:
 		switch it in v.ident {
 		case ast.Ident:
-			rule_ref_in_expr(f, target_ns_dir, name, it, uris, out, private)
+			rule_ref_in_production(f, target_ns_dir, name, it, uris, out, private)
 		case ast.Qual_Ident:
-			rule_ref_in_expr(f, target_ns_dir, name, it, uris, out, private)
+			rule_ref_in_production(f, target_ns_dir, name, it, uris, out, private)
 		}
 		for arg in v.args {
-			rule_ref_in_expr(f, target_ns_dir, name, arg, uris, out, private)
+			rule_ref_in_production(f, target_ns_dir, name, arg, uris, out, private)
 		}
 	case ast.Sequence:
-		for e in v.exprs {
-			rule_ref_in_expr(f, target_ns_dir, name, e, uris, out, private)
+		for e in v.productions {
+			rule_ref_in_production(f, target_ns_dir, name, e, uris, out, private)
 		}
 	case ast.Alternative:
-		for e in v.exprs {
-			rule_ref_in_expr(f, target_ns_dir, name, e, uris, out, private)
+		for e in v.productions {
+			rule_ref_in_production(f, target_ns_dir, name, e, uris, out, private)
 		}
 	case ast.Optional:
-		for e in v.exprs {
-			rule_ref_in_expr(f, target_ns_dir, name, e, uris, out, private)
+		for e in v.productions {
+			rule_ref_in_production(f, target_ns_dir, name, e, uris, out, private)
 		}
 	case ast.Repetition:
-		for e in v.exprs {
-			rule_ref_in_expr(f, target_ns_dir, name, e, uris, out, private)
+		for e in v.productions {
+			rule_ref_in_production(f, target_ns_dir, name, e, uris, out, private)
 		}
 	case ast.Group:
-		for e in v.exprs {
-			rule_ref_in_expr(f, target_ns_dir, name, e, uris, out, private)
+		for e in v.productions {
+			rule_ref_in_production(f, target_ns_dir, name, e, uris, out, private)
 		}
 	case ast.Directive:
 		for arg in v.args {
-			rule_ref_in_expr(f, target_ns_dir, name, arg, uris, out, private)
+			rule_ref_in_production(f, target_ns_dir, name, arg, uris, out, private)
 		}
 	case ast.Tagged_Production:
-		rule_ref_in_expr(f, target_ns_dir, name, v.expr^, uris, out, private)
+		rule_ref_in_production(f, target_ns_dir, name, v.production^, uris, out, private)
 	case ast.String_Lit, ast.Regex_Lit, ast.External_Value:
 	}
 }
 
-// binding_ref_in_expr appends every identifier with the binding's name in expr.
-binding_ref_in_expr :: proc(
+// binding_ref_in_production appends every identifier with the binding's name in production.
+binding_ref_in_production :: proc(
 	f: ^check.Loaded_File,
 	name: string,
-	expr: ast.Production,
+	production: ast.Production,
 	uris: map[^check.Loaded_File]string,
 	out: ^[dynamic]Location,
 ) {
-	#partial switch v in expr {
+	#partial switch v in production {
 	case ast.Ident:
 		if v.name == name {
 			push_reference(out, uris, f, v.pos, v.name)
@@ -323,39 +323,39 @@ binding_ref_in_expr :: proc(
 	case ^ast.Call:
 		switch it in v.ident {
 		case ast.Ident:
-			binding_ref_in_expr(f, name, it, uris, out)
+			binding_ref_in_production(f, name, it, uris, out)
 		case ast.Qual_Ident:
-			binding_ref_in_expr(f, name, it, uris, out)
+			binding_ref_in_production(f, name, it, uris, out)
 		}
 		for arg in v.args {
-			binding_ref_in_expr(f, name, arg, uris, out)
+			binding_ref_in_production(f, name, arg, uris, out)
 		}
 	case ast.Sequence:
-		for e in v.exprs {
-			binding_ref_in_expr(f, name, e, uris, out)
+		for e in v.productions {
+			binding_ref_in_production(f, name, e, uris, out)
 		}
 	case ast.Alternative:
-		for e in v.exprs {
-			binding_ref_in_expr(f, name, e, uris, out)
+		for e in v.productions {
+			binding_ref_in_production(f, name, e, uris, out)
 		}
 	case ast.Optional:
-		for e in v.exprs {
-			binding_ref_in_expr(f, name, e, uris, out)
+		for e in v.productions {
+			binding_ref_in_production(f, name, e, uris, out)
 		}
 	case ast.Repetition:
-		for e in v.exprs {
-			binding_ref_in_expr(f, name, e, uris, out)
+		for e in v.productions {
+			binding_ref_in_production(f, name, e, uris, out)
 		}
 	case ast.Group:
-		for e in v.exprs {
-			binding_ref_in_expr(f, name, e, uris, out)
+		for e in v.productions {
+			binding_ref_in_production(f, name, e, uris, out)
 		}
 	case ast.Directive:
 		for arg in v.args {
-			binding_ref_in_expr(f, name, arg, uris, out)
+			binding_ref_in_production(f, name, arg, uris, out)
 		}
 	case ast.Tagged_Production:
-		binding_ref_in_expr(f, name, v.expr^, uris, out)
+		binding_ref_in_production(f, name, v.production^, uris, out)
 	case ast.String_Lit, ast.Regex_Lit, ast.External_Value:
 	}
 }

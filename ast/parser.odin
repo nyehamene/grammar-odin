@@ -138,14 +138,14 @@ parse_rule :: proc(p: ^Parser, name: token.Token, params: []Ident) -> Decl {
 		}
 	}
 
-	expr := parse_production(p)
+	production := parse_production(p)
 
 	expect(p, .Semicolon)
 
 	return Rule {
 		ident = ident_node(name, p.src),
 		params = clone_idents(params, p.allocator),
-		expr = expr,
+		production = production,
 		pos = name.start,
 	}
 }
@@ -162,17 +162,17 @@ parse_comment_group :: proc(p: ^Parser) -> Decl {
 
 // parse_production parses a production: a sequence or a set of alternatives.
 parse_production :: proc(p: ^Parser) -> Production {
-	expr := parse_sequence(p)
+	production := parse_sequence(p)
 	if peek(p).kind == .Pipe {
 		alts := make([dynamic]Production, p.allocator)
-		append(&alts, expr)
+		append(&alts, production)
 		for peek(p).kind == .Pipe {
 			next(p)
 			append(&alts, parse_sequence(p))
 		}
-		return Alternative{exprs = alts, pos = expr_pos(expr)}
+		return Alternative{productions = alts, pos = production_pos(production)}
 	}
-	return expr
+	return production
 }
 
 // parse_sequence parses `basic { basic } [ tag ]`. A tag annotates the production
@@ -219,9 +219,9 @@ parse_sequence :: proc(p: ^Parser) -> Production {
 			append(
 				&terms,
 				Tagged_Production {
-					expr = alloc_expr(annotated),
+					production = alloc_production(annotated),
 					tag = pairs,
-					pos = expr_pos(annotated),
+					pos = production_pos(annotated),
 				},
 			)
 			// A further tag is reported on its own above, so only an element
@@ -247,7 +247,7 @@ sequence_or_single :: proc(terms: [dynamic]Production) -> Production {
 		delete(terms)
 		return only
 	}
-	return Sequence{exprs = terms, pos = expr_pos(terms[0])}
+	return Sequence{productions = terms, pos = production_pos(terms[0])}
 }
 
 // parse_tag_pairs splits the scanned tag into its pairs, one per `name="value"`
@@ -279,21 +279,21 @@ parse_tag_pairs :: proc(p: ^Parser, t: token.Token) -> [dynamic]Tag_Pair {
 	return pairs
 }
 
-// trailing_tag_pos returns the offset of the tag that closes expr when expr is a
+// trailing_tag_pos returns the offset of the tag that closes production when production is a
 // production annotated by one, and reports false otherwise. It descends into a
 // sequence or an alternative so it finds the tag of a nested production, which is
 // how a tag written inside a group, a repetition or an optional is found.
-trailing_tag_pos :: proc(expr: Production) -> (int, bool) {
-	#partial switch v in expr {
+trailing_tag_pos :: proc(production: Production) -> (int, bool) {
+	#partial switch v in production {
 	case Tagged_Production:
 		if len(v.tag) > 0 do return v.tag[0].pos, true
 	case Sequence:
-		if len(v.exprs) > 0 {
-			return trailing_tag_pos(v.exprs[len(v.exprs) - 1])
+		if len(v.productions) > 0 {
+			return trailing_tag_pos(v.productions[len(v.productions) - 1])
 		}
 	case Alternative:
-		if len(v.exprs) > 0 {
-			return trailing_tag_pos(v.exprs[len(v.exprs) - 1])
+		if len(v.productions) > 0 {
+			return trailing_tag_pos(v.productions[len(v.productions) - 1])
 		}
 	}
 	return 0, false
@@ -399,12 +399,12 @@ parse_non_terminal :: proc(p: ^Parser) -> Any_Ident {
 	if peek(p).kind == .Dot {
 		next(p)
 		sel := expect(p, .Ident)
-		expr := Qual_Ident {
+		production := Qual_Ident {
 			lhs = lhs,
 			rhs = ident_node(sel, p.src),
-			pos = expr_pos(lhs),
+			pos = production_pos(lhs),
 		}
-		return expr
+		return production
 	}
 	return lhs
 }
@@ -447,7 +447,7 @@ parse_optional :: proc(p: ^Parser) -> Production {
 	inner := parse_production(p)
 	reject_inner_tag(p, inner)
 	expect(p, .RBrack)
-	return Optional{exprs = unpack_sequence(inner, p.allocator), pos = start.start}
+	return Optional{productions = unpack_sequence(inner, p.allocator), pos = start.start}
 }
 
 // parse_repetition parses `{ production }`, e.g. `{ one two }`.
@@ -456,7 +456,7 @@ parse_repetition :: proc(p: ^Parser) -> Production {
 	inner := parse_production(p)
 	reject_inner_tag(p, inner)
 	expect(p, .RBrace)
-	return Repetition{exprs = unpack_sequence(inner, p.allocator), pos = start.start}
+	return Repetition{productions = unpack_sequence(inner, p.allocator), pos = start.start}
 }
 
 // parse_group parses `( production )`, e.g. `( a b )`.
@@ -465,7 +465,7 @@ parse_group :: proc(p: ^Parser) -> Production {
 	inner := parse_production(p)
 	reject_inner_tag(p, inner)
 	expect(p, .RParen)
-	return Group{exprs = unpack_sequence(inner, p.allocator), pos = start.start}
+	return Group{productions = unpack_sequence(inner, p.allocator), pos = start.start}
 }
 
 // reject_inner_tag reports a tag found at the end of a production nested inside
@@ -481,12 +481,12 @@ reject_inner_tag :: proc(p: ^Parser, inner: Production) {
 // unpack_sequence converts a production into a list of expressions. If the
 // production is itself a Sequence, its elements are transferred directly,
 // otherwise the production is wrapped in a single-element list.
-unpack_sequence :: proc(expr: Production, allocator := context.allocator) -> [dynamic]Production {
-	if seq, ok := expr.(Sequence); ok {
-		return seq.exprs
+unpack_sequence :: proc(production: Production, allocator := context.allocator) -> [dynamic]Production {
+	if seq, ok := production.(Sequence); ok {
+		return seq.productions
 	}
 	list := make([dynamic]Production, allocator)
-	append(&list, expr)
+	append(&list, production)
 	return list
 }
 
@@ -553,9 +553,9 @@ ident_node :: proc(t: token.Token, src: string) -> Ident {
 	return Ident{pos = t.start, name = token.lexeme(t, src)}
 }
 
-alloc_expr :: proc(expr: Production, allocator := context.allocator) -> ^Production {
+alloc_production :: proc(production: Production, allocator := context.allocator) -> ^Production {
 	p := new(Production, allocator)
-	p^ = expr
+	p^ = production
 	return p
 }
 

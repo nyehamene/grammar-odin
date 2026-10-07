@@ -14,7 +14,7 @@ import "core:strings"
 // A body that takes more than one line is written on lines of its own, the way the
 // example grammars and the formatter write one:
 //
-//	expr = a
+//	production = a
 //	     | b
 //	     ;
 //	use  = p
@@ -115,19 +115,19 @@ Write_Rule :: proc(w: io.Writer, r: Rule) {
 	// An alternative nested in a group keeps the line it has always had, since the
 	// writer has no bracket depth to indent it by and a `|` line inside parentheses
 	// would read as an alternative of the rule rather than of the group.
-	branches, is_branches := r.expr.(Alternative)
-	if !is_branches || len(branches.exprs) < 2 {
+	branches, is_branches := r.production.(Alternative)
+	if !is_branches || len(branches.productions) < 2 {
 		write_lhs(w, r.ident, r.params[:])
 		io.write_string(w, " = ")
-		write_production(w, r.expr)
+		write_production(w, r.production)
 		io.write_string(w, ";\n")
 		return
 	}
 
 	write_lhs(w, r.ident, r.params[:])
 	io.write_string(w, " = ")
-	write_production(w, branches.exprs[0])
-	for branch in branches.exprs[1:] {
+	write_production(w, branches.productions[0])
+	for branch in branches.productions[1:] {
 		io.write_string(w, "\n")
 		write_pad(w, col)
 		io.write_string(w, "| ")
@@ -206,29 +206,29 @@ write_production :: proc(w: io.Writer, p: Production) {
 	case ^Call:
 		write_call(w, it)
 	case Tagged_Production:
-		write_production(w, it.expr^)
+		write_production(w, it.production^)
 		write_tag_pairs(w, it.tag[:])
 	case Sequence:
-		write_production_list(w, it.exprs[:], " ")
+		write_production_list(w, it.productions[:], " ")
 	case Alternative:
-		write_production_list(w, it.exprs[:], " | ")
+		write_production_list(w, it.productions[:], " | ")
 	case Optional:
 		io.write_string(w, "[")
-		io.write_string(w, inner_space(len(it.exprs)))
-		write_production_list(w, it.exprs[:], " ")
-		io.write_string(w, inner_space(len(it.exprs)))
+		io.write_string(w, inner_space(len(it.productions)))
+		write_production_list(w, it.productions[:], " ")
+		io.write_string(w, inner_space(len(it.productions)))
 		io.write_string(w, "]")
 	case Repetition:
 		io.write_string(w, "{")
-		io.write_string(w, inner_space(len(it.exprs)))
-		write_production_list(w, it.exprs[:], " ")
-		io.write_string(w, inner_space(len(it.exprs)))
+		io.write_string(w, inner_space(len(it.productions)))
+		write_production_list(w, it.productions[:], " ")
+		io.write_string(w, inner_space(len(it.productions)))
 		io.write_string(w, "}")
 	case Group:
 		io.write_string(w, "(")
-		io.write_string(w, inner_space(len(it.exprs)))
-		write_production_list(w, it.exprs[:], " ")
-		io.write_string(w, inner_space(len(it.exprs)))
+		io.write_string(w, inner_space(len(it.productions)))
+		write_production_list(w, it.productions[:], " ")
+		io.write_string(w, inner_space(len(it.productions)))
 		io.write_string(w, ")")
 	}
 }
@@ -241,10 +241,10 @@ inner_space :: proc(count: int) -> string {
 }
 
 // write_production_list writes the productions of a list separated by sep.
-write_production_list :: proc(w: io.Writer, exprs: []Production, sep: string) {
-	for expr, i in exprs {
+write_production_list :: proc(w: io.Writer, productions: []Production, sep: string) {
+	for production, i in productions {
 		if i > 0 do io.write_string(w, sep)
-		write_production(w, expr)
+		write_production(w, production)
 	}
 }
 
@@ -449,30 +449,30 @@ write_normalized :: proc(w: io.Writer, n: Normalized_Production) {
 write_grouped :: proc(w: io.Writer, g: ^Grouped) {
 	switch g.shape {
 	case .Sequence:
-		write_normalized_list(w, g.exprs[:], " ")
+		write_normalized_list(w, g.productions[:], " ")
 	case .Group:
 		// A group holding a factored alternative already carries the parentheses
 		// that a factored form writes for itself, so they are not doubled. Any other
 		// grouping keeps its own symbols: a bracketed alternative still reads as
 		// `[ ( a | b ) ]`.
-		if len(g.exprs) == 1 {
-			_, factored := g.exprs[0].kind.(^Factored)
+		if len(g.productions) == 1 {
+			_, factored := g.productions[0].kind.(^Factored)
 			if factored {
-				write_normalized(w, g.exprs[0])
+				write_normalized(w, g.productions[0])
 				return
 			}
 		}
-		write_wrapped(w, g.exprs[:], "(", ")", " ")
+		write_wrapped(w, g.productions[:], "(", ")", " ")
 	case .Optional:
-		write_wrapped(w, g.exprs[:], "[", "]", " ")
+		write_wrapped(w, g.productions[:], "[", "]", " ")
 	case .Repetition:
-		write_wrapped(w, g.exprs[:], "{", "}", " ")
+		write_wrapped(w, g.productions[:], "{", "}", " ")
 	case .Tagged:
 		// A tag annotates the sequence it closes, so it is written after the
 		// production it annotates rather than inside a group.
-		for expr, i in g.exprs[:] {
+		for production, i in g.productions[:] {
 			if i > 0 do io.write_string(w, " ")
-			write_normalized(w, expr)
+			write_normalized(w, production)
 			if i == 0 do write_tag_pairs(w, g.tag[:])
 		}
 	}
@@ -482,27 +482,27 @@ write_grouped :: proc(w: io.Writer, g: ^Grouped) {
 // An alternative inside a group is one element, so it writes its own branches.
 write_wrapped :: proc(
 	w: io.Writer,
-	exprs: []Normalized_Production,
+	productions: []Normalized_Production,
 	open, closing, sep: string,
 ) {
 	io.write_string(w, open)
-	io.write_string(w, inner_space(len(exprs)))
+	io.write_string(w, inner_space(len(productions)))
 	if sep == " | " {
-		write_choice(w, exprs)
+		write_choice(w, productions)
 	} else {
-		for expr, i in exprs {
+		for production, i in productions {
 			if i > 0 do io.write_string(w, sep)
-			write_normalized(w, expr)
+			write_normalized(w, production)
 		}
 	}
-	io.write_string(w, inner_space(len(exprs)))
+	io.write_string(w, inner_space(len(productions)))
 	io.write_string(w, closing)
 }
 
 // write_normalized_list writes the productions of a list separated by sep.
-write_normalized_list :: proc(w: io.Writer, exprs: []Normalized_Production, sep: string) {
-	for expr, i in exprs {
+write_normalized_list :: proc(w: io.Writer, productions: []Normalized_Production, sep: string) {
+	for production, i in productions {
 		if i > 0 do io.write_string(w, sep)
-		write_normalized(w, expr)
+		write_normalized(w, production)
 	}
 }

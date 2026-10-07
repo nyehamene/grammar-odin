@@ -35,10 +35,10 @@ File :: struct {
 //   greeting            = "Hello";
 //   greet name title    = "hello" name title;
 Rule :: struct {
-	ident:  Ident,
-	params: [dynamic]Ident,
-	expr:   Production,
-	pos:    int,
+	ident:      Ident,
+	params:     [dynamic]Ident,
+	production: Production,
+	pos:        int,
 }
 
 // Binding imports an external grammar file.
@@ -87,32 +87,32 @@ External_Value :: struct {
 
 // Sequence is a sequence of productions, e.g. `a b c`.
 Sequence :: struct {
-	exprs: [dynamic]Production,
-	pos:   int,
+	productions: [dynamic]Production,
+	pos:         int,
 }
 
 // Alternative is a set of alternatives, e.g. `a | b | c`.
 Alternative :: struct {
-	exprs: [dynamic]Production,
-	pos:   int,
+	productions: [dynamic]Production,
+	pos:         int,
 }
 
 // Optional is a zero-or-one production, e.g. `[ a b ]`.
 Optional :: struct {
-	exprs: [dynamic]Production,
-	pos:   int,
+	productions: [dynamic]Production,
+	pos:         int,
 }
 
 // Repetition is a zero-or-more production, e.g. `{ one two }`.
 Repetition :: struct {
-	exprs: [dynamic]Production,
-	pos:   int,
+	productions: [dynamic]Production,
+	pos:         int,
 }
 
 // Group is a grouped production, e.g. `( a b )`.
 Group :: struct {
-	exprs: [dynamic]Production,
-	pos:   int,
+	productions: [dynamic]Production,
+	pos:         int,
 }
 
 // Qual_Ident is a member access, e.g. `foo.bar`. It is left-associative, so
@@ -148,9 +148,9 @@ Directive :: struct {
 // production reports the position of the element it wraps rather than that of
 // the tag written after it.
 Tagged_Production :: struct {
-	expr: ^Production,
-	tag:  [dynamic]Tag_Pair,
-	pos:  int,
+	production: ^Production,
+	tag:        [dynamic]Tag_Pair,
+	pos:        int,
 }
 
 // Tag_Pair is one `name="value"` entry of a tag. value keeps its quotes, like
@@ -167,9 +167,9 @@ Error :: struct {
 	message: string,
 }
 
-// expr_pos returns the source offset of the first token of expr.
-expr_pos :: proc(expr: Production) -> int {
-	switch v in expr {
+// production_pos returns the source offset of the first token of production.
+production_pos :: proc(production: Production) -> int {
+	switch v in production {
 	case Ident:
 		return v.pos
 	case String_Lit:
@@ -225,57 +225,57 @@ destroy_decl :: proc(decl: Decl) {
 	switch v in decl {
 	case Rule:
 		delete(v.params)
-		if v.expr != nil do destroy_expr(v.expr)
+		if v.production != nil do destroy_production(v.production)
 	case Binding:
-		destroy_expr(v.directive)
+		destroy_production(v.directive)
 	case Comment_Group:
 		delete(v.list)
 	}
 }
 
-destroy_expr :: proc(expr: Production) {
-	switch v in expr {
+destroy_production :: proc(production: Production) {
+	switch v in production {
 	case Ident, String_Lit, Regex_Lit, External_Value:
 	case Sequence:
-		for e in v.exprs {
-			destroy_expr(e)
+		for e in v.productions {
+			destroy_production(e)
 		}
-		delete(v.exprs)
+		delete(v.productions)
 	case Alternative:
-		for e in v.exprs {
-			destroy_expr(e)
+		for e in v.productions {
+			destroy_production(e)
 		}
-		delete(v.exprs)
+		delete(v.productions)
 	case Optional:
-		for e in v.exprs {
-			destroy_expr(e)
+		for e in v.productions {
+			destroy_production(e)
 		}
-		delete(v.exprs)
+		delete(v.productions)
 	case Repetition:
-		for e in v.exprs {
-			destroy_expr(e)
+		for e in v.productions {
+			destroy_production(e)
 		}
-		delete(v.exprs)
+		delete(v.productions)
 	case Group:
-		for e in v.exprs {
-			destroy_expr(e)
+		for e in v.productions {
+			destroy_production(e)
 		}
-		delete(v.exprs)
+		delete(v.productions)
 	case Qual_Ident:
 	case ^Call:
 		for e in v.args {
-			destroy_expr(e)
+			destroy_production(e)
 		}
 		delete(v.args)
 		free(v)
 	case Directive:
 		for e in v.args {
-			destroy_expr(e)
+			destroy_production(e)
 		}
 		delete(v.args)
 	case Tagged_Production:
-		destroy_expr(v.expr^)
-		free(v.expr)
+		destroy_production(v.production^)
+		free(v.production)
 		delete(v.tag)
 	}
 }

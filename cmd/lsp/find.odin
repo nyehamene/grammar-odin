@@ -46,7 +46,7 @@ find_hit :: proc(file: ^ast.File, offset: int) -> Hit {
 				}
 				params[p.name] = true
 			}
-			if h := find_hit_expr(d.expr, offset); found(h) {
+			if h := find_hit_production(d.production, offset); found(h) {
 				if h.ident.name in params {
 					h.kind = .Param
 					h.decl = id
@@ -57,7 +57,7 @@ find_hit :: proc(file: ^ast.File, offset: int) -> Hit {
 			if hit_ident(d.ident, offset) {
 				return Hit{kind = .Binding_Name, ident = d.ident}
 			}
-			if h := find_hit_expr(d.directive, offset); found(h) {
+			if h := find_hit_production(d.directive, offset); found(h) {
 				return h
 			}
 		case ast.Comment_Group:
@@ -66,11 +66,11 @@ find_hit :: proc(file: ^ast.File, offset: int) -> Hit {
 	return Hit{kind = .None}
 }
 
-// find_hit_expr searches a single expression (and all sub-expressions) for an
+// find_hit_production searches a single expression (and all sub-expressions) for an
 // offset. Productions are traversed outermost-first so the most specific token
 // wins.
-find_hit_expr :: proc(expr: ast.Production, offset: int) -> Hit {
-	#partial switch v in expr {
+find_hit_production :: proc(production: ast.Production, offset: int) -> Hit {
+	#partial switch v in production {
 	case ast.Ident:
 		if hit_ident(v, offset) {
 			return Hit{kind = .Ident, ident = v}
@@ -91,16 +91,16 @@ find_hit_expr :: proc(expr: ast.Production, offset: int) -> Hit {
 		h: Hit
 		switch it in v.ident {
 		case ast.Ident:
-			h = find_hit_expr(it, offset)
+			h = find_hit_production(it, offset)
 		case ast.Qual_Ident:
-			h = find_hit_expr(it, offset)
+			h = find_hit_production(it, offset)
 		}
 		if h.kind != .None {
 			h.kind = .Call_Name
 			return h
 		}
 		for arg in v.args {
-			if h := find_hit_expr(arg, offset); found(h) {
+			if h := find_hit_production(arg, offset); found(h) {
 				return h
 			}
 		}
@@ -109,37 +109,37 @@ find_hit_expr :: proc(expr: ast.Production, offset: int) -> Hit {
 			return Hit{kind = .Directive, ident = v.ident}
 		}
 		for arg in v.args {
-			if h := find_hit_expr(arg, offset); found(h) {
+			if h := find_hit_production(arg, offset); found(h) {
 				return h
 			}
 		}
 	case ast.Sequence:
-		for e in v.exprs {
-			if h := find_hit_expr(e, offset); found(h) {
+		for e in v.productions {
+			if h := find_hit_production(e, offset); found(h) {
 				return h
 			}
 		}
 	case ast.Alternative:
-		for e in v.exprs {
-			if h := find_hit_expr(e, offset); found(h) {
+		for e in v.productions {
+			if h := find_hit_production(e, offset); found(h) {
 				return h
 			}
 		}
 	case ast.Optional:
-		for e in v.exprs {
-			if h := find_hit_expr(e, offset); found(h) {
+		for e in v.productions {
+			if h := find_hit_production(e, offset); found(h) {
 				return h
 			}
 		}
 	case ast.Repetition:
-		for e in v.exprs {
-			if h := find_hit_expr(e, offset); found(h) {
+		for e in v.productions {
+			if h := find_hit_production(e, offset); found(h) {
 				return h
 			}
 		}
 	case ast.Group:
-		for e in v.exprs {
-			if h := find_hit_expr(e, offset); found(h) {
+		for e in v.productions {
+			if h := find_hit_production(e, offset); found(h) {
 				return h
 			}
 		}
@@ -158,7 +158,7 @@ find_hit_expr :: proc(expr: ast.Production, offset: int) -> Hit {
 	case ast.Tagged_Production:
 		// A tag annotates the production it follows, so the annotation itself
 		// names nothing: look inside it.
-		return find_hit_expr(v.expr^, offset)
+		return find_hit_production(v.production^, offset)
 	}
 	return Hit{kind = .None}
 }

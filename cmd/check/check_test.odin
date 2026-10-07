@@ -278,8 +278,8 @@ test_lowercase_rule_is_shared_across_files :: proc(t: ^testing.T) {
 	// Only an underscore prefix makes a rule private; a lowercase name declares
 	// a local rule, which is shared across the files of its namespace.
 	files := []Mem_File {
-		test_src(t, "shared", "a.grammar", "expr = \"x\";\n"),
-		test_src(t, "shared", "b.grammar", "use = expr;\n"),
+		test_src(t, "shared", "a.grammar", "production = \"x\";\n"),
+		test_src(t, "shared", "b.grammar", "use = production;\n"),
 	}
 	assert_messages(t, run_semantics(files), {})
 }

@@ -50,8 +50,8 @@ print_decl :: proc(p: ^Printer, decl: Decl) {
 	}
 }
 
-print_expr :: proc(p: ^Printer, expr: Production) {
-	switch v in expr {
+print_production :: proc(p: ^Printer, production: Production) {
+	switch v in production {
 	case Ident:
 		print_header(p, v.pos, fmt.tprintf("Ident: %s", v.name))
 	case String_Lit:
@@ -61,71 +61,71 @@ print_expr :: proc(p: ^Printer, expr: Production) {
 	case External_Value:
 		print_header(p, v.pos, fmt.tprintf("ExternalValue: $%s", v.name))
 	case Sequence:
-		print_header(p, v.pos, "SequenceExpr")
+		print_header(p, v.pos, "SequenceProduction")
 		p.indent += 1
-		for e in v.exprs {
-			print_expr(p, e)
+		for e in v.productions {
+			print_production(p, e)
 		}
 		p.indent -= 1
 	case Alternative:
-		print_header(p, v.pos, "AlternativeExpr")
+		print_header(p, v.pos, "AlternativeProduction")
 		p.indent += 1
-		for e in v.exprs {
-			print_expr(p, e)
+		for e in v.productions {
+			print_production(p, e)
 		}
 		p.indent -= 1
 	case Optional:
-		print_header(p, v.pos, "OptionalExpr")
+		print_header(p, v.pos, "OptionalProduction")
 		p.indent += 1
-		for e in v.exprs {
-			print_expr(p, e)
+		for e in v.productions {
+			print_production(p, e)
 		}
 		p.indent -= 1
 	case Repetition:
-		print_header(p, v.pos, "RepetitionExpr")
+		print_header(p, v.pos, "RepetitionProduction")
 		p.indent += 1
-		for e in v.exprs {
-			print_expr(p, e)
+		for e in v.productions {
+			print_production(p, e)
 		}
 		p.indent -= 1
 	case Group:
-		print_header(p, v.pos, "GroupExpr")
+		print_header(p, v.pos, "GroupProduction")
 		p.indent += 1
-		for e in v.exprs {
-			print_expr(p, e)
+		for e in v.productions {
+			print_production(p, e)
 		}
 		p.indent -= 1
 	case Qual_Ident:
 		print_header(p, v.pos, "MemberExpr")
 		p.indent += 1
-		print_expr(p, v.lhs)
+		print_production(p, v.lhs)
 		print_header(p, v.pos, fmt.tprintf("Member: %s", v.rhs.name))
 		p.indent -= 1
 	case ^Call:
 		print_header(p, v.pos, "CallExpr: ")
 		switch it in v.ident {
 		case Ident:
-			print_expr(p, it)
+			print_production(p, it)
 		case Qual_Ident:
-			print_expr(p, it.lhs)
-			print_expr(p, it.rhs)
+			print_production(p, it.lhs)
+			print_production(p, it.rhs)
 		}
 		p.indent += 1
 		for e in v.args {
-			print_expr(p, e)
+			print_production(p, e)
 		}
 		p.indent -= 1
 	case Directive:
 		print_header(p, v.pos, fmt.tprintf("DirectiveExpr: @%s", v.ident.name))
 		p.indent += 1
 		for e in v.args {
-			print_expr(p, e)
+			print_production(p, e)
 		}
 		p.indent -= 1
 	case Tagged_Production:
-		print_header(p, v.pos, "TaggedExpr")
+		print_header(p, v.pos, "TaggedProduction")
 		p.indent += 1
-		print_expr(p, v.expr^)
+		print_production(p, v.production^)
 		for pair in v.tag {
 			print_header(
 				p,
@@ -196,7 +196,7 @@ print_rule :: proc(p: ^Printer, rule: Rule) {
 	for param in rule.params {
 		print_header(p, param.pos, fmt.tprintf("Param: %s", param.name))
 	}
-	print_expr(p, rule.expr)
+	print_production(p, rule.production)
 	p.indent -= 1
 }
 
@@ -237,7 +237,7 @@ print_normalized :: proc(p: ^Printer, n: Normalized_Production) {
 	case Nothing:
 		print_text(p, "Nothing")
 	case Production:
-		print_expr(p, it)
+		print_production(p, it)
 	case ^Factored:
 		print_text(p, "Factored:")
 		p.indent += 1
@@ -256,15 +256,15 @@ print_normalized :: proc(p: ^Printer, n: Normalized_Production) {
 print_grouped :: proc(p: ^Printer, g: ^Grouped) {
 	switch g.shape {
 	case .Sequence:
-		print_text(p, "NormalizedSequenceExpr")
+		print_text(p, "NormalizedSequenceProduction")
 	case .Group:
-		print_text(p, "NormalizedGroupExpr")
+		print_text(p, "NormalizedGroupProduction")
 	case .Optional:
-		print_text(p, "NormalizedOptionalExpr")
+		print_text(p, "NormalizedOptionalProduction")
 	case .Repetition:
-		print_text(p, "NormalizedRepetitionExpr")
+		print_text(p, "NormalizedRepetitionProduction")
 	case .Tagged:
-		print_text(p, "NormalizedTaggedExpr")
+		print_text(p, "NormalizedTaggedProduction")
 	}
 	p.indent += 1
 	for pair in g.tag[:] {
@@ -274,8 +274,8 @@ print_grouped :: proc(p: ^Printer, g: ^Grouped) {
 			fmt.tprintf("TagPair: %s=%s", pair.ident.name, pair.value.value),
 		)
 	}
-	for expr in g.exprs[:] {
-		print_normalized(p, expr)
+	for production in g.productions[:] {
+		print_normalized(p, production)
 	}
 	p.indent -= 1
 }

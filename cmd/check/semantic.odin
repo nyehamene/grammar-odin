@@ -473,10 +473,10 @@ check_file :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File) {
 			// Record which rule is being walked so that a reference can tell
 			// whether it came from the declaring rule itself.
 			fi.enclosing_rule = d.ident.name
-			check_body(cu, fi, d.params[:], d.expr)
+			check_body(cu, fi, d.params[:], d.production)
 			fi.enclosing_rule = ""
 			if len(d.params) > 0 {
-				check_unused_params(cu, fi, d.params[:], d.expr)
+				check_unused_params(cu, fi, d.params[:], d.production)
 			}
 		}
 	}
@@ -573,17 +573,17 @@ check_unused_params :: proc(
 	cu: ^Compilation_Unit,
 	fi: ^Loaded_File,
 	params: []ast.Ident,
-	expr: ast.Production,
+	production: ast.Production,
 ) {
 	for p in params {
-		if uses_param(expr, p.name) do continue
+		if uses_param(production, p.name) do continue
 		add_error(cu, fi.display, fi.src, p.pos, fmt.tprintf("unused proc parameter: %s", p.name))
 	}
 }
 
-// uses_param reports whether param appears as an identifier anywhere in expr.
-uses_param :: proc(expr: ast.Production, param: string) -> bool {
-	switch v in expr {
+// uses_param reports whether param appears as an identifier anywhere in production.
+uses_param :: proc(production: ast.Production, param: string) -> bool {
+	switch v in production {
 	case ast.Ident:
 		return v.name == param
 	case ast.String_Lit, ast.Regex_Lit, ast.External_Value, ast.Directive:
@@ -600,26 +600,26 @@ uses_param :: proc(expr: ast.Production, param: string) -> bool {
 		case ast.Qual_Ident:
 			if uses_param(it.lhs, param) do return true
 		}
-		return exprs_use_param(v.args[:], param)
+		return productions_use_param(v.args[:], param)
 
 	case ast.Sequence:
-		return exprs_use_param(v.exprs[:], param)
+		return productions_use_param(v.productions[:], param)
 	case ast.Alternative:
-		return exprs_use_param(v.exprs[:], param)
+		return productions_use_param(v.productions[:], param)
 	case ast.Optional:
-		return exprs_use_param(v.exprs[:], param)
+		return productions_use_param(v.productions[:], param)
 	case ast.Repetition:
-		return exprs_use_param(v.exprs[:], param)
+		return productions_use_param(v.productions[:], param)
 	case ast.Group:
-		return exprs_use_param(v.exprs[:], param)
+		return productions_use_param(v.productions[:], param)
 	case ast.Tagged_Production:
-		return uses_param(v.expr^, param)
+		return uses_param(v.production^, param)
 	}
 	return false
 }
 
-exprs_use_param :: proc(exprs: []ast.Production, param: string) -> bool {
-	for e in exprs {
+productions_use_param :: proc(productions: []ast.Production, param: string) -> bool {
+	for e in productions {
 		if uses_param(e, param) do return true
 	}
 	return false
@@ -635,10 +635,10 @@ check_body :: proc(
 	cu: ^Compilation_Unit,
 	fi: ^Loaded_File,
 	params: []ast.Ident,
-	expr: ast.Production,
+	production: ast.Production,
 ) {
 	o: Operand
-	check_expr_scoped(cu, fi, params, expr, &o)
+	check_production_scoped(cu, fi, params, production, &o)
 
 	if o.kind == .LValue {
 		if o.type == .Proc {
@@ -674,9 +674,9 @@ check_body :: proc(
 	}
 }
 
-// is_param reports whether expr is one of the given parameters.
-is_param :: proc(params: []ast.Ident, expr: ast.Production) -> bool {
-	ident, ok := expr.(ast.Ident)
+// is_param reports whether production is one of the given parameters.
+is_param :: proc(params: []ast.Ident, production: ast.Production) -> bool {
+	ident, ok := production.(ast.Ident)
 	if !ok do return false
 	for p in params {
 		if p.name == ident.name do return true
@@ -684,16 +684,16 @@ is_param :: proc(params: []ast.Ident, expr: ast.Production) -> bool {
 	return false
 }
 
-// check_expr_scoped is check_expr with a parameter list in scope.
-check_expr_scoped :: proc(
+// check_production_scoped is check_production with a parameter list in scope.
+check_production_scoped :: proc(
 	cu: ^Compilation_Unit,
 	fi: ^Loaded_File,
 	params: []ast.Ident,
-	expr: ast.Production,
+	production: ast.Production,
 	o: ^Operand,
 ) {
 
-	switch v in expr {
+	switch v in production {
 	case ast.Ident:
 		if is_param(params, v) {
 			Operand_rvalue(o, .Production, v.pos, v.name)
@@ -730,7 +730,7 @@ check_expr_scoped :: proc(
 		name_op: Operand
 		switch it in v.ident {
 		case ast.Ident:
-			check_expr_scoped(cu, fi, params, it, &name_op)
+			check_production_scoped(cu, fi, params, it, &name_op)
 		case ast.Qual_Ident:
 			check_member(cu, fi, it, &name_op)
 		}
@@ -770,7 +770,7 @@ check_expr_scoped :: proc(
 
 		for arg in v.args {
 			arg_op: Operand
-			check_expr_scoped(cu, fi, params, arg, &arg_op)
+			check_production_scoped(cu, fi, params, arg, &arg_op)
 			if arg_op.kind == .LValue && arg_op.type != .Proc {
 				continue
 			}
@@ -808,24 +808,24 @@ check_expr_scoped :: proc(
 		}
 
 	case ast.Sequence:
-		check_expr_group(cu, fi, params, v.pos, v.exprs[:], o)
+		check_production_group(cu, fi, params, v.pos, v.productions[:], o)
 
 	case ast.Alternative:
-		check_expr_group(cu, fi, params, v.pos, v.exprs[:], o)
+		check_production_group(cu, fi, params, v.pos, v.productions[:], o)
 
 	case ast.Optional:
-		check_expr_group(cu, fi, params, v.pos, v.exprs[:], o)
+		check_production_group(cu, fi, params, v.pos, v.productions[:], o)
 
 	case ast.Repetition:
-		check_expr_group(cu, fi, params, v.pos, v.exprs[:], o)
+		check_production_group(cu, fi, params, v.pos, v.productions[:], o)
 
 	case ast.Group:
-		check_expr_group(cu, fi, params, v.pos, v.exprs[:], o)
+		check_production_group(cu, fi, params, v.pos, v.productions[:], o)
 
 	case ast.Tagged_Production:
 		// A tag annotates the production it follows, so it is checked, and
 		// yields an operand, exactly as the untagged production would.
-		check_expr_scoped(cu, fi, params, v.expr^, o)
+		check_production_scoped(cu, fi, params, v.production^, o)
 
 	case ast.String_Lit:
 		Operand_lvalue(o, .String, v.pos, v.value)
@@ -842,17 +842,17 @@ check_expr_scoped :: proc(
 	}
 }
 
-check_expr_group :: proc(
+check_production_group :: proc(
 	cu: ^Compilation_Unit,
 	fi: ^Loaded_File,
 	params: []ast.Ident,
 	pos: int,
-	exprs: []ast.Production,
+	productions: []ast.Production,
 	o: ^Operand,
 ) {
-	for e in exprs {
+	for e in productions {
 		eop: Operand
-		check_expr_scoped(cu, fi, params, e, &eop)
+		check_production_scoped(cu, fi, params, e, &eop)
 		if eop.kind == .LValue && eop.type == .Proc {
 			add_error(
 				cu,
@@ -866,16 +866,16 @@ check_expr_group :: proc(
 	Operand_lvalue(o, .Production, pos)
 }
 
-// check_expr resolves names in expr and reports undefined references.
-check_expr :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, expr: ast.Production, o: ^Operand) {
-	check_expr_scoped(cu, fi, nil, expr, o)
+// check_production resolves names in production and reports undefined references.
+check_production :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, production: ast.Production, o: ^Operand) {
+	check_production_scoped(cu, fi, nil, production, o)
 }
 
 // check_member validates a member access `receiver.member`: the receiver must
 // be a binding to a namespace and the member must be a rule in that namespace.
 check_member :: proc(cu: ^Compilation_Unit, fi: ^Loaded_File, m: ast.Qual_Ident, o: ^Operand) {
 	obj_op: Operand
-	check_expr(cu, fi, m.lhs, &obj_op)
+	check_production(cu, fi, m.lhs, &obj_op)
 	if obj_op.kind != .Namespace {
 		if obj_op.kind == .Invalid {
 			add_error(cu, fi.display, fi.src, m.pos, "expected a namespace on the left of '.'")

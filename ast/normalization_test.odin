@@ -55,18 +55,18 @@ shape_into :: proc(b: ^strings.Builder, p: Production) {
 		strings.write_rune(b, '.')
 		strings.write_string(b, it.rhs.name)
 	case Sequence:
-		shape_group(b, "seq", it.exprs[:])
+		shape_group(b, "seq", it.productions[:])
 	case Alternative:
-		shape_group(b, "alt", it.exprs[:])
+		shape_group(b, "alt", it.productions[:])
 	case Optional:
-		shape_group(b, "opt", it.exprs[:])
+		shape_group(b, "opt", it.productions[:])
 	case Repetition:
-		shape_group(b, "rep", it.exprs[:])
+		shape_group(b, "rep", it.productions[:])
 	case Group:
-		shape_group(b, "grp", it.exprs[:])
+		shape_group(b, "grp", it.productions[:])
 	case Tagged_Production:
 		strings.write_string(b, "tag(")
-		shape_into(b, it.expr^)
+		shape_into(b, it.production^)
 		strings.write_rune(b, ')')
 	case Directive:
 		strings.write_rune(b, '@')
@@ -129,8 +129,8 @@ test_expand_rule_inlines_a_chain_of_calls :: proc(t: ^testing.T) {
 	defer delete(scope.rules_by_name)
 
 	testing.expect(t, ok, "every call of call_site should expand")
-	testing.expect(t, !has_call(expanded.expr), "an expanded rule holds no call")
-	expect_shape(t, expanded.expr, `seq("p" rep("p") "q" "z")`)
+	testing.expect(t, !has_call(expanded.production), "an expanded rule holds no call")
+	expect_shape(t, expanded.production, `seq("p" rep("p") "q" "z")`)
 }
 
 // Two call sites of one rule, expanded against the same scope, substitute their own
@@ -150,12 +150,12 @@ test_expand_rule_gives_each_call_its_own_arguments :: proc(t: ^testing.T) {
 	first, ok_first := expand_rule(scope.rules_by_name["first"], &scope)
 	defer destroy_rule(&first)
 	testing.expect(t, ok_first, "every call of first should expand")
-	expect_shape(t, first.expr, `seq("a" rep("a"))`)
+	expect_shape(t, first.production, `seq("a" rep("a"))`)
 
 	second, ok_second := expand_rule(scope.rules_by_name["second"], &scope)
 	defer destroy_rule(&second)
 	testing.expect(t, ok_second, "every call of second should expand")
-	expect_shape(t, second.expr, `seq("b" rep("b"))`)
+	expect_shape(t, second.production, `seq("b" rep("b"))`)
 }
 
 // Expanding one rule writes nothing back into the scope, so a rule reached through
@@ -174,9 +174,9 @@ test_expand_rule_leaves_the_scope_unchanged :: proc(t: ^testing.T) {
 	defer destroy_rule(&first)
 	defer delete(scope.rules_by_name)
 
-	expect_shape(t, first.expr, `seq("a" rep("a"))`)
-	expect_shape(t, scope.rules_by_name["item"].expr, `seq(x rep(x))`)
-	expect_shape(t, scope.rules_by_name["wrap"].expr, `call(item, x)`)
+	expect_shape(t, first.production, `seq("a" rep("a"))`)
+	expect_shape(t, scope.rules_by_name["item"].production, `seq(x rep(x))`)
+	expect_shape(t, scope.rules_by_name["wrap"].production, `call(item, x)`)
 }
 
 // A call the scope cannot resolve is reported rather than dropped, and is left in
@@ -188,7 +188,7 @@ test_expand_rule_reports_a_call_it_cannot_resolve :: proc(t: ^testing.T) {
 	defer delete(scope.rules_by_name)
 
 	testing.expect(t, !ok, "an undeclared callee cannot be expanded")
-	expect_shape(t, expanded.expr, `call(nope, "a")`)
+	expect_shape(t, expanded.production, `call(nope, "a")`)
 }
 
 // A callee in another namespace is not in this scope, so it is reported the same
@@ -207,7 +207,7 @@ test_expand_rule_reports_a_qualified_callee :: proc(t: ^testing.T) {
 	defer delete(scope.rules_by_name)
 
 	testing.expect(t, !ok, "a callee of another namespace cannot be expanded")
-	expect_shape(t, expanded.expr, `call(Z.Rule, "a")`)
+	expect_shape(t, expanded.production, `call(Z.Rule, "a")`)
 }
 
 // Rules that call each other never run out of calls, so the depth bound is what
@@ -219,7 +219,7 @@ test_expand_rule_stops_on_a_cycle :: proc(t: ^testing.T) {
 	defer delete(scope.rules_by_name)
 
 	testing.expect(t, !ok, "a cycle of calls cannot be expanded")
-	testing.expect(t, has_call(expanded.expr), "the call is left in place")
+	testing.expect(t, has_call(expanded.production), "the call is left in place")
 }
 
 // A parameter that reaches a callee is substituted as the receiver of a member
@@ -240,7 +240,7 @@ test_expand_rule_substitutes_a_parameter_in_a_receiver :: proc(t: ^testing.T) {
 	// `target` stands in for `ns`, so the call names another rule of another
 	// namespace and is the one thing left in the body.
 	testing.expect(t, !ok, "a callee of another namespace cannot be expanded")
-	expect_shape(t, expanded.expr, `call(target.Rule)`)
+	expect_shape(t, expanded.production, `call(target.Rule)`)
 }
 
 // An alternative holds whole branches, so a callee body that came out as a
@@ -259,7 +259,7 @@ test_expand_rule_keeps_a_sequence_inside_an_alternative :: proc(t: ^testing.T) {
 	defer delete(scope.rules_by_name)
 
 	testing.expect(t, ok, "every call of choice should expand")
-	expect_shape(t, expanded.expr, `alt(seq("a" "b") "c")`)
+	expect_shape(t, expanded.production, `alt(seq("a" "b") "c")`)
 }
 
 // normalize_one parses source, factors the rule named name, and returns it with
@@ -310,13 +310,13 @@ shape_normalized_into :: proc(b: ^strings.Builder, n: Normalized_Production) {
 	case ^Grouped:
 		switch it.shape {
 		case .Sequence:
-			shape_normalized_group(b, "seq", it.exprs[:])
+			shape_normalized_group(b, "seq", it.productions[:])
 		case .Group:
-			shape_normalized_group(b, "grp", it.exprs[:])
+			shape_normalized_group(b, "grp", it.productions[:])
 		case .Optional:
-			shape_normalized_group(b, "opt", it.exprs[:])
+			shape_normalized_group(b, "opt", it.productions[:])
 		case .Repetition:
-			shape_normalized_group(b, "rep", it.exprs[:])
+			shape_normalized_group(b, "rep", it.productions[:])
 		case .Tagged:
 			strings.write_string(b, "tag(")
 			for pair, i in it.tag[:] {
@@ -325,9 +325,9 @@ shape_normalized_into :: proc(b: ^strings.Builder, n: Normalized_Production) {
 				strings.write_rune(b, '=')
 				strings.write_string(b, pair.value.value)
 			}
-			for expr in it.exprs[:] {
+			for production in it.productions[:] {
 				strings.write_rune(b, ' ')
-				shape_normalized_into(b, expr)
+				shape_normalized_into(b, production)
 			}
 			strings.write_rune(b, ')')
 		}
@@ -337,13 +337,13 @@ shape_normalized_into :: proc(b: ^strings.Builder, n: Normalized_Production) {
 shape_normalized_group :: proc(
 	b: ^strings.Builder,
 	label: string,
-	exprs: []Normalized_Production,
+	productions: []Normalized_Production,
 ) {
 	strings.write_string(b, label)
 	strings.write_rune(b, '(')
-	for expr, i in exprs {
+	for production, i in productions {
 		if i > 0 do strings.write_rune(b, ' ')
-		shape_normalized_into(b, expr)
+		shape_normalized_into(b, production)
 	}
 	strings.write_rune(b, ')')
 }
@@ -365,7 +365,7 @@ branch_shapes_into :: proc(b: ^strings.Builder, n: Normalized_Production) {
 		strings.write_rune(b, ' ')
 	case ^Grouped:
 		if it.shape == .Sequence || it.shape == .Tagged {
-			for expr in it.exprs[:] do branch_shapes_into(b, expr)
+			for production in it.productions[:] do branch_shapes_into(b, production)
 			break
 		}
 		shape_normalized_into(b, n)
@@ -770,10 +770,10 @@ annotated :: proc(name: string, pairs: ..Tag_Pair) -> Production {
 	}
 	delete(pairs)
 
-	annotated_expr := new(Production)
-	annotated_expr^ = Production(Ident{name = name})
+	annotated_production := new(Production)
+	annotated_production^ = Production(Ident{name = name})
 	return Tagged_Production {
-		expr = annotated_expr,
+		production = annotated_production,
 		tag  = run,
 	}
 }

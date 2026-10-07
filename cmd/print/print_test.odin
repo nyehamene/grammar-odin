@@ -53,7 +53,7 @@ test_print_ast_output :: proc(t: ^testing.T) {
 	out := string(bytes.buffer_to_bytes(&buf))
 	testing.expect(t, strings.has_prefix(out, "File\n"), "should start with File header")
 	testing.expect(t, strings.contains(out, "RuleDecl: greeting"), "should print rule name")
-	testing.expect(t, strings.contains(out, "AlternativeExpr"), "should contain AlternativeExpr")
+	testing.expect(t, strings.contains(out, "AlternativeProduction"), "should contain AlternativeProduction")
 	testing.expect(t, strings.contains(out, "StringLit: \"Hello\""), "should contain string literal")
 	testing.expect(t, strings.contains(out, "StringLit: \"Hi\""), "should contain second alternative")
 }
@@ -74,9 +74,9 @@ test_print_ast_tagged_sequence :: proc(t: ^testing.T) {
 	testing.expect(t, code == 0, "no errors expected")
 
 	out := string(bytes.buffer_to_bytes(&buf))
-	tagged_at := strings.index(out, "TaggedExpr")
-	testing.expect(t, tagged_at >= 0, "should print TaggedExpr")
-	seq_at := strings.index(out, "SequenceExpr")
+	tagged_at := strings.index(out, "TaggedProduction")
+	testing.expect(t, tagged_at >= 0, "should print TaggedProduction")
+	seq_at := strings.index(out, "SequenceProduction")
 	testing.expect(t, seq_at > tagged_at, "the sequence should be nested under the tag")
 	testing.expect(t, strings.contains(out, "TagPair: name=\"a\""), "should print the first pair")
 	testing.expect(t, strings.contains(out, "TagPair: other=\"b\""), "should print the second pair")
@@ -84,7 +84,7 @@ test_print_ast_tagged_sequence :: proc(t: ^testing.T) {
 	// The whole sequence is annotated, so no element is wrapped on its own.
 	testing.expect(
 		t,
-		strings.count(out, "TaggedExpr") == 1,
+		strings.count(out, "TaggedProduction") == 1,
 		"a tag should annotate one production",
 	)
 }

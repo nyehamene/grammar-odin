@@ -291,13 +291,13 @@ member_signature :: proc(
 resolve_named :: proc(
 	cu: ^check.Compilation_Unit,
 	fi: ^check.Loaded_File,
-	expr: ast.Production,
+	production: ast.Production,
 ) -> (
 	name: string,
 	ref: check.Rule_Ref,
 	ok: bool,
 ) {
-	#partial switch v in expr {
+	#partial switch v in production {
 	case ast.Ident:
 		if r, found := resolve_rule_ref(cu, fi, v.name); found {
 			return v.name, r, true
@@ -314,7 +314,7 @@ resolve_named :: proc(
 		}
 		name = v.rhs.name
 	case ast.Tagged_Production:
-		return resolve_named(cu, fi, v.expr^)
+		return resolve_named(cu, fi, v.production^)
 	}
 	return name, {}, false
 }
@@ -362,7 +362,7 @@ rule_params :: proc(
 active_arg :: proc(call: ^ast.Call, offset: int) -> int {
 	idx := 0
 	for arg in call.args {
-		if ast.expr_pos(arg) < offset {
+		if ast.production_pos(arg) < offset {
 			idx += 1
 		} else {
 			break
@@ -383,11 +383,11 @@ containing_call :: proc(file: ^ast.File, src: string, offset: int) -> ^ast.Call 
 	for decl in file.decls {
 		#partial switch d in decl {
 		case ast.Rule:
-			if call := expr_containing_call(d.expr, src, offset); call != nil {
+			if call := production_containing_call(d.production, src, offset); call != nil {
 				return call
 			}
 		case ast.Binding:
-			if call := expr_containing_call(d.directive, src, offset); call != nil {
+			if call := production_containing_call(d.directive, src, offset); call != nil {
 				return call
 			}
 		case ast.Comment_Group:
@@ -396,8 +396,8 @@ containing_call :: proc(file: ^ast.File, src: string, offset: int) -> ^ast.Call 
 	return nil
 }
 
-expr_containing_call :: proc(expr: ast.Production, src: string, offset: int) -> ^ast.Call {
-	#partial switch v in expr {
+production_containing_call :: proc(production: ast.Production, src: string, offset: int) -> ^ast.Call {
+	#partial switch v in production {
 	case ^ast.Call:
 		call: ast.Production
 
@@ -408,11 +408,11 @@ expr_containing_call :: proc(expr: ast.Production, src: string, offset: int) -> 
 			call = it
 		}
 
-		if call := expr_containing_call(call, src, offset); call != nil {
+		if call := production_containing_call(call, src, offset); call != nil {
 			return call
 		}
 		for arg in v.args {
-			if call := expr_containing_call(arg, src, offset); call != nil {
+			if call := production_containing_call(arg, src, offset); call != nil {
 				return call
 			}
 		}
@@ -420,33 +420,33 @@ expr_containing_call :: proc(expr: ast.Production, src: string, offset: int) -> 
 			return v
 		}
 	case ast.Qual_Ident:
-		return expr_containing_call(v.lhs, src, offset)
+		return production_containing_call(v.lhs, src, offset)
 	case ast.Sequence:
-		return exprs_containing_call(v.exprs[:], src, offset)
+		return productions_containing_call(v.productions[:], src, offset)
 	case ast.Alternative:
-		return exprs_containing_call(v.exprs[:], src, offset)
+		return productions_containing_call(v.productions[:], src, offset)
 	case ast.Optional:
-		return exprs_containing_call(v.exprs[:], src, offset)
+		return productions_containing_call(v.productions[:], src, offset)
 	case ast.Repetition:
-		return exprs_containing_call(v.exprs[:], src, offset)
+		return productions_containing_call(v.productions[:], src, offset)
 	case ast.Group:
-		return exprs_containing_call(v.exprs[:], src, offset)
+		return productions_containing_call(v.productions[:], src, offset)
 	case ast.Directive:
 		for arg in v.args {
-			if call := expr_containing_call(arg, src, offset); call != nil {
+			if call := production_containing_call(arg, src, offset); call != nil {
 				return call
 			}
 		}
 	case ast.Tagged_Production:
-		return expr_containing_call(v.expr^, src, offset)
+		return production_containing_call(v.production^, src, offset)
 	case ast.Ident, ast.String_Lit, ast.Regex_Lit, ast.External_Value:
 	}
 	return nil
 }
 
-exprs_containing_call :: proc(exprs: []ast.Production, src: string, offset: int) -> ^ast.Call {
-	for e in exprs {
-		if call := expr_containing_call(e, src, offset); call != nil {
+productions_containing_call :: proc(productions: []ast.Production, src: string, offset: int) -> ^ast.Call {
+	for e in productions {
+		if call := production_containing_call(e, src, offset); call != nil {
 			return call
 		}
 	}

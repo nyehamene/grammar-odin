@@ -143,7 +143,7 @@ classify_offsets :: proc(file: ^ast.File) -> map[int]Sem_Token_Type {
 			for p in d.params {
 				types[p.pos] = .Parameter
 			}
-			classify_expr(d.expr, &types)
+			classify_production(d.production, &types)
 		case ast.Binding:
 			types[d.ident.pos] = .Namespace
 		case ast.Comment_Group:
@@ -152,8 +152,8 @@ classify_offsets :: proc(file: ^ast.File) -> map[int]Sem_Token_Type {
 	return types
 }
 
-classify_expr :: proc(expr: ast.Production, types: ^map[int]Sem_Token_Type) {
-	#partial switch v in expr {
+classify_production :: proc(production: ast.Production, types: ^map[int]Sem_Token_Type) {
+	#partial switch v in production {
 	case ast.Ident:
 		types^[v.pos] = .Function
 	case ast.Qual_Ident:
@@ -162,47 +162,47 @@ classify_expr :: proc(expr: ast.Production, types: ^map[int]Sem_Token_Type) {
 	case ^ast.Call:
 		switch it in v.ident {
 		case ast.Ident:
-			classify_expr(it, types)
+			classify_production(it, types)
 		case ast.Qual_Ident:
-			classify_expr(it, types)
+			classify_production(it, types)
 		}
 		for arg in v.args {
-			classify_expr(arg, types)
+			classify_production(arg, types)
 		}
 	case ast.Sequence:
-		for e in v.exprs {
-			classify_expr(e, types)
+		for e in v.productions {
+			classify_production(e, types)
 		}
 	case ast.Alternative:
-		for e in v.exprs {
-			classify_expr(e, types)
+		for e in v.productions {
+			classify_production(e, types)
 		}
 	case ast.Optional:
-		for e in v.exprs {
-			classify_expr(e, types)
+		for e in v.productions {
+			classify_production(e, types)
 		}
 	case ast.Repetition:
-		for e in v.exprs {
-			classify_expr(e, types)
+		for e in v.productions {
+			classify_production(e, types)
 		}
 	case ast.Group:
-		for e in v.exprs {
-			classify_expr(e, types)
+		for e in v.productions {
+			classify_production(e, types)
 		}
 	case ast.Directive:
 		for arg in v.args {
-			classify_expr(arg, types)
+			classify_production(arg, types)
 		}
 	case ast.Tagged_Production:
-		classify_expr(v.expr^, types)
+		classify_production(v.production^, types)
 	case ast.String_Lit, ast.Regex_Lit, ast.External_Value:
 	}
 }
 
 // classify_object marks an expression used as a member receiver: a bare
 // binding name, or further member access.
-classify_object :: proc(expr: ast.Production, types: ^map[int]Sem_Token_Type) {
-	#partial switch v in expr {
+classify_object :: proc(production: ast.Production, types: ^map[int]Sem_Token_Type) {
+	#partial switch v in production {
 	case ast.Ident:
 		types^[v.pos] = .Namespace
 	case ast.Qual_Ident:

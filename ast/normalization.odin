@@ -76,10 +76,10 @@ Group_Shape :: enum {
 // a repetition or a tagged production, with every one of them normalized. One shape
 // covers all of them so that the normalized tree adds one node rather than five.
 Grouped :: struct {
-	shape: Group_Shape,
-	exprs: [dynamic]Normalized_Production,
-	tag:   [dynamic]Tag_Pair, // only for .Tagged; nil otherwise
-	pos:   int,
+	shape:       Group_Shape,
+	productions: [dynamic]Normalized_Production,
+	tag:         [dynamic]Tag_Pair, // only for .Tagged; nil otherwise
+	pos:         int,
 }
 
 // Normalized_Rule is a rule whose body has been factored. It repeats the three
@@ -166,11 +166,11 @@ get_rule :: proc(name: Any_Ident, s: ^Scope) -> (r: Rule, ok: bool) {
 // shares nothing with r or with the scope: the scope may be expanded against
 // again, and the same rule may be expanded more than once.
 expand_rule :: proc(r: Rule, s: ^Scope) -> (Rule, bool) {
-	body, ok := expand_production(clone_production(r.expr), s, MAX_EXPANSION_DEPTH)
+	body, ok := expand_production(clone_production(r.production), s, MAX_EXPANSION_DEPTH)
 	expanded := Rule {
 		ident  = r.ident,
 		params = clone_idents(r.params[:]),
-		expr   = body,
+		production   = body,
 		pos    = r.pos,
 	}
 	return expanded, ok
@@ -179,7 +179,7 @@ expand_rule :: proc(r: Rule, s: ^Scope) -> (Rule, bool) {
 // destroy_rule frees a rule expand_rule returned.
 destroy_rule :: proc(r: ^Rule) {
 	delete(r.params)
-	destroy_expr(r.expr)
+	destroy_production(r.production)
 }
 
 // expand_production returns p with every call in it that the scope can resolve
@@ -189,7 +189,7 @@ destroy_rule :: proc(r: ^Rule) {
 // It takes p over: the result is built from what p held and whatever p owned is
 // freed along the way, so the caller must not use p afterwards and must not free it
 // either. Ownership of the result passes to the caller, which frees it with
-// destroy_expr.
+// destroy_production.
 //
 // depth counts how many further calls in a row may be followed. Only a call spends
 // one, so a rule that calls itself runs out of depth instead of expanding forever.
@@ -199,38 +199,38 @@ expand_production :: proc(p: Production, s: ^Scope, depth: int) -> (Production, 
 		return expand_call(it, s, depth)
 
 	case Sequence:
-		exprs, ok := expand_exprs(it.exprs[:], s, depth, .Flatten)
-		delete(it.exprs)
-		return Sequence{exprs = exprs, pos = it.pos}, ok
+		productions, ok := expand_production_list(it.productions[:], s, depth, .Flatten)
+		delete(it.productions)
+		return Sequence{productions = productions, pos = it.pos}, ok
 
 	case Alternative:
-		exprs, ok := expand_exprs(it.exprs[:], s, depth, .Keep)
-		delete(it.exprs)
-		return Alternative{exprs = exprs, pos = it.pos}, ok
+		productions, ok := expand_production_list(it.productions[:], s, depth, .Keep)
+		delete(it.productions)
+		return Alternative{productions = productions, pos = it.pos}, ok
 
 	case Optional:
-		exprs, ok := expand_exprs(it.exprs[:], s, depth, .Flatten)
-		delete(it.exprs)
-		return Optional{exprs = exprs, pos = it.pos}, ok
+		productions, ok := expand_production_list(it.productions[:], s, depth, .Flatten)
+		delete(it.productions)
+		return Optional{productions = productions, pos = it.pos}, ok
 
 	case Repetition:
-		exprs, ok := expand_exprs(it.exprs[:], s, depth, .Flatten)
-		delete(it.exprs)
-		return Repetition{exprs = exprs, pos = it.pos}, ok
+		productions, ok := expand_production_list(it.productions[:], s, depth, .Flatten)
+		delete(it.productions)
+		return Repetition{productions = productions, pos = it.pos}, ok
 
 	case Group:
-		exprs, ok := expand_exprs(it.exprs[:], s, depth, .Flatten)
-		delete(it.exprs)
-		return Group{exprs = exprs, pos = it.pos}, ok
+		productions, ok := expand_production_list(it.productions[:], s, depth, .Flatten)
+		delete(it.productions)
+		return Group{productions = productions, pos = it.pos}, ok
 
 	case Tagged_Production:
 		// The node is a value in the union, so it is copied rather than pointed at:
 		// only the box holding the production it annotates is replaced.
-		expr, ok := expand_production(it.expr^, s, depth)
+		production, ok := expand_production(it.production^, s, depth)
 		tagged := it
-		free(it.expr)
-		tagged.expr = new(Production)
-		tagged.expr^ = expr
+		free(it.production)
+		tagged.production = new(Production)
+		tagged.production^ = production
 		return tagged, ok
 
 	// A leaf holds nothing but its position and its view of the source, so there
@@ -271,49 +271,49 @@ expand_call :: proc(call: ^Call, s: ^Scope, depth: int) -> (Production, bool) {
 
 	// Substitution copies whatever it binds, so the arguments it borrowed are free
 	// to go once it is done.
-	body := substitute_parameter(clone_production(rule.expr), args)
-	destroy_expr(call)
+	body := substitute_parameter(clone_production(rule.production), args)
+	destroy_production(call)
 
 	return expand_production(body, s, depth - 1)
 }
 
-// expand_exprs expands every production of a body and returns them as a new list.
+// expand_production_list expands every production of a body and returns them as a new list.
 // nesting says whether a production that came back as a sequence joins the list or
 // stands as one element of it.
-expand_exprs :: proc(
+expand_production_list :: proc(
 	prods: []Production,
 	s: ^Scope,
 	depth: int,
 	nesting: Nesting,
 ) -> ([dynamic]Production, bool) {
-	exprs := make([dynamic]Production, 0, len(prods))
+	productions := make([dynamic]Production, 0, len(prods))
 	ok := true
 	for prod in prods {
 		expanded, expanded_ok := expand_production(prod, s, depth)
 		ok = ok && expanded_ok
 		switch nesting {
 		case .Keep:
-			append(&exprs, expanded)
+			append(&productions, expanded)
 		case .Flatten:
-			append_flattened(&exprs, expanded)
+			append_flattened(&productions, expanded)
 		}
 	}
-	return exprs, ok
+	return productions, ok
 }
 
-// append_flattened appends e to exprs, splicing a sequence into the list instead of
-// nesting one sequence inside another. The spliced list was made by expand_exprs,
+// append_flattened appends e to productions, splicing a sequence into the list instead of
+// nesting one sequence inside another. The spliced list was made by expand_production_list,
 // so it belongs to this expansion and is freed here.
-append_flattened :: proc(exprs: ^[dynamic]Production, e: Production) {
+append_flattened :: proc(productions: ^[dynamic]Production, e: Production) {
 	seq, is_sequence := e.(Sequence)
 	if !is_sequence {
-		append(exprs, e)
+		append(productions, e)
 		return
 	}
-	for inner in seq.exprs {
-		append(exprs, inner)
+	for inner in seq.productions {
+		append(productions, inner)
 	}
-	delete(seq.exprs)
+	delete(seq.productions)
 }
 
 // substitute_parameter returns p with every reference to one of args replaced by
@@ -344,27 +344,27 @@ substitute_parameter :: proc(p: Production, args: map[string]Production) -> Prod
 
 	case Tagged_Production:
 		prod := it
-		prod.expr^ = substitute_parameter(it.expr^, args)
+		prod.production^ = substitute_parameter(it.production^, args)
 		return prod
 
 	case Sequence:
-		substitute_into(it.exprs[:], args)
+		substitute_into(it.productions[:], args)
 		return it
 
 	case Alternative:
-		substitute_into(it.exprs[:], args)
+		substitute_into(it.productions[:], args)
 		return it
 
 	case Optional:
-		substitute_into(it.exprs[:], args)
+		substitute_into(it.productions[:], args)
 		return it
 
 	case Repetition:
-		substitute_into(it.exprs[:], args)
+		substitute_into(it.productions[:], args)
 		return it
 
 	case Group:
-		substitute_into(it.exprs[:], args)
+		substitute_into(it.productions[:], args)
 		return it
 
 	case ^Call:
@@ -409,27 +409,27 @@ clone_production :: proc(p: Production) -> Production {
 	case ^Call:
 		call := new(Call)
 		call^ = it^
-		call.args = clone_exprs(it.args[:])
+		call.args = clone_production_list(it.args[:])
 		return call
 	case Tagged_Production:
 		tagged := it
 		// The run of pairs is copied rather than shared: both the copy and the
 		// original would otherwise free the one the parser allocated.
 		tagged.tag = clone_tag_pairs(it.tag[:])
-		tagged.expr = new(Production)
-		tagged.expr^ = clone_production(it.expr^)
+		tagged.production = new(Production)
+		tagged.production^ = clone_production(it.production^)
 		return tagged
 
 	case Sequence:
-		return Sequence{exprs = clone_exprs(it.exprs[:]), pos = it.pos}
+		return Sequence{productions = clone_production_list(it.productions[:]), pos = it.pos}
 	case Alternative:
-		return Alternative{exprs = clone_exprs(it.exprs[:]), pos = it.pos}
+		return Alternative{productions = clone_production_list(it.productions[:]), pos = it.pos}
 	case Optional:
-		return Optional{exprs = clone_exprs(it.exprs[:]), pos = it.pos}
+		return Optional{productions = clone_production_list(it.productions[:]), pos = it.pos}
 	case Repetition:
-		return Repetition{exprs = clone_exprs(it.exprs[:]), pos = it.pos}
+		return Repetition{productions = clone_production_list(it.productions[:]), pos = it.pos}
 	case Group:
-		return Group{exprs = clone_exprs(it.exprs[:]), pos = it.pos}
+		return Group{productions = clone_production_list(it.productions[:]), pos = it.pos}
 
 	case Ident, String_Lit, Regex_Lit, External_Value, Qual_Ident, Directive:
 		return p
@@ -448,7 +448,7 @@ clone_tag_pairs :: proc(pairs: []Tag_Pair) -> [dynamic]Tag_Pair {
 	return cloned
 }
 
-clone_exprs :: proc(prods: []Production) -> [dynamic]Production {
+clone_production_list :: proc(prods: []Production) -> [dynamic]Production {
 	cloned := make([dynamic]Production, 0, len(prods))
 	for prod in prods {
 		append(&cloned, clone_production(prod))
@@ -469,23 +469,23 @@ has_call :: proc(p: Production) -> bool {
 		return false
 
 	case Sequence:
-		return has_call_any(it.exprs[:])
+		return has_call_any(it.productions[:])
 
 	case Alternative:
-		return has_call_any(it.exprs[:])
+		return has_call_any(it.productions[:])
 
 	case Optional:
-		return has_call_any(it.exprs[:])
+		return has_call_any(it.productions[:])
 
 	case Repetition:
-		return has_call_any(it.exprs[:])
+		return has_call_any(it.productions[:])
 
 	case Group:
-		return has_call_any(it.exprs[:])
+		return has_call_any(it.productions[:])
 
 	case Directive:
 	case Tagged_Production:
-		return has_call(it.expr^)
+		return has_call(it.production^)
 
 	case ^Call:
 		return true
@@ -519,7 +519,7 @@ normalize_rule :: proc(
 		pos    = r.pos,
 	}
 
-	root := normalize_expr(expanded.expr, opts)
+	root := normalize_production(expanded.production, opts)
 
 	#partial switch it in root.kind {
 	case ^Factored:
@@ -565,7 +565,7 @@ destroy_normalized :: proc(n: ^Normalized_Production) {
 	if n.kind == nil do return
 	switch it in n.kind {
 	case Production:
-		destroy_expr(it)
+		destroy_production(it)
 	case Nothing:
 	case ^Factored:
 		destroy_normalized(&it.leading)
@@ -574,8 +574,8 @@ destroy_normalized :: proc(n: ^Normalized_Production) {
 		destroy_normalized(&it.trailing)
 		free(it)
 	case ^Grouped:
-		destroy_normalized_list(it.exprs[:])
-		delete(it.exprs)
+		destroy_normalized_list(it.productions[:])
+		delete(it.productions)
 		delete(it.tag)
 		free(it)
 	}
@@ -587,7 +587,7 @@ destroy_normalized_list :: proc(prods: []Normalized_Production) {
 	}
 }
 
-// normalize_expr turns p into a production of the normalized tree. An alternative is
+// normalize_production turns p into a production of the normalized tree. An alternative is
 // factored, which is the one shape the normal form describes, and every other
 // production that holds productions is rebuilt with what it holds normalized, so an
 // alternative inside a group, a repetition, an optional or a tag is factored too.
@@ -596,25 +596,25 @@ destroy_normalized_list :: proc(prods: []Normalized_Production) {
 //
 // The tree p belongs to is taken over: every node ends up in the result and every
 // array and box along the way is freed.
-normalize_expr :: proc(p: Production, opts: ^Normalize_Options) -> Normalized_Production {
+normalize_production :: proc(p: Production, opts: ^Normalize_Options) -> Normalized_Production {
 	switch it in p {
 	case Alternative:
 		return factor(it, opts)
 	case Sequence:
-		part := grouped(.Sequence, it.exprs[:], it.pos, opts, nil)
-		delete(it.exprs)
+		part := grouped(.Sequence, it.productions[:], it.pos, opts, nil)
+		delete(it.productions)
 		return part
 	case Group:
-		part := grouped(.Group, it.exprs[:], it.pos, opts, nil)
-		delete(it.exprs)
+		part := grouped(.Group, it.productions[:], it.pos, opts, nil)
+		delete(it.productions)
 		return part
 	case Optional:
-		part := grouped(.Optional, it.exprs[:], it.pos, opts, nil)
-		delete(it.exprs)
+		part := grouped(.Optional, it.productions[:], it.pos, opts, nil)
+		delete(it.productions)
 		return part
 	case Repetition:
-		part := grouped(.Repetition, it.exprs[:], it.pos, opts, nil)
-		delete(it.exprs)
+		part := grouped(.Repetition, it.productions[:], it.pos, opts, nil)
+		delete(it.productions)
 		return part
 	case Tagged_Production:
 		return normalize_tagged(it, opts)
@@ -625,24 +625,24 @@ normalize_expr :: proc(p: Production, opts: ^Normalize_Options) -> Normalized_Pr
 	return Normalized_Production{kind = p}
 }
 
-// grouped returns a production of the given shape holding exprs normalized. tag is
+// grouped returns a production of the given shape holding productions normalized. tag is
 // handed over with it. The list belongs to the caller, which is why it is not freed
 // here: it may be a slice of a longer one, and only the caller knows.
 grouped :: proc(
 	shape: Group_Shape,
-	exprs: []Production,
+	productions: []Production,
 	pos: int,
 	opts: ^Normalize_Options,
 	tag: [dynamic]Tag_Pair,
 ) -> Normalized_Production {
-	parts := make([dynamic]Normalized_Production, 0, len(exprs))
-	for expr in exprs {
-		append(&parts, normalize_expr(expr, opts))
+	parts := make([dynamic]Normalized_Production, 0, len(productions))
+	for production in productions {
+		append(&parts, normalize_production(production, opts))
 	}
 	group := new(Grouped)
 	group^ = Grouped {
 		shape = shape,
-		exprs = parts,
+		productions = parts,
 		tag   = tag,
 		pos   = pos,
 	}
@@ -656,8 +656,8 @@ normalize_tagged :: proc(
 	tagged: Tagged_Production,
 	opts: ^Normalize_Options,
 ) -> Normalized_Production {
-	inner := normalize_expr(tagged.expr^, opts)
-	free(tagged.expr)
+	inner := normalize_production(tagged.production^, opts)
+	free(tagged.production)
 
 	if !tags_survive(opts.tags) {
 		delete(tagged.tag)
@@ -669,7 +669,7 @@ normalize_tagged :: proc(
 	group := new(Grouped)
 	group^ = Grouped {
 		shape = .Tagged,
-		exprs = parts,
+		productions = parts,
 		tag   = tagged.tag,
 		pos   = tagged.pos,
 	}
@@ -688,7 +688,7 @@ normalized_list :: proc(
 	opts: ^Normalize_Options,
 ) -> Normalized_Production {
 	if len(elems) == 0 do return nothing()
-	if len(elems) == 1 do return normalize_expr(elems[0], opts)
+	if len(elems) == 1 do return normalize_production(elems[0], opts)
 	return grouped(.Sequence, elems, pos, opts, nil)
 }
 
@@ -707,11 +707,11 @@ normalized_list :: proc(
 factor :: proc(alts: Alternative, opts: ^Normalize_Options) -> Normalized_Production {
 	// A branch owns its list: unpack_sequence hands the sequence's own list over and
 	// wraps anything else in a new one, so every list here has exactly one owner.
-	branches := make([dynamic][dynamic]Production, 0, len(alts.exprs))
-	for branch in alts.exprs[:] {
+	branches := make([dynamic][dynamic]Production, 0, len(alts.productions))
+	for branch in alts.productions[:] {
 		append(&branches, unpack_sequence(branch))
 	}
-	delete(alts.exprs)
+	delete(alts.productions)
 
 	kept := make([dynamic][dynamic]Production, 0, len(branches))
 	for branch in branches {
@@ -719,7 +719,7 @@ factor :: proc(alts: Alternative, opts: ^Normalize_Options) -> Normalized_Produc
 			// The branch is one of the ones already kept, so what it annotates is
 			// combined into that one rather than thrown away with it.
 			merge_branch_tags(&kept[index], branch[:], opts)
-			destroy_expr_list(branch[:])
+			destroy_production_list(branch[:])
 			delete(branch)
 			continue
 		}
@@ -787,8 +787,8 @@ factor :: proc(alts: Alternative, opts: ^Normalize_Options) -> Normalized_Produc
 	// those productions are freed instead of left behind. Its own middle moved into
 	// body above.
 	for i in 1 ..< len(kept) {
-		destroy_expr_list(kept[i][:leading_len])
-		destroy_expr_list(residuals[i][len(residuals[i])-trailing_len:])
+		destroy_production_list(kept[i][:leading_len])
+		destroy_production_list(residuals[i][len(residuals[i])-trailing_len:])
 		delete(kept[i])
 	}
 	delete(kept[0])
@@ -959,19 +959,19 @@ equal_production :: proc(a, b: Production, opts: ^Normalize_Options) -> bool {
 		return ok && x.lhs.name == y.lhs.name && x.rhs.name == y.rhs.name
 	case Sequence:
 		y, ok := b.(Sequence)
-		return ok && equal_production_list(x.exprs[:], y.exprs[:], opts)
+		return ok && equal_production_list(x.productions[:], y.productions[:], opts)
 	case Alternative:
 		y, ok := b.(Alternative)
-		return ok && equal_production_list(x.exprs[:], y.exprs[:], opts)
+		return ok && equal_production_list(x.productions[:], y.productions[:], opts)
 	case Optional:
 		y, ok := b.(Optional)
-		return ok && equal_production_list(x.exprs[:], y.exprs[:], opts)
+		return ok && equal_production_list(x.productions[:], y.productions[:], opts)
 	case Repetition:
 		y, ok := b.(Repetition)
-		return ok && equal_production_list(x.exprs[:], y.exprs[:], opts)
+		return ok && equal_production_list(x.productions[:], y.productions[:], opts)
 	case Group:
 		y, ok := b.(Group)
-		return ok && equal_production_list(x.exprs[:], y.exprs[:], opts)
+		return ok && equal_production_list(x.productions[:], y.productions[:], opts)
 	case Directive:
 		y, ok := b.(Directive)
 		return ok && x.ident.name == y.ident.name
@@ -983,7 +983,7 @@ equal_production :: proc(a, b: Production, opts: ^Normalize_Options) -> bool {
 	case Tagged_Production:
 		y, ok := b.(Tagged_Production)
 		if !ok do return false
-		if !equal_production(x.expr^, y.expr^, opts) do return false
+		if !equal_production(x.production^, y.production^, opts) do return false
 		switch opts.tags {
 		case .Strip:
 			return true
@@ -1066,10 +1066,10 @@ record_tag_conflict :: proc(a, b: Tagged_Production, opts: ^Normalize_Options) {
 	}
 }
 
-// destroy_expr_list frees every production of a list. The list itself belongs to
+// destroy_production_list frees every production of a list. The list itself belongs to
 // whoever allocated it.
-destroy_expr_list :: proc(prods: []Production) {
-	for prod in prods do destroy_expr(prod)
+destroy_production_list :: proc(prods: []Production) {
+	for prod in prods do destroy_production(prod)
 }
 
 // Build_Scope returns a scope holding the given rules, for a caller that
