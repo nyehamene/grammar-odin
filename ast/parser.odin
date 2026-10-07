@@ -28,7 +28,7 @@ parse_file :: proc(
 	[dynamic]Error,
 ) {
 
-	file: File
+	file := File{allocator = allocator}
 	decls := make([dynamic]Decl, allocator)
 	errors := make([dynamic]Error, allocator)
 
@@ -89,7 +89,7 @@ parse_decl :: proc(p: ^Parser) -> (Decl, bool) {
 	if peek(p).kind == .At {
 		decl, ok := parse_binding(p, name)
 		if len(p.errors) > err_count {
-			destroy_decl(decl)
+			destroy_decl(decl, p.allocator)
 			return {}, false
 		}
 		return decl, ok
@@ -97,7 +97,7 @@ parse_decl :: proc(p: ^Parser) -> (Decl, bool) {
 
 	decl := parse_rule(p, name, params[:])
 	if len(p.errors) > err_count {
-		destroy_decl(decl)
+		destroy_decl(decl, p.allocator)
 		return {}, false
 	}
 	return decl, true

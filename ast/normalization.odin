@@ -1125,8 +1125,11 @@ record_tag_conflict :: proc(a, b: ^Tagged_Production, opts: ^Normalize_Options) 
 
 // destroy_production_list frees every production of a list. The list itself belongs to
 // whoever allocated it.
-destroy_production_list :: proc(prods: []Production) {
-	for prod in prods do destroy_production(prod)
+//
+// Expansion and normalization both run on a copy of the parsed tree, so that copy is
+// made with the default allocator and is freed with it.
+destroy_production_list :: proc(prods: []Production, allocator := context.allocator) {
+	for prod in prods do destroy_production(prod, allocator)
 }
 
 // Build_Scope returns a scope holding the given rules, for a caller that

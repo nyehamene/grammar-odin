@@ -1,6 +1,7 @@
 package ast
 
 import "core:fmt"
+import "core:mem"
 import "core:os"
 import "core:strings"
 import "core:testing"
@@ -655,4 +656,49 @@ collect_example_grammars :: proc() -> [dynamic]string {
 delete_files :: proc(files: [dynamic]string) {
 	for f in files do delete(f)
 	delete(files)
+}
+
+// A slice does not carry the allocator it was made with, unlike a dynamic array, so
+// freeing one has to be handed the allocator the parser used. This parses a grammar
+// covering every kind of node through an allocator that counts, and requires that
+// freeing the file gives every allocation back to that same allocator: a free that
+// went anywhere else would be a bad free rather than a matching count.
+@(test)
+test_parse_and_destroy_use_one_allocator :: proc(t: ^testing.T) {
+	track: mem.Tracking_Allocator
+	mem.tracking_allocator_init(&track, context.allocator)
+	defer mem.tracking_allocator_destroy(&track)
+	allocator := mem.tracking_allocator(&track)
+
+	src :=
+		`// a leading comment
+		import binding = @import("base");
+		greeting name = "Hello" ` + "`name=\"value\"`" + ` | "Hi" [ "x" ] { "y" } <other "z">;
+		grouped = ( "a" "b" ) "c";`
+
+	tokens, token_errors := token.scan(src)
+	defer delete(tokens)
+	defer delete(token_errors)
+	testing.expectf(t, len(token_errors) == 0, "unexpected token errors: %v", token_errors)
+
+	file, errors := parse_file(src, tokens[:], allocator)
+	defer delete(errors)
+	testing.expectf(t, len(errors) == 0, "unexpected parse errors: %v", errors)
+
+	testing.expectf(
+		t,
+		track.total_allocation_count > 0,
+		"expected the parse to allocate through the tracked allocator",
+	)
+	testing.expectf(
+		t,
+		len(track.bad_free_array) == 0,
+		"freeing the tree freed memory the tracked allocator did not hand out",
+	)
+
+	destroy_file(&file)
+
+	testing.expect_value(t, track.total_allocation_count, track.total_free_count)
+	testing.expect_value(t, track.current_memory_allocated, 0)
+	testing.expectf(t, len(track.bad_free_array) == 0, "a free did not match an allocation")
 }

@@ -1,5 +1,7 @@
 package ast
 
+import "core:mem"
+
 // Production is any production that can appear in a grammar.
 Production :: union {
 	Ident,
@@ -25,9 +27,14 @@ Decl :: union {
 }
 
 // File is the root node of a parsed grammar source.
+//
+// A slice does not carry the allocator it was made with, unlike a dynamic array, so
+// freeing one takes the allocator rather than finding it. The file keeps the allocator
+// the parser built it with, which is what destroy_file frees it with.
 File :: struct {
-	decls:   []Decl,
-	end_pos: int,
+	decls:     []Decl,
+	end_pos:   int,
+	allocator: mem.Allocator,
 }
 
 // Rule is a named production, optionally with parameters. A rule names one
@@ -307,23 +314,24 @@ to_slice_productions :: proc(
 	return sliced
 }
 
-// destroy_file frees all allocations owned by file.
+// destroy_file frees all allocations owned by file, with the allocator the parser
+// built it with.
 destroy_file :: proc(file: ^File) {
 	for decl in file.decls {
-		destroy_decl(decl)
+		destroy_decl(decl, file.allocator)
 	}
-	delete(file.decls)
+	delete(file.decls, file.allocator)
 }
 
-destroy_decl :: proc(decl: Decl) {
+destroy_decl :: proc(decl: Decl, allocator: mem.Allocator = context.allocator) {
 	switch v in decl {
 	case Rule:
-		delete(v.params)
-		if v.production != nil do destroy_production(v.production)
+		delete(v.params, allocator)
+		if v.production != nil do destroy_production(v.production, allocator)
 	case Binding:
-		destroy_production(v.directive)
+		destroy_production(v.directive, allocator)
 	case Comment_Group:
-		delete(v.list)
+		delete(v.list, allocator)
 	}
 }
 
@@ -370,49 +378,54 @@ collect_branches_into :: proc(alternative: ^Alternative, branches: []Production)
 
 // destroy_alternative_chain frees the nodes of a chain of choices and nothing else: the
 // branches they held are not freed, since whoever collected them out owns them now.
-destroy_alternative_chain :: proc(alternative: ^Alternative) {
+destroy_alternative_chain :: proc(
+	alternative: ^Alternative,
+	allocator := context.allocator,
+) {
 	inner, is_chain := alternative.lhs.(^Alternative)
-	if is_chain do destroy_alternative_chain(inner)
-	free(alternative)
+	if is_chain do destroy_alternative_chain(inner, allocator)
+	free(alternative, allocator)
 }
 
-destroy_production :: proc(production: Production) {
+// destroy_production frees everything a production owns, with allocator. A leaf owns
+// nothing; the rest own the nodes and lists they hold.
+destroy_production :: proc(production: Production, allocator: mem.Allocator = context.allocator) {
 	switch v in production {
 	case Ident, String_Lit, Regex_Lit, External_Value:
 	case Sequence:
 		for e in v.productions {
-			destroy_production(e)
+			destroy_production(e, allocator)
 		}
-		delete(v.productions)
+		delete(v.productions, allocator)
 	case ^Alternative:
-		destroy_production(v.lhs)
-		destroy_production(v.rhs)
-		free(v)
+		destroy_production(v.lhs, allocator)
+		destroy_production(v.rhs, allocator)
+		free(v, allocator)
 	case ^Optional:
-		destroy_production(v.production)
-		free(v)
+		destroy_production(v.production, allocator)
+		free(v, allocator)
 	case ^Repetition:
-		destroy_production(v.production)
-		free(v)
+		destroy_production(v.production, allocator)
+		free(v, allocator)
 	case ^Group:
-		destroy_production(v.production)
-		free(v)
+		destroy_production(v.production, allocator)
+		free(v, allocator)
 	case Qual_Ident:
 	case ^Call:
 		for e in v.args {
-			destroy_production(e)
+			destroy_production(e, allocator)
 		}
-		delete(v.args)
-		free(v)
+		delete(v.args, allocator)
+		free(v, allocator)
 	case Directive:
 		for e in v.args {
-			destroy_production(e)
+			destroy_production(e, allocator)
 		}
-		delete(v.args)
+		delete(v.args, allocator)
 	case ^Tagged_Production:
-		destroy_production(v.production)
-		delete(v.tag)
-		free(v)
+		destroy_production(v.production, allocator)
+		delete(v.tag, allocator)
+		free(v, allocator)
 	}
 }
 
