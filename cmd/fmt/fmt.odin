@@ -409,51 +409,32 @@ close_group :: proc(
 	header_lhs: []string,
 	start, end: int,
 ) {
-	// Rule 6: align names to max name width, and align the last parameter of each
-	// header in the group to the same column. Columns are measured from the end
-	// of a parameter list, so a rule that declares fewer parameters still puts
-	// its last one under the last one of its neighbours, and each earlier
-	// parameter is right aligned in a cell as wide as the widest parameter in
-	// that column.
-	name_w := 0
-	max_params := 0
+	// Rule 6: every header of the group is written to the width of the widest left
+	// hand side among them, so the value separator of each lands on one column. The
+	// gap that does it goes after the name, so the name stays where it was written and
+	// the parameters move out to reach the column: a rule that declares fewer of them
+	// still ends there, and the parameters of a rule are not spaced out among
+	// themselves to line up with those of a neighbour.
+	lhs_w := 0
 
-	// First pass: name width, and the width of each parameter column.
+	// First pass: the widest left hand side in the group.
 	for i in start ..< end {
 		if kinds[i] != .Header do continue
 		lhs := header_tokens(groups[i][:])
 		if len(lhs) == 0 do continue
-		name_w = max(name_w, len(token.lexeme(lhs[0], src)))
-		max_params = max(max_params, len(lhs) - 1)
-	}
-	col_w := make([dynamic]int, max_params)
-	defer delete(col_w)
-	for i in start ..< end {
-		if kinds[i] != .Header do continue
-		lhs := header_tokens(groups[i][:])
-		for r in 0 ..< len(lhs) - 1 {
-			w := len(token.lexeme(lhs[len(lhs) - 1 - r], src))
-			col_w[r] = max(col_w[r], w)
-		}
+		lhs_w = max(lhs_w, lhs_width(lhs, src))
 	}
 
-	// Second pass: render each header lhs
+	// Second pass: render each header lhs. Every one of them is written to lhs_w, so
+	// that is the group alignment column for the =, the |, the ; and the continuations
+	// as well, one past it so every separator keeps a space before it.
 	for i in start ..< end {
 		if kinds[i] != .Header do continue
-		header_lhs[i] = pad_header_new(header_tokens(groups[i][:]), src, name_w, col_w[:])
-	}
-
-	// Compute group alignment column for =, |, ; etc (max width of rendered lhs + 1)
-	col_sep := 0
-	for i in start ..< end {
-		if kinds[i] != .Header do continue
-		if len(header_lhs[i]) > col_sep {
-			col_sep = len(header_lhs[i])
-		}
+		header_lhs[i] = pad_header(header_tokens(groups[i][:]), src, lhs_w)
 	}
 
 	for j in start ..< end {
-		align[j] = col_sep + 1
+		align[j] = lhs_w + 1
 	}
 }
 
@@ -464,58 +445,34 @@ header_tokens :: proc(line: []token.Token) -> []token.Token {
 	return line[:first_equal(line)]
 }
 
-// pad_header_new renders lhs, the name followed by the parameters it declares.
-// Names are padded to name_w. col_w[r] is the width of the parameter column r
-// counted back from the last parameter, so every header in the group writes its
-// last parameter in the same column and each earlier one right aligned in a cell
-// wide enough for the widest parameter of that column.
-pad_header_new :: proc(lhs: []token.Token, src: string, name_w: int, col_w: []int) -> string {
+// pad_header renders lhs, the name followed by the parameters it declares, padded out
+// to width. The gap goes after the name and not at the end of the header, so that the
+// name stays where it was written and the last parameter of every header of the group
+// reaches the same column. A header that declares no parameters has nothing after the
+// gap, so the gap is the whole of it and the name is written out to width.
+pad_header :: proc(lhs: []token.Token, src: string, width: int) -> string {
 	b := strings.builder_make()
 	defer strings.builder_destroy(&b)
 
-	write_padded(&b, token.lexeme(lhs[0], src), name_w)
-	params := len(lhs) - 1
-	if params <= 0 {
-		return strings.clone(strings.to_string(b))
+	strings.write_string(&b, token.lexeme(lhs[0], src))
+	for _ in 0 ..< width - lhs_width(lhs, src) {
+		strings.write_string(&b, " ")
 	}
-
-	// The last parameter of every header of the group starts in the same column,
-	// and each earlier parameter column sits to the left of it, one space off
-	// the column on its right. col_w spans the widest parameter list in the
-	// group, so a header that declares fewer parameters still reaches the shared
-	// last column.
-	last_col := name_w + 1
-	for r in 1 ..< len(col_w) {
-		last_col += col_w[r] + 1
-	}
-
-	// starts[r] is the left edge of the cell of the parameter r counted back
-	// from the end of the list.
-	starts := make([dynamic]int, params)
-	defer delete(starts)
-	starts[0] = last_col
-	for r in 1 ..< params {
-		starts[r] = starts[r - 1] - 1 - col_w[r]
-	}
-
-	for j in 0 ..< params {
-		r := params - 1 - j
-		param := token.lexeme(lhs[j + 1], src)
-		target := starts[r] + col_w[r] - len(param)
-		for _ in strings.builder_len(b) ..< target {
-			strings.write_string(&b, " ")
-		}
-		strings.write_string(&b, param)
+	for j in 1 ..< len(lhs) {
+		strings.write_string(&b, " ")
+		strings.write_string(&b, token.lexeme(lhs[j], src))
 	}
 	return strings.clone(strings.to_string(b))
 }
 
-// write_padded writes s followed by enough spaces to fill width columns.
-write_padded :: proc(b: ^strings.Builder, s: string, width: int) {
-	strings.write_string(b, s)
-	for _ in len(s) ..< width {
-		strings.write_string(b, " ")
+// lhs_width returns how wide the name and parameters of a header are written, which is
+// the width every header of a group is padded out to.
+lhs_width :: proc(lhs: []token.Token, src: string) -> int {
+	width := len(token.lexeme(lhs[0], src))
+	for j in 1 ..< len(lhs) {
+		width += 1 + len(token.lexeme(lhs[j], src))
 	}
+	return width
 }
 
 // first_equal returns the index of the first `=` token in line.

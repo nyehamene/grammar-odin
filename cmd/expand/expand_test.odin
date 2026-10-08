@@ -6,6 +6,8 @@ import "core:os"
 import "core:strings"
 import "core:testing"
 
+import "../fmt"
+
 // stdin_unused returns an empty reader for tests that write to disk.
 stdin_unused :: proc() -> io.Stream {
 	buf: bytes.Buffer
@@ -424,4 +426,33 @@ test_expand_select_reports_a_file_outside_the_input :: proc(t: ^testing.T) {
 	defer destroy_result(&res)
 	testing.expectf(t, res.code == 1, "exit 1, got %d", res.code)
 	testing.expect(t, strings.contains(res.stderr, "nope.grammar"), res.stderr)
+}
+
+// The formatter and this writer line the left hand side of a rule up under the same
+// rule, so a file whose rules are not separated by blank lines comes out of either the
+// same. A file that is separated still differs: `fmt` ends an alignment group at a
+// blank line, while this writer is handed a rule at a time and has no blank lines to
+// see, so it lines every rule of the file up together.
+//
+// The fixture calls nothing, because `fmt` works on tokens and does not expand a call,
+// so only a file with no calls in it compares the layout of two identical trees.
+@(test)
+test_expand_agrees_with_the_formatter :: proc(t: ^testing.T) {
+	src := "item x = x;\nwide a b = a b;\nother = a;\n"
+	// expand heads each file it writes, so its output carries a heading fmt's does not.
+	want := "== <stdin> ==\nitem   x = x;\nwide a b = a b;\nother    = a;\n"
+	body := "item   x = x;\nwide a b = a b;\nother    = a;\n"
+
+	errbuf: bytes.Buffer
+	bytes.buffer_init(&errbuf, {})
+	defer bytes.buffer_destroy(&errbuf)
+	formatted, ok := fmt.Format_Text(src, "test.grammar", bytes.buffer_to_stream(&errbuf))
+	testing.expect(t, ok, "the fixture should format")
+	defer delete(formatted)
+	testing.expectf(t, formatted == body, "formatted %q, want %q", formatted, body)
+
+	res := run_expand([]string{"--stdin"}, stdin_from(src))
+	defer destroy_result(&res)
+	testing.expectf(t, res.code == 0, "exit 0, got %d (stderr: %s)", res.code, res.stderr)
+	testing.expectf(t, res.stdout == want, "expanded %q, want %q", res.stdout, want)
 }

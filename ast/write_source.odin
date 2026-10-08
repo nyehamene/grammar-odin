@@ -31,11 +31,11 @@ import "core:strings"
 // after the name, and each rule is padded out to that width whole; a caller writing a
 // single rule passes its own width and nothing is padded.
 //
-// That is not the formatter's rule 6, which pads each parameter into a cell as wide as
-// the widest parameter of its column so that the parameters themselves line up. A file
-// of procs therefore comes out of this writer and out of `grammar fmt` with the same
-// layout except where the two differ in how the parameters are spaced, which is the one
-// place a written rule and a formatted one do not read the same.
+// That is the formatter's rule 6, so a file whose rules are not separated by blank
+// lines comes out of this writer and out of `grammar fmt` with the same layout. The one
+// place the two still differ is where a file is separated: `fmt` ends an alignment
+// group at a run of blank lines, while this writer is handed a rule at a time and has no
+// blank lines to see, so it lines every rule of a file up together.
 //
 // A comment between two rules is written where it was written, at its own column, and
 // so breaks the alignment it sits in without ending the group the rules share: only

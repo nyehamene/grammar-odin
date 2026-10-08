@@ -133,8 +133,10 @@ test_blank_lines_preserved :: proc(t: ^testing.T) {
 	check_format(t, "a = \"a\";\n\nb = \"b\";\n", "a = \"a\";\n\nb = \"b\";\n")
 }
 
-// Rule 6: within a group the name of every rule starts on the same column, and
-// so does each of its parameters, so the parameters line up in a column.
+// Rule 6: every rule of a group is written to the width of the widest left hand side
+// among them, with the gap after the name, so the value separator of each lands on one
+// column. The parameters of a rule are not spaced out among themselves to line up with
+// those of a neighbour.
 @(test)
 test_rule6_param_alignment :: proc(t: ^testing.T) {
 	src := "foo x y = x y;\nf x = x;\n\nbar xx y = xx y;\nb x y = x y;\n"
@@ -162,6 +164,39 @@ test_rule6_respects_group_boundary :: proc(t: ^testing.T) {
 	// With a threshold of 2 the single blank is interior, so the two rules share
 	// one group and `bar` pads its missing second parameter out to match `foo`.
 	check_format_sep(t, src, "foo x y = x y;\n\nbar   x = x;\n", 2)
+}
+
+// The example rule 6 of implementation/08-fmt.md gives, so that the doc and the
+// formatter cannot drift apart. It pins rules 1, 2 and 6 at once: a blank line ends the
+// first group, the second is written to the width of the widest of its four rules, and
+// the grouping symbols inside a body are spaced.
+@(test)
+test_rule6_matches_the_doc_example :: proc(t: ^testing.T) {
+	src :=
+		"foo x y = x y;\n" +
+		"f x = x;\n" +
+		"\n" +
+		"bar xx y = xx y;\n" +
+		"b x y = x y;\n" +
+		"group open close sep x = open x { sep x} [ sep ] close;\n" +
+		"group open close sep x y = open [ x { sep x} sep ] y { sep y } close;\n"
+	want :=
+		"foo x y = x y;\n" +
+		"f     x = x;\n" +
+		"\n" +
+		"bar                 xx y = xx y;\n" +
+		"b                    x y = x y;\n" +
+		"group   open close sep x = open x { sep x } [ sep ] close;\n" +
+		"group open close sep x y = open [ x { sep x } sep ] y { sep y } close;\n"
+	check_format(t, src, want)
+}
+
+// The rule with fewer parameters need not be the narrower one, and a left hand side is
+// padded whole rather than by lining its parameters up in columns of their own: here
+// `foo x y` is written to the width of `f a b c d`, and neither is spaced internally.
+@(test)
+test_rule6_pads_whole_left_hand_sides :: proc(t: ^testing.T) {
+	check_format(t, "foo x y = x y;\nf a b c d = a;\n", "foo   x y = x y;\nf a b c d = a;\n")
 }
 
 @(test)

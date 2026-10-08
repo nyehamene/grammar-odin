@@ -186,7 +186,7 @@ alignment before it spans multiple lines.
          | three;
   ```
 
-6. Align the parameters of all the functions in a group
+6. Line up the left hand side of every rule in a group
 
   With `--separator 1`
 
@@ -195,8 +195,10 @@ alignment before it spans multiple lines.
   foo x y = x y;
   f x = x;
 
-  bar xx y = xx y
-  b x y = x y
+  bar xx y = xx y;
+  b x y = x y;
+  group open close sep x = open x { sep x } [ sep ] close;
+  group open close sep x y = open [ x { sep x} sep ] y { sep y } close;
   ```
 
   After:
@@ -204,14 +206,26 @@ alignment before it spans multiple lines.
   foo x y = x y;
   f     x = x;
 
-  bar xx y = xx y
-  b    x y = x y
+  bar                 xx y = xx y;
+  b                    x y = x y;
+  group   open close sep x = open x { sep x } [ sep ] close;
+  group open close sep x y = open [ x { sep x} sep ] y { sep y } close;
   ```
 
-  The columns are counted back from the last parameter, so a rule that declares
-  fewer parameters still writes its last one under the last one of its
-  neighbours, and an earlier parameter is right aligned in a cell as wide as the
-  widest parameter of its column. Above, `x` is written in the column of `xx`.
+  Every header of a group is written to the width of the widest left hand side
+  among them, so the value separator of each lands on one column. The gap that
+  does it goes after the name, so the name stays where it was written and the
+  parameters move out to reach the column: a rule that declares fewer parameters
+  still ends there, and the parameters of a rule are not spaced out among
+  themselves to line up with those of a neighbour. Above, `b x y` is written to
+  the width of `group open close sep x y`, which is the widest left hand side of
+  the second group, rather than to the width of `bar xx y`.
+
+  `grammar expand` and `grammar normalize` write the rules of a file out under
+  the same rule, so a file whose rules are not separated by blank lines comes out
+  of either the same. They part company where a file is: a group ends at a blank
+  line here (rule 1), while the writer is handed one rule at a time and has no
+  blank lines to see, so it lines every rule of a file up together.
 
 7. Write a tag in one canonical spelling.
 
