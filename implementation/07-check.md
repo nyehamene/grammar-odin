@@ -103,9 +103,18 @@ A member access expression has a receiver and an object: `receiver.object`.
 - Exported rules defined in an imported namespace are accessible through the binding variable.
 - It is an error to access a non-existent rule.
 - It is an error to access a non-exported rule through a binding variable.
-- It is an error if 2 or more declarations in a namespace have the same name (identifier).
-  A rule cannot have the same name as another rule in the same namespace.
-  A rule cannot have the same name as a binding variable in the same file.
+- It is an error if 2 or more declarations in a namespace name the same declaration.
+  A name and an arity together name one declaration, so a rule and a proc of one name
+  are two declarations and neither redeclares the other, while two declarations at the
+  same arity are the same declaration twice. A rule cannot have the same name as a
+  binding variable in the same file.
+- A name in production position is a reference to the rule of that name, which is the
+  declaration of no parameters. A name declared only as procs is not a production, and
+  using one there is an error.
+- A call names a proc, and resolves to the declaration of that name at the number of
+  arguments it passes. It is an error if no proc of that name is declared at that arity,
+  and the error says which arities are declared, since those are the calls that would
+  have worked.
 - Binding variables are scoped to the file they are declared
 - Declarations are scoped to the namespace.
 - Name checker should detect and report import cycles as errors.

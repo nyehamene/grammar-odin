@@ -21,16 +21,26 @@ The language server protocol implementation code and API should be placed in 'se
     - [x] **Dispatcher**: `textDocument/definition` is wired in `cmd/lsp/server.odin`.
     - [x] **Test**: `test_lsp_definition` in `cmd/lsp/lsp_test.odin`.
 
+A name in the source is resolved to one declaration, which is a rule for a bare
+identifier and a proc of a particular arity for a call. `find_hit` records the
+argument count of the call under the cursor in `Hit.arity`, which is what every
+feature then resolves with, and the resolution itself goes through the checker's
+exported resolvers so the server and the checker never disagree about what a name
+is. A name may be a rule and procs at once, so a feature that means "this symbol"
+has to say whether it means the rule, one proc, or the whole name: references and
+document highlight follow one declaration, rename follows the name, and signature
+help offers every proc of a name and marks the one the arguments pick.
+
 - [x] **3. `textDocument/references` (Find All References)** (implemented in `cmd/lsp/references.odin`)
     - [x] **Types**: The response is a list of `Location`.
     - [x] **Reference Finding Logic**: `reference_target` resolves the symbol to a namespace rule or file-local binding; `collect_rule_refs`/`collect_binding_refs` walk every open document's AST to find all usages (declaration, terms, calls, member accesses).
-    - [x] **Handler**: `handleReferences` honors `context.includeDeclaration` and returns sorted, deduplicated locations.
+    - [x] **Handler**: `handleReferences` honors `context.includeDeclaration` and returns sorted, deduplicated locations. References are matched by name and arity, so the references of one proc do not include the call sites of the others.
     - [x] **Dispatcher**: `textDocument/references` is wired in `cmd/lsp/server.odin`.
     - [x] **Test**: `test_lsp_references` in `cmd/lsp/lsp_test.odin`.
 
 - [x] **4. `textDocument/documentSymbol`** (implemented in `cmd/lsp/documentsymbol.odin`)
     - [x] **Types**: `Document_Symbol` and `Symbol_Kind` added in `cmd/lsp/documentsymbol.odin`.
-    - [x] **Handler**: `handleDocumentSymbol` returns the documents' rules, import bindings, and rule parameters as a symbol hierarchy.
+    - [x] **Handler**: `handleDocumentSymbol` returns the documents' rules, import bindings, and rule parameters as a symbol hierarchy. A proc is labelled with its parameter list (`foo(x, y)`) so the procs of one name are told apart.
     - [x] **Logic**: Walks the top-level declarations of a document's AST.
     - [x] **Dispatcher**: `textDocument/documentSymbol` is wired in `cmd/lsp/server.odin`.
     - [x] **Test**: `test_lsp_document_symbol` in `cmd/lsp/lsp_test.odin`.
@@ -45,7 +55,7 @@ The language server protocol implementation code and API should be placed in 'se
 
 - [x] **6. `textDocument/rename`** (implemented in `cmd/lsp/rename.odin`)
     - [x] **Types**: `Text_Edit`, `Workspace_Edit`, `Prepare_Rename_Result` added in `cmd/lsp/rename.odin`.
-    - [x] **Handlers**: `handle_prepare_rename` and `handle_rename` implemented in `cmd/lsp/rename.odin`.
+    - [x] **Handlers**: `handle_prepare_rename` and `handle_rename` implemented in `cmd/lsp/rename.odin`. A rename is matched by name and moves every overload of it together, since the procs of a name are dispatched by arity and renaming one alone would break the others.
     - [x] **Logic**: Reuses `reference_target` and the `collect_*_refs` walkers (with `include_declaration`) to build a per-document `WorkspaceEdit`.
     - [x] **Dispatcher**: `textDocument/prepareRename` and `textDocument/rename` are wired in `cmd/lsp/server.odin`.
     - [x] **Test**: `test_lsp_rename` in `cmd/lsp/lsp_test.odin`.

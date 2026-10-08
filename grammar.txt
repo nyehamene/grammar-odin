@@ -2,8 +2,17 @@ Source = { declaration };
 
 declaration       = binding | Rule ;
 binding           = ident "=" "@import" "(" string ")" ";";
-Rule              = ident "=" production ";";
+Rule              = ident { ident } "=" production ";";
 
+// The idents between the name and the "=" are the parameters of the Rule, which
+// stand for productions passed to it. A Rule that declares none is a Rule of arity
+// zero, referred to below as a plain Rule; a Rule that declares some is a proc.
+//
+// A name and an arity together name one declaration, so a name may be declared more
+// than once as long as the arities differ, and `foo = "a";` and `foo x = x;` are both
+// declarations of `foo`, neither shadowing the other. Declaring the same name at the
+// same arity twice is a redeclaration.
+//
 // A Rule whose ident starts with an uppercase letter is exported and reachable
 // from an importing namespace. A lowercase ident declares a local Rule, shared
 // by every file of its own namespace. An ident that is "_" followed by a letter
@@ -22,6 +31,7 @@ sequence    = basic { basic } [ tag ];
 basic       = group
             | repetition
             | optional
+            | call
             | term
             ;
 
@@ -33,6 +43,21 @@ optional       = "[" production "]";
 term           = terminal | non_teminal;
 non_terminal   = ident | member_access;
 terminal       = string | regexp ;
+
+// A call names a proc and passes it arguments. It resolves to the proc of that name
+// declared at the number of arguments it passes, so the procs of one name are told
+// apart by how many arguments the call writes:
+//
+//   foo x = x;        -> foo, arity 1
+//   foo x y = x y;    -> foo, arity 2
+//   <foo a>           -> the arity 1 declaration
+//   <foo a b>         -> the arity 2 declaration
+//
+// A call passes an argument count no declaration of that name has is an error, and a
+// call to a name that is only a plain Rule is an error, since a Rule is not a proc.
+// A name in production position is a reference to the plain Rule of that name, and
+// a name declared only as procs is not a production.
+call           = "<" non_terminal { basic } ">";
 
 // member_access is left-associative
 member_access    = ident "." ident { "." ident };

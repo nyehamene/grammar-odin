@@ -49,7 +49,7 @@ a call names a rule and a parameter there is a mistake the checker already repor
 `expand_rule` also reports whether every call in the body was expanded. A call is
 left in place, and reported, when
 
-1. the scope does not declare the rule it names, or
+1. the scope declares no proc of that name at the arity the call passes, or
 2. the rule it names is in another namespace. A scope covers one namespace, so a
    qualified callee such as `<Z.Rule>` is not in it. Resolving one means holding a
    scope per namespace, which is not built yet.
@@ -61,9 +61,10 @@ left in place, and reported, when
 
 The call is left in the body rather than dropped, so the caller can point at it.
 
-A call that passes the wrong number of arguments is an error the checker reports
-before normalization runs, so expansion pairs the arguments off as far as they go
-and a parameter left over keeps its own name in the body.
+The callee is resolved at the number of arguments the call passes, so the parameters
+that are bound are exactly as many as there are arguments. A call of an arity no
+declared proc answers to is left in place like any other call that cannot be
+resolved, and the checker reports it with the arities that would have worked.
 
 ## Ownership
 

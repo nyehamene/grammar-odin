@@ -59,6 +59,15 @@ is incomplete and every rule would look unused. They are also skipped for a
 declaration that lost a redeclaration contest, so only the registration that
 actually holds the name is considered.
 
+Each proc of a name is a declaration of its own and is reported on its own:
+
+    path:line:column: warning: unused local proc: pair with 2 parameters
+
+Uses are counted per declaration rather than per name, so a call of one arity is a
+use of that proc and says nothing about the others. Without that, `foo x = x;` and
+`foo x y = x y;` would mask each other and neither would be reported once anything
+called `foo`.
+
 `check --stdin` lexes and parses only, so it never reports these warnings.
 
 ## Deviation
