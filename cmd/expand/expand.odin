@@ -208,6 +208,15 @@ transform_file :: proc(
 	defer strings.builder_destroy(&out)
 	stream := strings.to_stream(&out)
 
+	// The rules written together are lined up on the widest left hand side among them,
+	// which the parsed tree already says since expansion carries a rule's name and
+	// parameters through unchanged. --select writes one declaration, so it is written to
+	// its own width rather than padded out to a column where nothing else appears.
+	width := ast.Max_Lhs_Width(tree.decls[:])
+	if selected >= 0 {
+		width = ast.Lhs_Width(tree.decls[selected])
+	}
+
 	failed := false
 	for decl, index in tree.decls {
 		if selected >= 0 && index != selected {
@@ -230,7 +239,7 @@ transform_file :: proc(
 			if as_tree {
 				ast.Print_Rule(stream, src, expanded)
 			} else {
-				ast.Write_Rule(stream, expanded)
+				ast.Write_Rule(stream, expanded, width)
 			}
 			ast.destroy_rule(&expanded)
 		case ast.Binding:

@@ -91,6 +91,24 @@ test_normalize_writes_leading_a_group_and_trailing :: proc(t: ^testing.T) {
 	expect_argv(t, []string{"--stdin"}, stdin_from(src), 0, "== <stdin> ==\nuse = p\n      ( a | b )\n      q\n    ;\n")
 }
 
+// The rules of a file are written lined up on the widest left hand side among them, so
+// a rule with parameters and one without reach the same column.
+@(test)
+test_normalize_aligns_the_left_hand_side :: proc(t: ^testing.T) {
+	src := "group open close sep x y = open x sep y | open x sep y;\ngroup open close sep x = open x | open x;\n"
+	expect_argv(
+		t,
+		[]string{"--stdin"},
+		stdin_from(src),
+		0,
+		// The two branches of each rule are equal, so factoring keeps one of them, and
+		// the left hand sides still reach one column.
+		"== <stdin> ==\n" +
+			"group open close sep x y = open x sep y;\n" +
+			"group   open close sep x = open x;\n",
+	)
+}
+
 // A file of rules comes out under a heading per file.
 @(test)
 test_normalize_headings_each_file :: proc(t: ^testing.T) {

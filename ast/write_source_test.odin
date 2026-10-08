@@ -53,7 +53,12 @@ write_rule_text :: proc(t: ^testing.T, src, name: string) -> string {
 
 	expanded, _ := expand_rule(find_rule(t, rules, name), &scope)
 	defer destroy_rule(&expanded)
-	Write_Rule(bytes.buffer_to_stream(&buf), expanded)
+	// One rule is written, so it is written to its own width and nothing is padded.
+	Write_Rule(
+		bytes.buffer_to_stream(&buf),
+		expanded,
+		lhs_width(expanded.ident, expanded.params),
+	)
 
 	return strings.clone(bytes.buffer_to_string(&buf))
 }
@@ -81,7 +86,12 @@ write_normalized_text :: proc(
 	buf: bytes.Buffer
 	bytes.buffer_init(&buf, {})
 	defer bytes.buffer_destroy(&buf)
-	Write_Normalized_Rule(bytes.buffer_to_stream(&buf), normalized)
+	// One rule is written, so it is written to its own width and nothing is padded.
+	Write_Normalized_Rule(
+		bytes.buffer_to_stream(&buf),
+		normalized,
+		lhs_width(normalized.ident, normalized.params),
+	)
 
 	return strings.clone(bytes.buffer_to_string(&buf))
 }
@@ -98,6 +108,86 @@ normalized_rule_of :: proc(
 	rule := find_rule(t, rules, name)
 	normalized, _ = normalize_rule(rule, &scope, &Normalize_Options{tags = tags})
 	return
+}
+
+// write_file_text writes every rule of src, the way a command does, which is the only
+// way the rules of one file are lined up against each other. The returned string is
+// owned by the caller.
+write_file_text :: proc(t: ^testing.T, src: string) -> string {
+	file, rules := parse_source(t, src)
+	defer destroy_file(&file)
+	defer delete(rules)
+
+	scope := Build_Scope(rules[:])
+	defer Destroy_Scope(&scope)
+
+	width := Max_Lhs_Width(file.decls[:])
+
+	buf: bytes.Buffer
+	bytes.buffer_init(&buf, {})
+	defer bytes.buffer_destroy(&buf)
+	stream := bytes.buffer_to_stream(&buf)
+
+	for decl in file.decls {
+		rule := decl.(Rule) or_continue
+		expanded, _ := expand_rule(rule, &scope)
+		Write_Rule(stream, expanded, width)
+		destroy_rule(&expanded)
+	}
+
+	return strings.clone(bytes.buffer_to_string(&buf))
+}
+
+// expect_file_written fails the test unless writing every rule of src gives want.
+expect_file_written :: proc(t: ^testing.T, src, want: string) {
+	got := write_file_text(t, src)
+	defer delete(got)
+	testing.expectf(t, got == want, "got %q, want %q", got, want)
+}
+
+// The rules written together are lined up on the widest left hand side among them, and
+// the gap goes after the name, so the last parameter of each reaches the same column
+// and the separators after them line up.
+@(test)
+test_the_left_hand_side_is_padded_to_the_widest :: proc(t: ^testing.T) {
+	expect_file_written(
+		t,
+		"group open close sep x y = open x sep y;\ngroup open close sep x = open x;\n",
+		"group open close sep x y = open x sep y;\ngroup   open close sep x = open x;\n",
+	)
+}
+
+// A rule with no parameters is padded like any other: it is the whole left hand side
+// that reaches the column, not just the parameters.
+@(test)
+test_a_rule_without_parameters_is_padded_too :: proc(t: ^testing.T) {
+	expect_file_written(
+		t,
+		"wide a b = a b;\nshort = a;\n",
+		"wide a b = a b;\nshort    = a;\n",
+	)
+}
+
+// The widest left hand side of the file sets the column, so a rule that is longer than
+// one that follows it is the one everything else is padded out to.
+@(test)
+test_a_longer_rule_later_in_the_file_sets_the_column :: proc(t: ^testing.T) {
+	expect_file_written(
+		t,
+		"short = a;\nwidest one two three = a;\n",
+		"short                = a;\nwidest one two three = a;\n",
+	)
+}
+
+// A rule whose expansion fails still declares its name and its parameters, so it sets
+// the width of the rules written with it rather than being written as it stands.
+@(test)
+test_a_rule_that_does_not_expand_still_sets_the_width :: proc(t: ^testing.T) {
+	expect_file_written(
+		t,
+		"missing x y = <nope a b>;\nshort = a;\n",
+		"missing x y = <nope a b>;\nshort       = a;\n",
+	)
 }
 
 // expect_written fails the test unless writing the named rule of src gives want.

@@ -93,7 +93,7 @@ test_expand_inlines_a_call :: proc(t: ^testing.T) {
 		[]string{"--stdin"},
 		"item x = x { x };\nuse = <item \"a\">;\n",
 		0,
-		"== <stdin> ==\nitem x = x { x };\nuse = \"a\" { \"a\" };\n",
+		"== <stdin> ==\nitem x = x { x };\nuse    = \"a\" { \"a\" };\n",
 	)
 }
 
@@ -105,7 +105,7 @@ test_expand_inlines_a_call_among_others :: proc(t: ^testing.T) {
 		[]string{"--stdin"},
 		"item x = x;\nuse = \"a\" <item \"i\"> \"b\";\n",
 		0,
-		"== <stdin> ==\nitem x = x;\nuse = \"a\" \"i\" \"b\";\n",
+		"== <stdin> ==\nitem x = x;\nuse    = \"a\" \"i\" \"b\";\n",
 	)
 }
 
@@ -194,7 +194,12 @@ test_expand_writes_in_place :: proc(t: ^testing.T) {
 	data, read_err := os.read_entire_file(path, context.allocator)
 	defer delete(data)
 	testing.expect(t, read_err == nil, "the rewritten file should be readable")
-	testing.expectf(t, string(data) == "item x = x;\nuse = \"i\";\n", "got %q", string(data))
+	testing.expectf(
+		t,
+		string(data) == "item x = x;\nuse    = \"i\";\n",
+		"got %q",
+		string(data),
+	)
 }
 
 // Without --write the file is only read.

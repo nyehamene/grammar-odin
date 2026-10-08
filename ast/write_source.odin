@@ -24,10 +24,23 @@ import "core:strings"
 //
 // The columns are the formatter's: the `=`, every `|` and the `;` sit one past the
 // rule's name and parameters, and a production or a part that follows one of them
-// starts a column further in (rules 4 and 5 of implementation/08-fmt.md). They are
-// worked out per rule, so the `=` of two rules of a file do not necessarily line up
-// with one another, which is the one thing the formatter does that this does not: it
-// pads the names in a file so that they do (rule 6).
+// starts a column further in (rules 4 and 5 of implementation/08-fmt.md).
+//
+// The rules written together are lined up on the widest left hand side among them, so
+// that the `=` of a file's rules lands on one column. The gap that lines them up goes
+// after the name, and each rule is padded out to that width whole; a caller writing a
+// single rule passes its own width and nothing is padded.
+//
+// That is not the formatter's rule 6, which pads each parameter into a cell as wide as
+// the widest parameter of its column so that the parameters themselves line up. A file
+// of procs therefore comes out of this writer and out of `grammar fmt` with the same
+// layout except where the two differ in how the parameters are spaced, which is the one
+// place a written rule and a formatted one do not read the same.
+//
+// A comment between two rules is written where it was written, at its own column, and
+// so breaks the alignment it sits in without ending the group the rules share: only
+// blank lines end a group in the formatter, and this writer writes no blank lines of
+// its own.
 //
 // Two things cannot survive the round trip, and neither is this writer's fault:
 //
@@ -64,6 +77,31 @@ is_nothing :: proc(n: Normalized_Production) -> bool {
 	return absent
 }
 
+// Lhs_Width returns how wide the name and parameters decl are declared with, which is
+// what the separators of the rules written together are lined up to. A declaration
+// that is not a rule has no such left hand side and is given a width of zero, so a
+// file of rules is measured by its rules alone.
+Lhs_Width :: proc(decl: Decl) -> int {
+	rule, is_rule := decl.(Rule)
+	if !is_rule do return 0
+	return lhs_width(rule.ident, rule.params)
+}
+
+// Max_Lhs_Width returns the width a set of declarations is written to: the widest left
+// hand side among them.
+//
+// It is worked out from the parsed tree, which is sound because expansion and
+// factorization both carry the name and the parameters of a rule through unchanged, so
+// a rule's left hand side is the same width before and after either. That also means a
+// rule whose expansion fails still sets the width of the rules around it.
+Max_Lhs_Width :: proc(decls: []Decl) -> int {
+	width := 0
+	for decl in decls {
+		width = max(width, Lhs_Width(decl))
+	}
+	return width
+}
+
 // lhs_width returns how wide the name and parameters a rule is declared with are,
 // which is what the separators of the rule are lined up past.
 lhs_width :: proc(ident: Ident, params: []Ident) -> int {
@@ -80,9 +118,15 @@ separator_column :: proc(width: int) -> int {
 	return width + 1
 }
 
-// write_lhs writes the name and parameters a rule is declared with.
-write_lhs :: proc(w: io.Writer, ident: Ident, params: []Ident) {
+// write_lhs writes the name and parameters a rule is declared with, padded out to the
+// width the rules written together are lined up to.
+//
+// The name stays where it is and the gap goes after it, so that the last parameter of
+// every rule reaches the same column and the separators after it line up. The width is
+// the widest left hand side of the group, so this never has to take a gap away.
+write_lhs :: proc(w: io.Writer, ident: Ident, params: []Ident, width: int) {
 	io.write_string(w, ident.name)
+	write_pad(w, width - lhs_width(ident, params))
 	for param in params {
 		io.write_string(w, " ")
 		io.write_string(w, param.name)
@@ -108,8 +152,8 @@ write_terminator :: proc(w: io.Writer, col: int) {
 // since the branches are what the rule offers a reader to choose between and one line
 // hides them among each other. Any other body is written on one line, as it stands.
 // The rule is only read.
-Write_Rule :: proc(w: io.Writer, r: Rule) {
-	col := separator_column(lhs_width(r.ident, r.params))
+Write_Rule :: proc(w: io.Writer, r: Rule, width: int) {
+	col := separator_column(width)
 
 	// Only a body that is an alternative of branches is written on lines of its own.
 	// An alternative nested in a group keeps the line it has always had, since the
@@ -117,7 +161,7 @@ Write_Rule :: proc(w: io.Writer, r: Rule) {
 	// would read as an alternative of the rule rather than of the group.
 	branches, is_branches := r.production.(^Alternative)
 	if !is_branches {
-		write_lhs(w, r.ident, r.params)
+		write_lhs(w, r.ident, r.params, width)
 		io.write_string(w, " = ")
 		write_production(w, r.production)
 		io.write_string(w, ";\n")
@@ -127,7 +171,7 @@ Write_Rule :: proc(w: io.Writer, r: Rule) {
 	list := collect_branches(branches)
 	defer delete(list)
 
-	write_lhs(w, r.ident, r.params)
+	write_lhs(w, r.ident, r.params, width)
 	io.write_string(w, " = ")
 	write_production(w, list[0])
 	for branch in list[1:] {
@@ -181,8 +225,8 @@ Write_Comment_Group :: proc(w: io.Writer, group: Comment_Group) {
 // factored form would not parse and dropping the branch would leave out a language
 // the rule matches. The tree is only read; the caller frees it with
 // destroy_normalized_rule.
-Write_Normalized_Rule :: proc(w: io.Writer, n: Normalized_Rule) {
-	write_normalized_rule(w, n)
+Write_Normalized_Rule :: proc(w: io.Writer, n: Normalized_Rule, width: int) {
+	write_normalized_rule(w, n, width)
 }
 
 // write_production writes a production of a parsed tree.
@@ -313,17 +357,17 @@ write_external :: proc(w: io.Writer, e: External_Value) {
 
 // write_normalized_rule writes a factored rule as its leading, its middles, and its
 // trailing, or as its branches whole when one of them has nothing in the middle.
-write_normalized_rule :: proc(w: io.Writer, n: Normalized_Rule) {
-	col := separator_column(lhs_width(n.ident, n.params))
+write_normalized_rule :: proc(w: io.Writer, n: Normalized_Rule, width: int) {
+	col := separator_column(width)
 
 	if Has_Empty_Middle(n) {
-		write_branch_lines(w, col, n)
+		write_branch_lines(w, col, width, n)
 		return
 	}
 
 	// A rule with no leading and no trailing is one part, and is written as one line.
 	if is_nothing(n.leading) && is_nothing(n.trailing) {
-		write_lhs(w, n.ident, n.params)
+		write_lhs(w, n.ident, n.params, width)
 		io.write_string(w, " = ")
 		write_middles(w, n.body)
 		io.write_string(w, ";\n")
@@ -335,7 +379,7 @@ write_normalized_rule :: proc(w: io.Writer, n: Normalized_Rule) {
 	// formatter puts a continuation line that carries no `|` (rule 5 of
 	// implementation/08-fmt.md). Showing the parts apart is the point, since they are
 	// what the rule was factored into.
-	write_lhs(w, n.ident, n.params)
+	write_lhs(w, n.ident, n.params, width)
 	io.write_string(w, " = ")
 	if !is_nothing(n.leading) {
 		write_normalized(w, n.leading)
@@ -356,8 +400,8 @@ write_normalized_rule :: proc(w: io.Writer, n: Normalized_Rule) {
 // productions to write in the factored form, and leaving the branch out would drop a
 // language the rule matches. The branches are alternatives of one another, so they
 // get the layout an alternative gets.
-write_branch_lines :: proc(w: io.Writer, col: int, n: Normalized_Rule) {
-	write_lhs(w, n.ident, n.params)
+write_branch_lines :: proc(w: io.Writer, col, width: int, n: Normalized_Rule) {
+	write_lhs(w, n.ident, n.params, width)
 	io.write_string(w, " = ")
 	write_branch(w, n.leading, n.body[0], n.trailing)
 	for middle in n.body[1:] {

@@ -520,6 +520,12 @@ normalize_rule :: proc(
 ) -> (Normalized_Rule, bool) {
 	expanded, ok := expand_rule(r, s)
 
+	// The expansion's body is handed to the factoring below and moves into the
+	// normalized tree, but its parameter list is not part of it: the rule that comes
+	// back is given its own copy of r's parameters. The expansion's is freed here, or
+	// every rule normalized with parameters would leak one.
+	defer delete(expanded.params)
+
 	normalized := Normalized_Rule {
 		ident  = r.ident,
 		params = clone_idents(r.params),
