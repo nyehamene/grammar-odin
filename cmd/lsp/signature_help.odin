@@ -29,9 +29,10 @@ Parameter_Information :: struct {
 }
 
 // handle_signature_help implements textDocument/signatureHelp. Inside a rule
-// call it describes the callee (the type of the requested value, and for procs
-// the arity and parameter names); elsewhere it reports the type of the value
-// under the cursor.
+// call it describes the callee: the type of the requested value, and for procs
+// the arity and parameter names, with the argument under the cursor marked.
+// Anywhere else it has no callable to describe, and answers null. The type of a
+// value that is not being called is a question for hover, which answers it.
 handle_signature_help :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok: bool) {
 	params := json_object(obj, "params") or_return
 	text_doc := json_object(params, "textDocument") or_return
@@ -73,10 +74,12 @@ handle_signature_help :: proc(srv: ^Server, id: Request_Id, obj: json.Object) ->
 	return true
 }
 
-// signature_help_for computes the signature help for offset within fi. When
-// offset is inside a rule call the callee's signature is shown with the active
-// parameter highlighted; otherwise the type of the value under the cursor is
-// reported.
+// signature_help_for computes the signature help for offset within fi, which is
+// the signature of the callee of the call containing offset, with the argument
+// under the cursor marked active. There is no signature to report when offset is
+// not inside a call, and it says so rather than describing the nearest token: a
+// request with a call is asking what to type next, and an answer picked off an
+// unrelated token is worse than none.
 signature_help_for :: proc(
 	cu: ^check.Compilation_Unit,
 	fi: ^check.Loaded_File,
@@ -105,54 +108,7 @@ signature_help_for :: proc(
 		}
 	}
 
-	hit := find_hit(&fi.file, offset)
-	#partial switch hit.kind {
-	case .Ident, .Rule_Name:
-		// A rule declaration is a use of arity zero, but a proc declaration is a use of
-		// its own arity, which is what tells the overloads of a name apart.
-		return value_signature(cu, fi, hit.ident.name, hit.arity)
-	case .Call_Name:
-		return value_signature(cu, fi, hit.ident.name, hit.arity)
-	case .Param:
-		return type_help("proc parameter", hit.ident.name), true
-	case .Member:
-		return member_signature(cu, fi, hit)
-	case .Member_Object, .Binding_Name:
-		return type_help("namespace import", hit.ident.name), true
-	case .String:
-		return type_help("string literal"), true
-	case .Regex:
-		return type_help("regular expression"), true
-	case .External:
-		return type_help("external value", hit.literal), true
-	case .Directive:
-		return type_help("directive", hit.ident.name), true
-	case .None:
-	}
 	return {}, false
-}
-
-// value_signature describes name as the proc of arity, or as the rule when nothing of
-// that arity is declared. A bare identifier names the rule of arity zero, so a name
-// that is only procs falls back to offering those rather than nothing at all.
-value_signature :: proc(
-	cu: ^check.Compilation_Unit,
-	fi: ^check.Loaded_File,
-	name: string,
-	arity: int,
-) -> (
-	Signature_Help,
-	bool,
-) {
-	if arity > 0 {
-		help, found := proc_signatures(cu, fi, name)
-		if found do help.active_signature = active_signature(help, arity)
-		return help, found
-	}
-	if ref, found := check.Resolve_Rule(cu, fi, name); found {
-		return signature_for_ref(cu, fi, name, ref), true
-	}
-	return proc_signatures(cu, fi, name)
 }
 
 // proc_signatures returns one signature per proc declared as name, ascending by arity,
@@ -356,23 +312,6 @@ production_signature :: proc(name: string) -> Signature_Help {
 	return single_signature_help(sig)
 }
 
-// type_help reports the type of a value that is not a named rule.
-type_help :: proc(value_type: string, name := "") -> Signature_Help {
-	label := name
-	if label == "" {
-		label = value_type
-	}
-	sig := Signature_Information {
-		label = label,
-		documentation = Markup_Content {
-			kind = "markdown",
-			value = fmt.tprintf("**type:** %s", value_type),
-		},
-		parameters = []Parameter_Information{},
-	}
-	return single_signature_help(sig)
-}
-
 // single_signature_help wraps sig into a help result. The backing array of the
 // signatures slice is heap allocated (temp allocator) rather than a stack
 // compound literal, which would become a dangling pointer once the caller's
@@ -386,38 +325,6 @@ single_signature_help :: proc(sig: Signature_Information) -> Signature_Help {
 		active_parameter = 0,
 	}
 	return result
-}
-
-// member_signature describes a member access such as `base.rule`.
-member_signature :: proc(
-	cu: ^check.Compilation_Unit,
-	fi: ^check.Loaded_File,
-	hit: Hit,
-) -> (
-	Signature_Help,
-	bool,
-) {
-	if hit.member_object == "" {
-		return type_help("member", hit.ident.name), true
-	}
-	target_dir, object_binding := fi.bindings[hit.member_object]
-	if !object_binding {
-		return type_help("member", hit.ident.name), true
-	}
-	ns := cu.namespaces[target_dir]
-	if ns == nil {
-		return type_help("member", hit.ident.name), true
-	}
-	// A member of a call names a proc of the call's arity; a member of a production
-	// names the rule, the same split a bare name is resolved by.
-	ref, found := ns.rules[hit.ident.name]
-	if hit.arity > 0 {
-		ref, found = check.Lookup_Proc(ns.procs[hit.ident.name], hit.arity)
-	}
-	if !found {
-		return type_help("member", hit.ident.name), true
-	}
-	return signature_for_ref(cu, fi, hit.ident.name, ref), true
 }
 
 // resolve_named resolves a call's callee or an identifier to the rule it

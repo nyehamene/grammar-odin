@@ -1,5 +1,6 @@
 package lsp
 
+import "core:fmt"
 import "core:io"
 import "core:log"
 import "core:os"
@@ -815,11 +816,11 @@ test_lsp_signature_help :: proc(t: ^testing.T) {
 	second_arg := response_for(output, `3`)
 	testing.expect(t, strings.contains(second_arg, `"activeParameter":1`))
 
-	// The call sits on the last line here, so this position precedes it. Asserting that
-	// the answer does not name the call's callee is the point of the request.
+	// `greeting` is a rule name, not a call, so there is no signature to report. It
+	// must not be answered with the call's own signature, which is what the request
+	// used to do: the call sits on the last line, so nothing here holds one.
 	on_rule := response_for(output, `4`)
-	testing.expect(t, strings.contains(on_rule, `"label":"greeting"`))
-	testing.expect(t, strings.contains(on_rule, "**type:** production, returns a production"))
+	testing.expect(t, strings.contains(on_rule, `"result":null`))
 	testing.expect(
 		t,
 		!strings.contains(on_rule, `"label":"greet(`),
@@ -860,13 +861,7 @@ test_lsp_signature_help_after_call :: proc(t: ^testing.T) {
 			`textDocument/signatureHelp`,
 			`{"textDocument":{"uri":"file:///tmp/test.grammar"},"position":{"line":17,"character":10}}`,
 		),
-		// On the declaration `def   k e` (line 12), which is a proc of arity two.
-		make_request(
-			`5`,
-			`textDocument/signatureHelp`,
-			`{"textDocument":{"uri":"file:///tmp/test.grammar"},"position":{"line":12,"character":1}}`,
-		),
-		make_request(`6`, `shutdown`, `null`),
+		make_request(`5`, `shutdown`, `null`),
 	)
 
 	output := send_request(stdin)
@@ -888,20 +883,16 @@ test_lsp_signature_help_after_call :: proc(t: ^testing.T) {
 	testing.expect(t, arity_1 < arity_2, "overloads must be offered in ascending arity")
 	testing.expect(t, arity_2 < arity_3, "overloads must be offered in ascending arity")
 
-	// Neither of these positions is inside a call, so neither may name one.
+	// Neither of these positions is inside a call. The rule name sits well past the
+	// last call, which is exactly where a call's span used to reach, so it is the one
+	// that reported def(k) for a name of its own.
 	on_rule := response_for(output, `3`)
-	testing.expect(t, strings.contains(on_rule, `"label":"ident"`))
-	testing.expect(t, strings.contains(on_rule, "**type:** production, returns a production"))
+	testing.expect(t, strings.contains(on_rule, `"result":null`))
 	testing.expect(t, !strings.contains(on_rule, "def"), "a rule name past a call must not report a call")
 
 	on_external := response_for(output, `4`)
-	testing.expect(t, strings.contains(on_external, "**type:** external value"))
+	testing.expect(t, strings.contains(on_external, `"result":null`))
 	testing.expect(t, !strings.contains(on_external, "def"), "an external value must not report a call")
-
-	// A proc's own declaration resolves at the arity it is declared at.
-	on_declaration := response_for(output, `5`)
-	testing.expect(t, strings.contains(on_declaration, `"activeSignature":1`))
-	testing.expect(t, strings.contains(on_declaration, `"label":"def(k, e)"`))
 }
 
 @(test)
@@ -968,6 +959,96 @@ test_lsp_signature_help_call_extent :: proc(t: ^testing.T) {
 	on_closing_angle := response_for(output, `5`)
 	testing.expect(t, strings.contains(on_closing_angle, `"label":"f(x)"`))
 	testing.expect(t, !strings.contains(on_closing_angle, "def"))
+}
+
+// A signature help request describes the callee of a call, so a position holding
+// no call has nothing to report. Every token kind outside a call is checked here,
+// because each one was once answered by the find_hit fallback and a kind left
+// unchecked is a kind that can come back.
+//
+// The fixture keeps a call on line 2 so the requests have a call to *not* be in.
+@(test)
+test_lsp_signature_help_outside_call :: proc(t: ^testing.T) {
+	// Line 1 holds the only call, so every position below sits outside one. The file is
+	// written as one JSON string with its newlines spelled out, which is how the other
+	// fixtures in this file give their text.
+	text := "greet name title = \"hello\" name title;\nmain = <greet \"a\" \"b\">;\n@import \"other.grammar\";\nexpr  = __ident__;\nItem   = Other.Rule;\n"
+
+	// Each entry is a position that holds no call, named for the token it lands on.
+	Position :: struct {
+		name:      string,
+		line:      int,
+		character: int,
+	}
+	positions := []Position {
+		{name = "a proc declaration's own name", line = 0, character = 1},
+		{name = "a proc parameter", line = 0, character = 7},
+		{name = "a directive name", line = 2, character = 1},
+		{name = "an import binding's name", line = 2, character = 9},
+		{name = "a rule declaration's own name", line = 3, character = 1},
+		{name = "an external value", line = 3, character = 9},
+		{name = "whitespace between tokens", line = 4, character = 4},
+		{name = "a member of a production", line = 4, character = 9},
+	}
+
+	// The whole session is written to one builder: an initialize, a didOpen, a request
+	// per position, and a shutdown. A slice cannot grow, so the messages go to a
+	// builder rather than to a list.
+	sb := strings.builder_make(context.temp_allocator)
+	defer strings.builder_destroy(&sb)
+	write := &sb
+
+	strings.write_string(write, make_request(
+		`1`,
+		`initialize`,
+		`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+	))
+	strings.write_string(
+		write,
+		make_notification(
+			`textDocument/didOpen`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar","languageId":"grammar","version":1,"text":"greet name title = \"hello\" name title;\nmain = <greet \"a\" \"b\">;\n@import \"other.grammar\";\nexpr  = __ident__;\nItem   = Other.Rule;\n"}}`,
+		),
+	)
+
+	id := 2
+	for pos in positions {
+		// The params are written out rather than formatted as a whole: tprintf reads a
+		// `{` as the start of a placeholder, so a JSON object never survives one.
+		params := strings.builder_make(context.temp_allocator)
+		strings.write_string(&params, `{"textDocument":{"uri":"file:///tmp/test.grammar"},"position":{"line":`)
+		strings.write_string(&params, fmt.tprintf("%d", pos.line))
+		strings.write_string(&params, `,"character":`)
+		strings.write_string(&params, fmt.tprintf("%d", pos.character))
+		strings.write_string(&params, `}}`)
+
+		strings.write_string(
+			write,
+			make_request(
+				fmt.tprintf("%d", id),
+				`textDocument/signatureHelp`,
+				strings.to_string(params),
+			),
+		)
+		strings.builder_destroy(&params)
+		id += 1
+	}
+	strings.write_string(write, make_request(fmt.tprintf("%d", id), `shutdown`, `null`))
+
+	stdin := create_stream_reader(strings.to_string(sb))
+	output := send_request(stdin)
+	log.debugf("output:\n%v", output)
+
+	id = 2
+	for pos in positions {
+		testing.expectf(
+			t,
+			strings.contains(response_for(output, fmt.tprintf("%d", id)), `"result":null`),
+			"signature help at %s must be empty, it is not inside a call",
+			pos.name,
+		)
+		id += 1
+	}
 }
 
 @(test)
