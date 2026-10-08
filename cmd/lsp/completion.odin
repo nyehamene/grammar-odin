@@ -1,6 +1,7 @@
 package lsp
 
 import "core:encoding/json"
+import "core:fmt"
 import "core:sort"
 import "core:strings"
 
@@ -39,6 +40,33 @@ Completion_Item_Kind :: enum {
 Completion_Item :: struct {
 	label: string,
 	kind:  Completion_Item_Kind,
+	// detail says what the item is when the label does not: a proc's arity, so that
+	// `foo`, `foo(x)` and `foo(x, y)` are three items rather than one.
+	detail: string `json:"detail,omitempty"`,
+}
+
+// completion_label is what a declaration is offered as: a rule by its name, and a
+// proc by its name and its parameter list, so the procs of one name are told apart in
+// the list the way they are told apart by a call.
+completion_label :: proc(d: ast.Rule) -> string {
+	if len(d.params) == 0 do return d.ident.name
+
+	sb := strings.builder_make(context.temp_allocator)
+	defer strings.builder_destroy(&sb)
+	strings.write_string(&sb, d.ident.name)
+	strings.write_string(&sb, "(")
+	for p, i in d.params {
+		if i > 0 do strings.write_string(&sb, ", ")
+		strings.write_string(&sb, p.name)
+	}
+	strings.write_string(&sb, ")")
+	return strings.to_string(sb)
+}
+
+// completion_detail says the arity of a proc, since that is what a call has to match.
+completion_detail :: proc(d: ast.Rule) -> string {
+	if len(d.params) == 0 do return ""
+	return fmt.tprintf("proc, %d parameter%s", len(d.params), plural(len(d.params)))
 }
 
 Completion_List :: struct {
@@ -103,7 +131,11 @@ handle_completion :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok
 							if strings.has_prefix(d.ident.name, prefix) {
 								append(
 									&items,
-									Completion_Item{label = d.ident.name, kind = .Function},
+									Completion_Item {
+										label = completion_label(d),
+										kind = .Function,
+										detail = completion_detail(d),
+									},
 								)
 							}
 						case ast.Binding, ast.Comment_Group:
@@ -120,9 +152,19 @@ handle_completion :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok
 			for decl in f.file.decls {
 				#partial switch d in decl {
 				case ast.Rule:
-					if strings.has_prefix(d.ident.name, prefix) &&
-					   !has_label(items[:], d.ident.name) {
-						append(&items, Completion_Item{label = d.ident.name, kind = .Function})
+					// The label carries the arity of a proc, so the procs of one
+					// name are separate items and none of them is a duplicate of
+					// another.
+					label := completion_label(d)
+					if strings.has_prefix(d.ident.name, prefix) && !has_label(items[:], label) {
+						append(
+							&items,
+							Completion_Item {
+								label = label,
+								kind = .Function,
+								detail = completion_detail(d),
+							},
+						)
 					}
 				case ast.Binding:
 					if f != fi {

@@ -123,7 +123,10 @@ document_symbols :: proc(doc: ^Document) -> [dynamic]Document_Symbol {
 			append(
 				&symbols,
 				Document_Symbol {
-					name = d.ident.name,
+					// The name carries the arity of a proc, so the procs of one name
+					// are told apart in the outline rather than listed as one name
+					// repeated.
+					name = completion_label(d),
 					kind = .Function,
 					range = decl_range,
 					selection_range = selection,

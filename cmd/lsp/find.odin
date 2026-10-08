@@ -25,6 +25,10 @@ Hit :: struct {
 	literal:       string,
 	member_object: string, // receiver name when kind == .Member
 	decl:          int, // decl index in Loaded_File.file when kind == .Param
+	// arity is the argument count of the call when kind == .Call_Name, which is what
+	// tells the procs of a name apart. It is 0 everywhere else, and for a bare
+	// identifier, which names the rule of arity zero.
+	arity: int,
 }
 
 // find_hit locates the most specific node in file whose source span contains
@@ -97,6 +101,9 @@ find_hit_production :: proc(production: ast.Production, offset: int) -> Hit {
 		}
 		if h.kind != .None {
 			h.kind = .Call_Name
+			// The procs of a name are told apart by arity, so the argument count of
+			// the call is carried out with the hit for everything downstream.
+			h.arity = len(v.args)
 			return h
 		}
 		for arg in v.args {

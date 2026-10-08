@@ -81,7 +81,9 @@ definition_for :: proc(
 
 	#partial switch hit.kind {
 	case .Rule_Name, .Ident, .Call_Name:
-		if ref, ok := rule_ref_at(cu, fi, hit.ident.name); ok {
+		// The hit carries the arity of a call, which is what picks the proc of a name
+		// that is declared more than once, so a jump lands on the overload being called.
+		if ref, found := resolve_at(cu, fi, hit.ident.name, hit.arity); found {
 			target = ref.file
 			target_offset = ref.offset
 			name_len = len(hit.ident.name)
@@ -91,10 +93,6 @@ definition_for :: proc(
 				target_offset = off
 				name_len = len(hit.ident.name)
 			}
-		} else if r, is_private := fi.private_rules[hit.ident.name]; is_private {
-			target = fi
-			target_offset = r.offset
-			name_len = len(hit.ident.name)
 		}
 	case .Binding_Name, .Member_Object:
 		if off, ok := fi.binding_offsets[hit.ident.name]; ok {
@@ -164,13 +162,19 @@ member_ref_at :: proc(
 	if ns == nil {
 		return nil, 0, false
 	}
-	// Only an exported rule is reachable through a binding, so a local or
-	// private rule of the target namespace has no definition to jump to.
+	// Only an exported name is reachable through a binding, so a local or private
+	// declaration of the target namespace has no definition to jump to.
 	if !check.is_exported_rule(hit.ident.name) {
 		return nil, 0, false
 	}
-	ref, rule_found := ns.rules[hit.ident.name]
-	if !rule_found {
+	// A member of a call names a proc of the call's arity, and a member of a
+	// production names the rule of arity zero, the same split resolve_at makes for a
+	// bare name.
+	ref, found := check.Lookup_Proc(ns.procs[hit.ident.name], hit.arity)
+	if hit.arity == 0 {
+		ref, found = ns.rules[hit.ident.name]
+	}
+	if !found {
 		return nil, 0, false
 	}
 	return ref.file, ref.offset, true

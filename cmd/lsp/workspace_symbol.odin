@@ -48,7 +48,7 @@ handle_workspace_symbol :: proc(srv: ^Server, id: Request_Id, obj: json.Object) 
 				}
 				append(
 					&symbols,
-					symbol_information(d.ident.name, .Function, uris[f], f, d.ident.pos),
+					symbol_information(completion_label(d), .Function, uris[f], f, d.ident.pos),
 				)
 			case ast.Binding:
 				if query != "" && !strings.contains(d.ident.name, query) {

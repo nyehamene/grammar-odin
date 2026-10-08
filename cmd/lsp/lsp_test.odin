@@ -456,7 +456,9 @@ test_lsp_document_symbol :: proc(t: ^testing.T) {
 	output := send_request(stdin)
 	log.debugf("output:\n%v", output)
 	testing.expect(t, strings.contains(output, `"id": 2`))
-	testing.expect(t, strings.contains(output, `"name":"greet"`))
+	// A proc is listed with its parameter list, so the procs of one name are
+	// told apart in the outline rather than repeated under one name.
+	testing.expect(t, strings.contains(output, `"name":"greet(name, title)"`))
 	testing.expect(t, strings.contains(output, `"kind":12`))
 	testing.expect(t, strings.contains(output, `"name":"bye"`))
 	testing.expect(t, strings.contains(output, `"name":"ns"`))

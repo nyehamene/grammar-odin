@@ -121,7 +121,10 @@ handle_rename :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok: bo
 		switch target.kind {
 		case .Rule:
 			if f.namespace_path == target.ns_dir {
-				collect_rule_refs(f, target.ns_dir, target.name, true, uris, &refs)
+				// A rename moves the whole name. The procs of a name are dispatched by
+				// arity, so renaming one of them alone would leave every other call site
+				// calling an arity the namespace no longer declares.
+				collect_rule_refs(f, target.ns_dir, target.name, ANY_ARITY, true, uris, &refs)
 			}
 		case .Binding:
 			if f == target.origin_file {
@@ -129,7 +132,7 @@ handle_rename :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok: bo
 			}
 		case .Private_Rule:
 			if f == target.origin_file {
-				collect_rule_refs(f, "", target.name, true, uris, &refs, true)
+				collect_rule_refs(f, "", target.name, ANY_ARITY, true, uris, &refs, true)
 			}
 		case .Param:
 			if f == target.origin_file {

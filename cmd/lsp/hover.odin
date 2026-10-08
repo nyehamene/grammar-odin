@@ -88,9 +88,11 @@ hover_for :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, offset: i
 	case .Param:
 		return fmt.tprintf("**type:** proc parameter `%s`", hit.ident.name)
 	case .Rule_Name:
-		return symbol_hover(cu, fi, hit.ident.name)
+		return symbol_hover(cu, fi, hit.ident.name, 0)
 	case .Ident, .Call_Name:
-		return symbol_hover(cu, fi, hit.ident.name)
+		// A call names a proc of its own arity, which is what tells the procs of a
+		// name apart, so the arity rides along with the hit.
+		return symbol_hover(cu, fi, hit.ident.name, hit.arity)
 	case .Binding_Name:
 		return binding_hover(cu, fi, hit.ident.name)
 	case .Member_Object:
@@ -101,26 +103,33 @@ hover_for :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, offset: i
 	return ""
 }
 
-// symbol_hover describes a name in scope: a rule in the file's namespace, an
-// import binding, or an unknown identifier. It reports the type of the value
-// the name produces.
-symbol_hover :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, name: string) -> string {
-	if ref, ok := rule_ref_at(cu, fi, name); ok {
-		return fmt.tprintf(
-			"**`%s`**\n\n**type:** %s\n**declared at:** `%s`",
-			name,
-			type_doc(ref),
-			location_string(ref.file, ref.offset),
-		)
-	}
-	if r, is_private := fi.private_rules[name]; is_private {
-		pos := token.position_at(fi.src, r.offset)
+// symbol_hover describes a name in scope: the declaration of that arity, an import
+// binding, or an unknown identifier. It reports the type of the value the name
+// produces.
+symbol_hover :: proc(
+	cu: ^check.Compilation_Unit,
+	fi: ^check.Loaded_File,
+	name: string,
+	arity: int,
+) -> string {
+	// A private declaration is reported by position alone: it is not reachable from
+	// another file, so the path would say nothing the line and column do not.
+	if ref, found := private_at(cu, fi, name, arity); found {
+		pos := token.position_at(ref.file.src, ref.offset)
 		return fmt.tprintf(
 			"**`%s`**\n\n**type:** %s\n**declared at:** `%d:%d`",
 			name,
-			type_doc(r),
+			type_doc(ref, 1),
 			pos.line,
 			pos.column,
+		)
+	}
+	if ref, found := resolve_at(cu, fi, name, arity); found {
+		return fmt.tprintf(
+			"**`%s`**\n\n**type:** %s\n**declared at:** `%s`",
+			name,
+			type_doc(ref, declared_arity_overloads(cu, fi, name)),
+			location_string(ref.file, ref.offset),
 		)
 	}
 	if _, is_binding := fi.bindings[name]; is_binding {
@@ -175,8 +184,11 @@ member_hover :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, hit: H
 			filepath.base(target_dir),
 		)
 	}
-	ref, rule_found := ns.rules[hit.ident.name]
-	if !rule_found {
+	ref, found := ns.rules[hit.ident.name]
+	if hit.arity > 0 {
+		ref, found = check.Lookup_Proc(ns.procs[hit.ident.name], hit.arity)
+	}
+	if !found {
 		return fmt.tprintf(
 			"**member** `%s`\n\n**type:** member\n**namespace:** `%s`",
 			hit.ident.name,
@@ -192,22 +204,60 @@ member_hover :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, hit: H
 	)
 }
 
-// rule_ref_at resolves name to the Rule_Ref of its declaration in the file's
-// own namespace.
-rule_ref_at :: proc(
+// resolve_at resolves name to the declaration the checker would resolve it to: the
+// rule of arity zero, or the proc of the given arity. It is the one place the server
+// resolves a bare name, so hover, definition and the references all agree.
+resolve_at :: proc(
 	cu: ^check.Compilation_Unit,
 	fi: ^check.Loaded_File,
 	name: string,
+	arity: int,
 ) -> (
 	ref: check.Rule_Ref,
 	found: bool,
 ) {
-	ns := cu.namespaces[fi.namespace_path]
-	if ns == nil {
+	if arity > 0 {
+		ref, how := check.Resolve_Proc(cu, fi, name, arity)
+		return ref, how == .Found
+	}
+	if ref, found := check.Resolve_Rule(cu, fi, name); found do return ref, true
+	return {}, false
+}
+
+// private_at resolves name to the private declaration of that arity in fi, which is
+// the one file-scoped lookup in the server: the checker resolves the private rules
+// ahead of the namespace, and this keeps hover and definition matching it.
+private_at :: proc(
+	cu: ^check.Compilation_Unit,
+	fi: ^check.Loaded_File,
+	name: string,
+	arity: int,
+) -> (
+	ref: check.Rule_Ref,
+	found: bool,
+) {
+	if arity > 0 {
+		for candidate in fi.private_procs[name] {
+			if candidate.arity == arity do return candidate, true
+		}
 		return {}, false
 	}
-	rule, ok := ns.rules[name]
-	return rule, ok
+	rule, is_rule := fi.private_rules[name]
+	return rule, is_rule
+}
+
+// declared_arity_overloads reports how many procs are declared as name, which is what
+// a hover says about a name that has more than one.
+declared_arity_overloads :: proc(
+	cu: ^check.Compilation_Unit,
+	fi: ^check.Loaded_File,
+	name: string,
+) -> int {
+	total := len(fi.private_procs[name])
+	if ns := cu.namespaces[fi.namespace_path]; ns != nil && len(ns.procs[name]) > total {
+		total = len(ns.procs[name])
+	}
+	return total
 }
 
 // location_string renders "path:line:column" for an offset within fi.

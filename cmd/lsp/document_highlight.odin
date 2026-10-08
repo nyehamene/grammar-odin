@@ -68,11 +68,13 @@ handle_document_highlight :: proc(srv: ^Server, id: Request_Id, obj: json.Object
 
 	switch target.kind {
 	case .Rule:
-		collect_rule_refs(fi, target.ns_dir, target.name, true, uris, &refs)
+		// Highlighting follows the declaration under the cursor, so it is matched by
+		// name and arity rather than across the procs of the name.
+		collect_rule_refs(fi, target.ns_dir, target.name, target.arity, true, uris, &refs)
 	case .Binding:
 		collect_binding_refs(fi, target.name, true, uris, &refs)
 	case .Private_Rule:
-		collect_rule_refs(fi, target.ns_dir, target.name, true, uris, &refs, true)
+		collect_rule_refs(fi, target.ns_dir, target.name, target.arity, true, uris, &refs, true)
 	case .Param:
 		collect_param_refs(fi, target.decl, target.name, true, uris, &refs)
 	}
