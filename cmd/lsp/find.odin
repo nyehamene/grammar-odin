@@ -25,9 +25,11 @@ Hit :: struct {
 	literal:       string,
 	member_object: string, // receiver name when kind == .Member
 	decl:          int, // decl index in Loaded_File.file when kind == .Param
-	// arity is the argument count of the call when kind == .Call_Name, which is what
-	// tells the procs of a name apart. It is 0 everywhere else, and for a bare
-	// identifier, which names the rule of arity zero.
+	// arity is what tells the procs of a name apart, and it comes from two places: the
+	// declaration a .Rule_Name hit sits on, which is that declaration's own parameter
+	// count, and the argument count of a .Call_Name hit. It is 0 for a bare identifier,
+	// which names the rule of arity zero. So a feature working from a hit can tell
+	// whether it is looking at one declaration or at a use of one.
 	arity: int,
 }
 
@@ -38,7 +40,11 @@ find_hit :: proc(file: ^ast.File, offset: int) -> Hit {
 		#partial switch d in decl {
 		case ast.Rule:
 			if hit_ident(d.ident, offset) {
-				return Hit{kind = .Rule_Name, ident = d.ident}
+				// The name under the cursor *is* this declaration, so the hit carries the
+				// arity it was declared at rather than leaving it to be looked up again.
+				// Without it a proc's own name resolved as a use of arity zero, which no
+				// proc of that name is.
+				return Hit{kind = .Rule_Name, ident = d.ident, arity = len(d.params)}
 			}
 
 			params := make(map[string]bool, len(d.params))

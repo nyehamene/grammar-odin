@@ -156,15 +156,24 @@ reference_target :: proc(
 ) {
 	#partial switch hit.kind {
 	case .Rule_Name:
+		// The name under the cursor is the declaration itself, so the hit already carries
+		// the arity it was declared at. Leaving it out asked for the rule of that name,
+		// which a proc does not have, and every arity-scoped match then failed: neither
+		// the declaration nor a call of that arity was reported a reference.
 		if _, ok := fi.private_rules[hit.ident.name]; ok {
 			return Symbol_Ref {
 				kind = .Private_Rule,
 				name = hit.ident.name,
-				arity = hit_arity_of_decl(&fi.file, hit),
+				arity = hit.arity,
 				origin_file = fi,
 			}, true
 		}
-		return Symbol_Ref{kind = .Rule, name = hit.ident.name, ns_dir = fi.namespace_path}, true
+		return Symbol_Ref {
+			kind = .Rule,
+			name = hit.ident.name,
+			arity = hit.arity,
+			ns_dir = fi.namespace_path,
+		}, true
 	case .Ident, .Call_Name:
 		if _, is_binding := fi.bindings[hit.ident.name]; is_binding {
 			return Symbol_Ref{kind = .Binding, name = hit.ident.name, origin_file = fi}, true
@@ -202,7 +211,14 @@ reference_target :: proc(
 	case .Member:
 		if dir, is_binding := fi.bindings[hit.member_object]; is_binding {
 			if _, _, ok := member_ref_at(cu, fi, hit); ok {
-				return Symbol_Ref{kind = .Rule, name = hit.ident.name, ns_dir = dir}, true
+				// member_ref_at resolved the member at the hit's arity, so the reference
+				// has to carry the same one for the procs of that name to be told apart.
+				return Symbol_Ref {
+					kind = .Rule,
+					name = hit.ident.name,
+					arity = hit.arity,
+					ns_dir = dir,
+				}, true
 			}
 		}
 	case .Param:
@@ -215,18 +231,6 @@ reference_target :: proc(
 // ANY_ARITY is the arity collect_rule_refs reads as "this name at any arity", which is
 // what a rename asks for.
 ANY_ARITY :: -1
-
-// hit_arity_of_decl reports the arity of the declaration whose own name sits at hit, so
-// that a feature working from a declaration knows which overload of the name it is. A
-// name in a body resolves by the arity of its use, but a name that *is* a declaration
-// resolves to itself.
-hit_arity_of_decl :: proc(file: ^ast.File, hit: Hit) -> int {
-	for decl in file.decls {
-		rule, is_rule := decl.(ast.Rule)
-		if is_rule && rule.ident.pos == hit.ident.pos do return len(rule.params)
-	}
-	return 0
-}
 
 // collect_rule_refs appends every occurrence of the declaration name/arity (in the
 // namespace directory target_ns_dir) inside file f: its declaration, term references,

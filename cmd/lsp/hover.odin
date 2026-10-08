@@ -90,9 +90,9 @@ hover_for :: proc(cu: ^check.Compilation_Unit, fi: ^check.Loaded_File, offset: i
 	case .Param:
 		return fmt.tprintf("**type:** proc parameter `%s`", hit.ident.name)
 	case .Rule_Name:
-		// The name under the cursor *is* a declaration, and it may be a proc, so it is
-		// resolved at the arity it was declared with rather than as a rule.
-		return symbol_hover(cu, fi, hit.ident.name, hit_arity_of_decl(&fi.file, hit))
+		// The name under the cursor *is* a declaration, and it may be a proc, so the hit
+		// carries the arity it was declared at rather than it being resolved as a rule.
+		return symbol_hover(cu, fi, hit.ident.name, hit.arity)
 	case .Ident, .Call_Name:
 		// A call names a proc of its own arity, which is what tells the procs of a
 		// name apart, so the arity rides along with the hit.

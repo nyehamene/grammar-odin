@@ -1182,3 +1182,181 @@ test_lsp_hover_shows_a_sibling_files_declaration :: proc(t: ^testing.T) {
 	testing.expectf(t, strings.contains(hover, "sib.grammar"), "got %s", hover)
 	testing.expectf(t, strings.contains(hover, `helper = \"h\";`), "got %s", hover)
 }
+
+// A proc's own name is its declaration, so references on it are the references of that
+// proc: the declaration and the calls of that arity. Asking for them used to return
+// nothing, because the request was resolved as if the name named the arity-zero rule of
+// it, which a proc has not got.
+@(test)
+test_lsp_references_from_a_proc_declaration :: proc(t: ^testing.T) {
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(
+			`textDocument/didOpen`,
+			`{"textDocument":{"uri":"file:///tmp/proc_ref.grammar","languageId":"grammar","version":1,"text":"foo = <group \"a\" \"b\">;\n\ngroup x y = x y;\n"}}`,
+		),
+		// On `group` of the declaration, which is the third line of the file and so
+		// index 2, character 0. The blank line before it is line 1.
+		make_request(
+			`2`,
+			`textDocument/references`,
+			`{"textDocument":{"uri":"file:///tmp/proc_ref.grammar"},"position":{"line":2,"character":0},"context":{"includeDeclaration":true}}`,
+		),
+		make_request(`3`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	refs := response_for(output, `2`)
+	// The declaration itself, and the call that reaches it.
+	testing.expectf(t, strings.contains(refs, `"line":2,"character":0`), "got %s", refs)
+	// The callee of `<group \"a\" \"b\">` begins at character 7; 6 is the `<`.
+	testing.expectf(t, strings.contains(refs, `"line":0,"character":7`), "got %s", refs)
+	testing.expectf(t, strings.count(refs, `"uri"`) == 2, "got %s", refs)
+}
+
+// The two ends of a symbol agree: the references of a call are the references of the
+// declaration it reaches. Asking from either side returned the same set before a proc's
+// own name was resolved by its arity, so this is the property that was broken.
+@(test)
+test_lsp_references_agree_from_either_end :: proc(t: ^testing.T) {
+	uri := `file:///tmp/agree.grammar`
+	src := `,"languageId":"grammar","version":1,"text":"foo = <group \"a\" \"b\">;\ngroup x y = x y;\n"}}`
+	open := doc_params(uri, src)
+	defer delete(open)
+	from_decl := doc_params(
+		uri,
+		`},"position":{"line":1,"character":0},"context":{"includeDeclaration":true}}`,
+	)
+	defer delete(from_decl)
+	from_call := doc_params(
+		uri,
+		`},"position":{"line":0,"character":7},"context":{"includeDeclaration":true}}`,
+	)
+	defer delete(from_call)
+
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(`textDocument/didOpen`, open),
+		make_request(`2`, `textDocument/references`, from_decl),
+		make_request(`3`, `textDocument/references`, from_call),
+		make_request(`4`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	decl_side := response_for(output, `2`)
+	call_side := response_for(output, `3`)
+	testing.expectf(t, strings.count(decl_side, `"uri"`) == 2, "got %s", decl_side)
+	testing.expectf(t, strings.count(call_side, `"uri"`) == 2, "got %s", call_side)
+
+	// The two responses differ only in their id, so the results are compared.
+	decl_result := decl_side[strings.index(decl_side, `"result":`):]
+	call_result := call_side[strings.index(call_side, `"result":`):]
+	testing.expectf(
+		t,
+		decl_result == call_result,
+		"from the declaration: %s\nfrom the call: %s",
+		decl_result,
+		call_result,
+	)
+}
+
+// The procs of a name are separate declarations, so the references of one arity are
+// not those of another: a call of a different arity does not name it.
+@(test)
+test_lsp_references_of_one_arity_exclude_the_others :: proc(t: ^testing.T) {
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(
+			`textDocument/didOpen`,
+			`{"textDocument":{"uri":"file:///tmp/arity_ref.grammar","languageId":"grammar","version":1,"text":"one = <group \"a\">;\ntwo = <group \"a\" \"b\">;\ngroup x = x;\ngroup x y = x y;\n"}}`,
+		),
+		// On `group` of the arity-2 declaration at line 3, character 0.
+		make_request(
+			`2`,
+			`textDocument/references`,
+			`{"textDocument":{"uri":"file:///tmp/arity_ref.grammar"},"position":{"line":3,"character":0},"context":{"includeDeclaration":true}}`,
+		),
+		make_request(`3`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	refs := response_for(output, `2`)
+	// Its own declaration and the arity-2 call, whose callee begins at character 7.
+	testing.expectf(t, strings.contains(refs, `"line":3,"character":0`), "got %s", refs)
+	testing.expectf(t, strings.contains(refs, `"line":1,"character":7`), "got %s", refs)
+	testing.expectf(t, strings.count(refs, `"uri"`) == 2, "got %s", refs)
+	// The arity-1 declaration and the arity-1 call are a different declaration.
+	testing.expectf(t, !strings.contains(refs, `"line":2,"character":0`), "got %s", refs)
+	testing.expectf(t, !strings.contains(refs, `"line":0,"character":7`), "got %s", refs)
+}
+
+// The declaration a call reaches is found by its own arity, so jumping from a proc's
+// name lands on that proc rather than looking for a rule of that name.
+@(test)
+test_lsp_definition_from_a_proc_declaration :: proc(t: ^testing.T) {
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(
+			`textDocument/didOpen`,
+			`{"textDocument":{"uri":"file:///tmp/proc_def.grammar","languageId":"grammar","version":1,"text":"foo = <group \"a\" \"b\">;\n\ngroup x y = x y;\n"}}`,
+		),
+		// On `group` of the declaration, which is index 2, character 0.
+		make_request(
+			`2`,
+			`textDocument/definition`,
+			`{"textDocument":{"uri":"file:///tmp/proc_def.grammar"},"position":{"line":2,"character":0}}`,
+		),
+		make_request(`3`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	target := response_for(output, `2`)
+	testing.expectf(t, strings.contains(target, `"line":2,"character":0`), "got %s", target)
+}
+
+// Highlighting follows the declaration under the cursor, so it is matched by name and
+// arity like references rather than across the procs of the name.
+@(test)
+test_lsp_highlight_of_a_proc_declaration :: proc(t: ^testing.T) {
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(
+			`textDocument/didOpen`,
+			`{"textDocument":{"uri":"file:///tmp/proc_hl.grammar","languageId":"grammar","version":1,"text":"one = <group \"a\">;\ntwo = <group \"a\" \"b\">;\ngroup x = x;\ngroup x y = x y;\n"}}`,
+		),
+		// On `group` of the arity-2 declaration at line 3, character 0.
+		make_request(
+			`2`,
+			`textDocument/documentHighlight`,
+			`{"textDocument":{"uri":"file:///tmp/proc_hl.grammar"},"position":{"line":3,"character":0}}`,
+		),
+		make_request(`3`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	marks := response_for(output, `2`)
+	testing.expectf(t, strings.contains(marks, `"line":3,"character":0`), "got %s", marks)
+	testing.expectf(t, strings.contains(marks, `"line":1,"character":7`), "got %s", marks)
+	// The arity-1 declaration is a different declaration and is not marked.
+	testing.expectf(t, !strings.contains(marks, `"line":2,"character":0`), "got %s", marks)
+}
