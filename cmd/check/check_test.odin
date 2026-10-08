@@ -363,6 +363,9 @@ test_proc_used_as_production :: proc(t: ^testing.T) {
 	)
 }
 
+// A call picks the proc whose arity is the number of arguments it passes, so a
+// wrong number of arguments is no longer a mismatch against one arity but a name with
+// no proc at that arity. The message says which arities would have worked.
 @(test)
 test_proc_call_arity :: proc(t: ^testing.T) {
 	src :=
@@ -377,8 +380,107 @@ test_proc_call_arity :: proc(t: ^testing.T) {
 		t,
 		msgs,
 		{
-			"main.grammar:5:13: proc 'p' expects 1 argument, but got 2",
-			"main.grammar:6:12: proc 'p' expects 1 argument, but got 0",
+			"main.grammar:5:13: proc 'p' has no overload with arity 2. Did you mean to pass 1 argument.",
+			"main.grammar:6:12: proc 'p' has no overload with arity 0. Did you mean to pass 1 argument.",
+		},
+	)
+}
+
+// A name may be declared as a rule and as procs of several arities at once. The rule
+// and the procs never collide, since a rule is a declaration of no parameters, and a
+// call reaches the proc of its own arity.
+@(test)
+test_a_rule_and_procs_of_one_name_coexist :: proc(t: ^testing.T) {
+	// The names are exported, so nothing here is reported as an unused local and the
+	// only diagnostics are the ones about resolution.
+	src :=
+		"A = \"a\";\n" +
+		"P = \"zero\";\n" +
+		"P x = x;\n" +
+		"P x y = x y;\n" +
+		"Rule_Ref = P;\n" +
+		"One = <P A>;\n" +
+		"Two = <P A A>;\n"
+	files := []Mem_File{test_src(t, "coexist", "main.grammar", src)}
+	assert_messages(t, run_semantics(files), {})
+	assert_warnings(t, files, {})
+}
+
+// The arities a name is declared at are listed in the message, in ascending order and
+// joined the way a list of them reads.
+@(test)
+test_a_call_lists_the_arities_declared :: proc(t: ^testing.T) {
+	src :=
+		"a = \"a\";\n" +
+		"p x = x;\n" +
+		"p x y = x y;\n" +
+		"p x y z = x y z;\n" +
+		"too_many = <p a a a a>;\n"
+	msgs := run_semantics([]Mem_File{test_src(t, "arities", "main.grammar", src)})
+	assert_messages(
+		t,
+		msgs,
+		{
+			"main.grammar:5:13: proc 'p' has no overload with arity 4. Did you mean to pass 1, 2, or 3 arguments.",
+		},
+	)
+}
+
+// Two declarations of no parameters are the same rule twice.
+@(test)
+test_duplicate_rule_is_reported :: proc(t: ^testing.T) {
+	src := "p = \"a\";\np = \"b\";\n"
+	msgs := run_semantics([]Mem_File{test_src(t, "duprule", "main.grammar", src)})
+	assert_messages(
+		t,
+		msgs,
+		{
+			"main.grammar:2:1: field p redeclared in this namespace. (see other declaration at main.grammar:1:1)",
+		},
+	)
+}
+
+// A name and an arity together name one proc, so two declarations at the same arity
+// are the same proc twice, while two at different arities are two procs.
+@(test)
+test_duplicate_proc_is_reported :: proc(t: ^testing.T) {
+	src := "p x = x;\np a = a;\n"
+	msgs := run_semantics([]Mem_File{test_src(t, "dupproc", "main.grammar", src)})
+	assert_messages(
+		t,
+		msgs,
+		{
+			"main.grammar:2:1: field p redeclared in this namespace. (see other declaration at main.grammar:1:1)",
+		},
+	)
+}
+
+// A call names a proc, so a name declared only as a rule is not callable. That is a
+// different mistake from naming something that is not declared at all.
+@(test)
+test_a_call_to_a_rule_is_not_callable :: proc(t: ^testing.T) {
+	src := "p = \"a\";\nuse = <p>;\n"
+	msgs := run_semantics([]Mem_File{test_src(t, "callrule", "main.grammar", src)})
+	assert_messages(t, msgs, {"main.grammar:2:8: not callable: 'p'"})
+}
+
+// Each proc of a name is a declaration of its own, so one that is called says nothing
+// about the others and an uncalled arity is still reported.
+@(test)
+test_an_unused_proc_is_reported_per_arity :: proc(t: ^testing.T) {
+	src :=
+		"a = \"a\";\n" +
+		"p x = x;\n" +
+		"p x y = x y;\n" +
+		"use = <p a>;\n"
+	files := []Mem_File{test_src(t, "unusedproc", "main.grammar", src)}
+	assert_messages(t, run_semantics(files), {})
+	assert_warnings(
+		t,
+		files,
+		{
+			"main.grammar:3:1: warning: unused local proc: p with 2 parameters",
+			"main.grammar:4:1: warning: unused local rule: use",
 		},
 	)
 }
