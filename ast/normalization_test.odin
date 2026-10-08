@@ -3,30 +3,41 @@ package ast
 import "core:strings"
 import "core:testing"
 
-// scope_of returns a scope holding every rule in file. The scope shares the rules
-// the file holds, so the file has to outlive it. The caller owns the scope and
-// frees it with delete(scope.rules_by_name).
+// scope_of returns the proc scope holding the procs of file. The scope shares the
+// rules the file holds, so the file has to outlive it. The caller owns the scope and
+// frees it with Destroy_Scope.
 scope_of :: proc(file: ^File) -> Scope {
-	scope: Scope
+	rules := make([dynamic]Rule, len(file.decls), file.allocator)
+	defer delete(rules)
 	for decl in file.decls {
 		rule := decl.(Rule) or_continue
-		scope.rules_by_name[rule.ident.name] = rule
+		append(&rules, rule)
 	}
-	return scope
+	return Build_Scope(rules[:], file.allocator)
 }
 
-// expand_one parses source, expands the rule named name against every rule source
+// rule_named returns the rule named name among the declarations of file. It shares
+// the rule rather than copying it, so the file has to outlive the result.
+rule_named :: proc(t: ^testing.T, file: ^File, name: string) -> Rule {
+	for decl in file.decls {
+		rule, is_rule := decl.(Rule)
+		if is_rule && rule.ident.name == name do return rule
+	}
+	testing.fail_now(t, strings.concatenate({"the fixture declares no rule named ", name}))
+}
+
+// expand_one parses source, expands the rule named name against every proc source
 // declares, and returns the expanded rule, whether every call in it was expanded,
 // and the scope it was expanded against. source has to parse cleanly.
 //
 // The caller owns all three: the rule with destroy_rule, the scope with
-// delete(scope.rules_by_name).
+// Destroy_Scope.
 expand_one :: proc(t: ^testing.T, source, name: string) -> (Rule, bool, Scope) {
 	file := must_parse(t, source)
 	defer destroy_file(&file)
 
 	scope := scope_of(&file)
-	expanded, ok := expand_rule(scope.rules_by_name[name], &scope)
+	expanded, ok := expand_rule(rule_named(t, &file, name), &scope)
 	return expanded, ok, scope
 }
 
@@ -137,7 +148,7 @@ test_expand_rule_inlines_a_chain_of_calls :: proc(t: ^testing.T) {
 		"call_site",
 	)
 	defer destroy_rule(&expanded)
-	defer delete(scope.rules_by_name)
+	defer Destroy_Scope(&scope)
 
 	testing.expect(t, ok, "every call of call_site should expand")
 	testing.expect(t, !has_call(expanded.production), "an expanded rule holds no call")
@@ -156,14 +167,14 @@ test_expand_rule_gives_each_call_its_own_arguments :: proc(t: ^testing.T) {
 	defer destroy_file(&file)
 
 	scope := scope_of(&file)
-	defer delete(scope.rules_by_name)
+	defer Destroy_Scope(&scope)
 
-	first, ok_first := expand_rule(scope.rules_by_name["first"], &scope)
+	first, ok_first := expand_rule(rule_named(t, &file, "first"), &scope)
 	defer destroy_rule(&first)
 	testing.expect(t, ok_first, "every call of first should expand")
 	expect_shape(t, first.production, `seq("a" rep("a"))`)
 
-	second, ok_second := expand_rule(scope.rules_by_name["second"], &scope)
+	second, ok_second := expand_rule(rule_named(t, &file, "second"), &scope)
 	defer destroy_rule(&second)
 	testing.expect(t, ok_second, "every call of second should expand")
 	expect_shape(t, second.production, `seq("b" rep("b"))`)
@@ -183,11 +194,9 @@ test_expand_rule_leaves_the_scope_unchanged :: proc(t: ^testing.T) {
 		"first",
 	)
 	defer destroy_rule(&first)
-	defer delete(scope.rules_by_name)
+	defer Destroy_Scope(&scope)
 
 	expect_shape(t, first.production, `seq("a" rep("a"))`)
-	expect_shape(t, scope.rules_by_name["item"].production, `seq(x rep(x))`)
-	expect_shape(t, scope.rules_by_name["wrap"].production, `call(item, x)`)
 }
 
 // A call the scope cannot resolve is reported rather than dropped, and is left in
@@ -196,10 +205,88 @@ test_expand_rule_leaves_the_scope_unchanged :: proc(t: ^testing.T) {
 test_expand_rule_reports_a_call_it_cannot_resolve :: proc(t: ^testing.T) {
 	expanded, ok, scope := expand_one(t, `use = <nope "a">;`, "use")
 	defer destroy_rule(&expanded)
-	defer delete(scope.rules_by_name)
+	defer Destroy_Scope(&scope)
 
 	testing.expect(t, !ok, "an undeclared callee cannot be expanded")
 	expect_shape(t, expanded.production, `call(nope, "a")`)
+}
+
+// A name may be declared as procs of several arities, and a call picks the one
+// whose arity is the number of arguments it passes. Before this, the last
+// declaration of a name won and every call went to it, so a call of one arity
+// expanded against a proc of another.
+@(test)
+test_a_call_picks_the_proc_of_its_arity :: proc(t: ^testing.T) {
+	expanded, ok, scope := expand_one(
+		t,
+		`
+		pair x y = x y;
+		one x = x;
+		a = <one "a">;
+		b = <pair "b" "c">;
+		`,
+		"b",
+	)
+	defer destroy_rule(&expanded)
+	defer Destroy_Scope(&scope)
+
+	testing.expect(t, ok, "every call of b should expand")
+	expect_shape(t, expanded.production, `seq("b" "c")`)
+}
+
+// A rule declares no parameters, so it is not a proc and a call does not name it.
+// The checker reports that as not callable; expansion reports it the way it
+// reports any call it cannot resolve and leaves the call in place.
+@(test)
+test_a_call_does_not_reach_a_rule :: proc(t: ^testing.T) {
+	expanded, ok, scope := expand_one(t, `item = "i"; use = <item>;`, "use")
+	defer destroy_rule(&expanded)
+	defer Destroy_Scope(&scope)
+
+	testing.expect(t, !ok, "a rule is not callable")
+	expect_shape(t, expanded.production, `call(item)`)
+}
+
+// A call whose arity no proc of that name answers to cannot be bound to any of
+// them, so it is left in place rather than paired off against the closest arity.
+@(test)
+test_a_call_of_an_arity_no_proc_has_is_reported :: proc(t: ^testing.T) {
+	expanded, ok, scope := expand_one(t, `one x = x; two x y = x y; use = <one "a" "b">;`, "use")
+	defer destroy_rule(&expanded)
+	defer Destroy_Scope(&scope)
+
+	testing.expect(t, !ok, "no proc of that name takes that many arguments")
+	expect_shape(t, expanded.production, `call(one, "a", "b")`)
+}
+
+// A name and an arity together name one proc, so a repeat of both keeps the first
+// declaration. The checker is what reports it.
+@(test)
+test_build_scope_keeps_the_first_proc_of_an_arity :: proc(t: ^testing.T) {
+	file := must_parse(t, `
+		p x = "first";
+		p a = "second";
+		p x y = "third";
+		use = <p "z">;
+		`)
+	defer destroy_file(&file)
+
+	scope := scope_of(&file)
+	defer Destroy_Scope(&scope)
+
+	procs := scope.procs_by_name["p"]
+	testing.expect_value(t, len(procs), 2)
+
+	one, has_one := lookup_proc(&scope, "p", 1)
+	testing.expect(t, has_one, "the arity 1 proc is declared")
+	expect_shape(t, one.production, `"first"`)
+
+	two, has_two := lookup_proc(&scope, "p", 2)
+	testing.expect(t, has_two, "the arity 2 proc is declared")
+	expect_shape(t, two.production, `"third"`)
+
+	testing.expect_value(t, len(procs[0].params), 1)
+	testing.expect_value(t, len(procs[1].params), 2)
 }
 
 // A callee in another namespace is not in this scope, so it is reported the same
@@ -215,7 +302,7 @@ test_expand_rule_reports_a_qualified_callee :: proc(t: ^testing.T) {
 		"use",
 	)
 	defer destroy_rule(&expanded)
-	defer delete(scope.rules_by_name)
+	defer Destroy_Scope(&scope)
 
 	testing.expect(t, !ok, "a callee of another namespace cannot be expanded")
 	expect_shape(t, expanded.production, `call(Z.Rule, "a")`)
@@ -227,7 +314,7 @@ test_expand_rule_reports_a_qualified_callee :: proc(t: ^testing.T) {
 test_expand_rule_stops_on_a_cycle :: proc(t: ^testing.T) {
 	expanded, ok, scope := expand_one(t, `loop x = <loop x>;`, "loop")
 	defer destroy_rule(&expanded)
-	defer delete(scope.rules_by_name)
+	defer Destroy_Scope(&scope)
 
 	testing.expect(t, !ok, "a cycle of calls cannot be expanded")
 	testing.expect(t, has_call(expanded.production), "the call is left in place")
@@ -246,7 +333,7 @@ test_expand_rule_substitutes_a_parameter_in_a_receiver :: proc(t: ^testing.T) {
 		"use",
 	)
 	defer destroy_rule(&expanded)
-	defer delete(scope.rules_by_name)
+	defer Destroy_Scope(&scope)
 
 	// `target` stands in for `ns`, so the call names another rule of another
 	// namespace and is the one thing left in the body.
@@ -267,7 +354,7 @@ test_expand_rule_keeps_a_sequence_inside_an_alternative :: proc(t: ^testing.T) {
 		"choice",
 	)
 	defer destroy_rule(&expanded)
-	defer delete(scope.rules_by_name)
+	defer Destroy_Scope(&scope)
 
 	testing.expect(t, ok, "every call of choice should expand")
 	expect_shape(t, expanded.production, `alt(seq("a" "b") "c")`)
@@ -285,9 +372,9 @@ normalize_one :: proc(
 	defer destroy_file(&file)
 
 	scope := scope_of(&file)
-	defer delete(scope.rules_by_name)
+	defer Destroy_Scope(&scope)
 
-	return normalize_rule(scope.rules_by_name[name], &scope, opts)
+	return normalize_rule(rule_named(t, &file, name), &scope, opts)
 }
 
 // shape_normalized renders a production of the normalized tree, and an absent one as

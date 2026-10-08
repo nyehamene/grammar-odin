@@ -1,6 +1,7 @@
 package ast
 
 import "core:log"
+import "core:mem"
 
 // MAX_EXPANSION_DEPTH bounds how many calls in a row an expansion follows. Rules
 // that call each other in a cycle would expand forever without it, so the bound is
@@ -8,9 +9,16 @@ import "core:log"
 // place rather than dropped silently.
 MAX_EXPANSION_DEPTH :: 256
 
-// Scope is the set of rules an expansion resolves a call against.
+// Scope is the set of procs an expansion resolves a call against.
+//
+// A proc is a declaration with parameters, and a name may be declared as procs of
+// several arities, so the list under a name holds one declaration per arity and the
+// arity is what tells them apart. Rules, which are the declarations of no parameters,
+// are not held here: a call names a proc, and a name that is only a rule has no proc
+// to call.
 Scope :: struct {
-	rules_by_name: map[string]Rule,
+	procs_by_name: map[string][]Rule,
+	allocator:     mem.Allocator,
 }
 
 // Normalized_Production is a production of the normalized tree: a production that
@@ -130,18 +138,25 @@ Normalize_Options :: struct {
 	conflicts: [dynamic]Tag_Conflict,
 }
 
-lookup :: proc(s: ^Scope, n: string) -> (r: Rule, ok: bool) {
-	rule := s.rules_by_name[n] or_return
-	return rule, true
+// lookup_proc returns the proc a name and an arity together name, and reports
+// whether the scope declares one. Since the procs of a name are held in source
+// order and there are few of them, this reads the list rather than indexing it.
+lookup_proc :: proc(s: ^Scope, n: string, arity: int) -> (r: Rule, ok: bool) {
+	procs, declared := s.procs_by_name[n]
+	if !declared do return {}, false
+	for candidate in procs {
+		if len(candidate.params) == arity do return candidate, true
+	}
+	return {}, false
 }
 
-// get_rule returns the rule a call names. A qualified name names a rule of another
-// namespace, which a scope over one namespace does not hold, so it is reported as
-// unresolved rather than guessed at.
-get_rule :: proc(name: Any_Ident, s: ^Scope) -> (r: Rule, ok: bool) {
+// get_proc returns the proc a call names, at the arity the call passes arguments
+// at. A qualified name names a rule of another namespace, which a scope over one
+// namespace does not hold, so it is reported as unresolved rather than guessed at.
+get_proc :: proc(name: Any_Ident, arity: int, s: ^Scope) -> (r: Rule, ok: bool) {
 	switch it in name {
 	case Ident:
-		return lookup(s, it.name)
+		return lookup_proc(s, it.name, arity)
 	case Qual_Ident:
 	}
 	return {}, false
@@ -233,35 +248,42 @@ expand_production :: proc(p: Production, s: ^Scope, depth: int) -> (Production, 
 	return p, true
 }
 
-// expand_call returns the body of the rule a call names, with the call's arguments
-// substituted for the callee's parameters, expanded in turn. A call the scope
-// cannot resolve, or one that has already followed MAX_EXPANSION_DEPTH calls, comes
-// back as it was, with ok = false. The call is taken over either way, so a call that
-// is expanded is freed here and one that is kept becomes part of the result.
+// expand_call returns the body of the proc a call names, with the call's arguments
+// substituted for the callee's parameters, expanded in turn. A call the scope cannot
+// resolve, or one that has already followed MAX_EXPANSION_DEPTH calls, comes back as
+// it was, with ok = false. The call is taken over either way, so a call that is
+// expanded is freed here and one that is kept becomes part of the result.
+//
+// The callee is resolved at the number of arguments the call passes, so the
+// parameters bound below are exactly as many as there are arguments. A call whose
+// arity no declared proc answers to is an error the checker has already reported, and
+// it is left in place rather than bound as far as it goes.
 expand_call :: proc(call: ^Call, s: ^Scope, depth: int) -> (Production, bool) {
 	if depth <= 0 {
 		log.debugf("stopped expanding calls at %d: the chain is too deep", call.pos)
 		return call, false
 	}
 
-	rule, ok := get_rule(call.ident, s)
+	arity := len(call.args)
+	callee, ok := get_proc(call.ident, arity, s)
 	if !ok {
-		log.debugf("stopped expanding a call at %d: the scope has no such rule", call.pos)
+		log.debugf(
+			"stopped expanding a call at %d: the scope has no proc of arity %d",
+			call.pos,
+			arity,
+		)
 		return call, false
 	}
 
-	// A call that passes the wrong number of arguments is an error the checker has
-	// already reported, so the arguments are paired off as far as they go and a
-	// parameter left over keeps its own name in the body.
-	args := make(map[string]Production, len(rule.params))
+	args := make(map[string]Production, arity)
 	defer delete(args)
-	for i in 0 ..< min(len(rule.params), len(call.args)) {
-		args[rule.params[i].name] = call.args[i]
+	for param, i in callee.params {
+		args[param.name] = call.args[i]
 	}
 
 	// Substitution copies whatever it binds, so the arguments it borrowed are free
 	// to go once it is done.
-	body := substitute_parameter(clone_production(rule.production), args)
+	body := substitute_parameter(clone_production(callee.production), args)
 	destroy_production(call)
 
 	return expand_production(body, s, depth - 1)
@@ -1132,24 +1154,52 @@ destroy_production_list :: proc(prods: []Production, allocator := context.alloca
 	for prod in prods do destroy_production(prod, allocator)
 }
 
-// Build_Scope returns a scope holding the given rules, for a caller that
-// resolves calls itself rather than through expand_rule. A rule that is already
-// in the scope is replaced by the later one, which is what declaring a name twice
-// in a namespace means.
+// Build_Scope returns a scope holding the procs among the given rules, for a caller
+// that resolves calls itself rather than through expand_rule. The rules that declare
+// no parameters are not procs and are left out: a call names a proc.
 //
-// The scope owns its map and is freed with Destroy_Scope. It does not own the
-// rules: each one keeps the arrays and the source views it was parsed from, so
-// those have to outlive the scope.
-Build_Scope :: proc(rules: []Rule) -> Scope {
-	scope: Scope
+// A name and an arity together name one proc, so a repeat of both keeps the first
+// declaration and drops the later one, which is what declaring the same proc twice in
+// a namespace means. The checker is what reports that, since a diagnostic does not
+// belong in a scope.
+//
+// The scope owns its map and is freed with Destroy_Scope. It does not own the rules:
+// each one keeps the lists and the source views it was parsed from, so those have to
+// outlive the scope.
+Build_Scope :: proc(rules: []Rule, allocator := context.allocator) -> Scope {
+	scope := Scope{allocator = allocator}
+	scope.procs_by_name = make(map[string][]Rule, allocator)
+
+	// Accumulating in a dynamic array and converting once per name keeps the lists at
+	// their final length, which a slice cannot be grown to after it is built.
+	working := make(map[string][dynamic]Rule, allocator)
+	defer delete(working)
 	for rule in rules {
-		scope.rules_by_name[rule.ident.name] = rule
+		if len(rule.params) == 0 do continue
+		acc := working[rule.ident.name]
+		taken: bool
+		for candidate in acc {
+			if len(candidate.params) == len(rule.params) {
+				taken = true
+			}
+		}
+		if taken do continue
+		append(&acc, rule)
+		working[rule.ident.name] = acc
+	}
+
+	for name, acc in working {
+		scope.procs_by_name[name] = to_slice_rules(acc, allocator)
+		delete(acc)
 	}
 	return scope
 }
 
-// Destroy_Scope frees the map a scope owns. The rules it held are not freed: they
-// belong to whatever they were parsed from.
+// Destroy_Scope frees the map a scope owns and the lists in it. The rules it held are
+// not freed: they belong to whatever they were parsed from.
 Destroy_Scope :: proc(s: ^Scope) {
-	delete(s.rules_by_name)
+	for _, procs in s.procs_by_name {
+		delete(procs, s.allocator)
+	}
+	delete(s.procs_by_name)
 }

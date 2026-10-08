@@ -103,9 +103,9 @@ test_expand_inlines_a_call_among_others :: proc(t: ^testing.T) {
 	expect_stdin(
 		t,
 		[]string{"--stdin"},
-		"item = \"i\";\nuse = \"a\" <item> \"b\";\n",
+		"item x = x;\nuse = \"a\" <item \"i\"> \"b\";\n",
 		0,
-		"== <stdin> ==\nitem = \"i\";\nuse = \"a\" \"i\" \"b\";\n",
+		"== <stdin> ==\nitem x = x;\nuse = \"a\" \"i\" \"b\";\n",
 	)
 }
 
@@ -185,7 +185,7 @@ test_expand_writes_in_place :: proc(t: ^testing.T) {
 	dir := scratch_dir(t, "cmd/expand/testdata/scratch_write")
 	defer os.remove_all(dir)
 	path := concat({dir, "/e.grammar"})
-	write_file(t, path, "item = \"i\";\nuse = <item>;\n")
+	write_file(t, path, "item x = x;\nuse = <item \"i\">;\n")
 
 	res := run_expand([]string{"--write", path}, stdin_unused())
 	defer destroy_result(&res)
@@ -194,7 +194,7 @@ test_expand_writes_in_place :: proc(t: ^testing.T) {
 	data, read_err := os.read_entire_file(path, context.allocator)
 	defer delete(data)
 	testing.expect(t, read_err == nil, "the rewritten file should be readable")
-	testing.expectf(t, string(data) == "item = \"i\";\nuse = \"i\";\n", "got %q", string(data))
+	testing.expectf(t, string(data) == "item x = x;\nuse = \"i\";\n", "got %q", string(data))
 }
 
 // Without --write the file is only read.
@@ -203,7 +203,7 @@ test_expand_leaves_the_file_alone_without_write :: proc(t: ^testing.T) {
 	dir := scratch_dir(t, "cmd/expand/testdata/scratch_stdout")
 	defer os.remove_all(dir)
 	path := concat({dir, "/e.grammar"})
-	src := "item = \"i\";\nuse = <item>;\n"
+	src := "item x = x;\nuse = <item \"i\">;\n"
 	write_file(t, path, src)
 
 	res := run_expand([]string{path}, stdin_unused())
@@ -271,7 +271,7 @@ test_expand_select_picks_one_declaration :: proc(t: ^testing.T) {
 	dir := scratch_dir(t, "cmd/expand/testdata/scratch_select")
 	defer os.remove_all(dir)
 	path := concat({dir, "/s.grammar"})
-	write_file(t, path, "item = \"i\";\nuse = <item>;\nother = <item>;\n")
+	write_file(t, path, "item x = x;\nuse = <item \"i\">;\nother = <item \"i\">;\n")
 
 	res := run_expand([]string{"--select", "2:1", path}, stdin_unused())
 	defer destroy_result(&res)
@@ -286,7 +286,7 @@ test_expand_select_accepts_a_column_inside_the_declaration :: proc(t: ^testing.T
 	dir := scratch_dir(t, "cmd/expand/testdata/scratch_select_column")
 	defer os.remove_all(dir)
 	path := concat({dir, "/s.grammar"})
-	write_file(t, path, "item = \"i\";\nuse = <item>;\n")
+	write_file(t, path, "item x = x;\nuse = <item \"i\">;\n")
 
 	res := run_expand([]string{"--select", "2:7", path}, stdin_unused())
 	defer destroy_result(&res)
@@ -350,7 +350,7 @@ test_expand_select_may_follow_the_path :: proc(t: ^testing.T) {
 	dir := scratch_dir(t, "cmd/expand/testdata/scratch_select_after")
 	defer os.remove_all(dir)
 	path := concat({dir, "/s.grammar"})
-	write_file(t, path, "item = \"i\";\nuse = <item>;\n")
+	write_file(t, path, "item x = x;\nuse = <item \"i\">;\n")
 
 	after := run_expand([]string{path, "--select", "2:1"}, stdin_unused())
 	defer destroy_result(&after)
@@ -369,7 +369,7 @@ test_expand_select_names_a_file_of_a_directory :: proc(t: ^testing.T) {
 	dir := scratch_dir(t, "cmd/expand/testdata/scratch_select_file")
 	defer os.remove_all(dir)
 	write_file(t, concat({dir, "/a.grammar"}), "one = <nope>;\n")
-	write_file(t, concat({dir, "/b.grammar"}), "item = \"i\";\ntwo = <item>;\n")
+	write_file(t, concat({dir, "/b.grammar"}), "item x = x;\ntwo = <item \"i\">;\n")
 
 	res := run_expand([]string{"--select", "b.grammar:2:1", dir}, stdin_unused())
 	defer destroy_result(&res)
@@ -383,7 +383,7 @@ test_expand_select_names_a_file_of_a_directory :: proc(t: ^testing.T) {
 test_expand_select_accepts_a_path_for_the_file :: proc(t: ^testing.T) {
 	dir := scratch_dir(t, "cmd/expand/testdata/scratch_select_path")
 	defer os.remove_all(dir)
-	write_file(t, concat({dir, "/b.grammar"}), "item = \"i\";\ntwo = <item>;\n")
+	write_file(t, concat({dir, "/b.grammar"}), "item x = x;\ntwo = <item \"i\">;\n")
 
 	res := run_expand(
 		[]string{"--select", concat({dir, "/b.grammar", ":2:1"}), dir},
@@ -401,7 +401,7 @@ test_expand_select_leaves_the_other_files_quiet :: proc(t: ^testing.T) {
 	dir := scratch_dir(t, "cmd/expand/testdata/scratch_select_quiet")
 	defer os.remove_all(dir)
 	write_file(t, concat({dir, "/a.grammar"}), "one = <nope>;\n")
-	write_file(t, concat({dir, "/b.grammar"}), "item = \"i\";\ntwo = <item>;\n")
+	write_file(t, concat({dir, "/b.grammar"}), "item x = x;\ntwo = <item \"i\">;\n")
 
 	res := run_expand([]string{"--select", "b.grammar:2:1", dir}, stdin_unused())
 	defer destroy_result(&res)

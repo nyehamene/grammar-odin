@@ -314,6 +314,15 @@ to_slice_productions :: proc(
 	return sliced
 }
 
+// to_slice_rules copies a working list into a slice of exactly its length. The rules
+// are held by value, so the copy shares every list and source view with the original
+// and neither of them frees them.
+to_slice_rules :: proc(list: [dynamic]Rule, allocator := context.allocator) -> []Rule {
+	sliced := make([]Rule, len(list), allocator)
+	copy(sliced, list[:])
+	return sliced
+}
+
 // destroy_file frees all allocations owned by file, with the allocator the parser
 // built it with.
 destroy_file :: proc(file: ^File) {
