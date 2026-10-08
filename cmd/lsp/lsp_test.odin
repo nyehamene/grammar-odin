@@ -223,10 +223,12 @@ test_lsp_hover :: proc(t: ^testing.T) {
 	log.debugf("output:\n%v", output)
 	testing.expect(t, strings.contains(output, `"id": 2`))
 	testing.expect(t, strings.contains(output, `"kind":"markdown"`))
-	testing.expect(t, strings.contains(output, "**`greeting`**"))
-	testing.expect(t, strings.contains(output, "**type:** production, returns a production"))
-	testing.expect(t, strings.contains(output, "declared at"))
+	// A hover reports what a name is declared as, where it is declared, and the
+	// declaration itself.
+	testing.expect(t, strings.contains(output, "rule: greeting"))
+	testing.expect(t, strings.contains(output, "declared at:"))
 	testing.expect(t, strings.contains(output, "1:1"))
+	testing.expect(t, strings.contains(output, `greeting = \"hi\";`))
 	testing.expect(t, strings.contains(output, `"id": 3`))
 	testing.expect(t, strings.contains(output, "**type:** string literal"))
 }
@@ -336,7 +338,7 @@ test_lsp_references_through_a_tag :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(output, `"line":0,"character":35`))
 	// Hover resolves inside the tagged production rather than reporting nothing.
 	testing.expect(t, strings.contains(output, `"id": 3`))
-	testing.expect(t, strings.contains(output, `**` + "`term`" + `**`))
+	testing.expect(t, strings.contains(output, "rule: term"))
 	// So does definition, for every element of it.
 	testing.expect(t, strings.contains(output, `"id": 4`))
 	testing.expect(t, strings.contains(output, `"line":1,"character":0`))
@@ -424,8 +426,11 @@ test_lsp_private_rule_is_file_scoped :: proc(t: ^testing.T) {
 	// Hover reports the private declaration as a bare line:column, which is what
 	// distinguishes a private rule from a namespace rule.
 	hover := response_for(output, `4`)
-	testing.expect(t, strings.contains(hover, "**`_item`**"))
-	testing.expect(t, strings.contains(hover, "**declared at:** `1:1`"))
+	testing.expect(t, strings.contains(hover, "rule: _item"))
+	// A private declaration is reachable only from its own file, so it is located by
+	// line and column rather than by a path that would repeat what they say.
+	testing.expect(t, strings.contains(hover, "declared at: 1:1"))
+	testing.expect(t, strings.contains(hover, `_item = \"a\";`))
 
 	// Rename rewrites the three occurrences in a.grammar and nothing in b.
 	renamed := response_for(output, `5`)
@@ -1058,4 +1063,122 @@ create_request_reader :: proc(id, method, msg: string) -> io.Reader {
 	r := new(strings.Reader, context.temp_allocator)
 	stdin := strings.to_reader(r, req)
 	return stdin
+}
+
+// A proc of a name is one of several, and the arity is what tells them apart, so a
+// hover names it `proc: name/arity` rather than repeating the name. The source shown
+// is the declaration of that arity and not of its siblings.
+@(test)
+test_lsp_hover_names_a_proc_by_its_arity :: proc(t: ^testing.T) {
+	uri := `file:///tmp/proc.grammar`
+	open := doc_params(
+		uri,
+		`,"languageId":"grammar","version":1,"text":"p x = x;\np x y = x y;\nq = <p \"a\" \"b\">;"}}`,
+	)
+	defer delete(open)
+	decl := doc_params(uri, `},"position":{"line":1,"character":0}}`)
+	defer delete(decl)
+
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(`textDocument/didOpen`, open),
+		make_request(`2`, `textDocument/hover`, decl),
+		make_request(`3`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	hover := response_for(output, `2`)
+	testing.expectf(t, strings.contains(hover, "proc: p/2"), "got %s", hover)
+	testing.expectf(t, strings.contains(hover, `p x y = x y;`), "got %s", hover)
+	// The arity-1 declaration is a different declaration and is not the one shown.
+	testing.expectf(t, !strings.contains(hover, "p x = x;"), "got %s", hover)
+}
+
+// A call resolves to the proc of the arity it passes, so hovering the callee shows
+// that overload's source rather than the one of another arity.
+@(test)
+test_lsp_hover_on_a_call_shows_the_resolved_overload :: proc(t: ^testing.T) {
+	uri := `file:///tmp/overload.grammar`
+	open := doc_params(
+		uri,
+		`,"languageId":"grammar","version":1,"text":"p x = x;\np x y = x y;\nq = <p \"a\" \"b\">;"}}`,
+	)
+	defer delete(open)
+	// Character 5 is the `p` of the call; 6 is the space and 7 opens the first
+	// argument's string.
+	callee := doc_params(uri, `},"position":{"line":2,"character":5}}`)
+	defer delete(callee)
+
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(`textDocument/didOpen`, open),
+		make_request(`2`, `textDocument/hover`, callee),
+		make_request(`3`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	hover := response_for(output, `2`)
+	testing.expectf(t, strings.contains(hover, "proc: p/2"), "got %s", hover)
+	testing.expectf(t, strings.contains(hover, `p x y = x y;`), "got %s", hover)
+	testing.expectf(t, !strings.contains(hover, "p x = x;"), "got %s", hover)
+}
+
+// A name may be declared in a sibling file of the namespace, and a hover shows the
+// source of the file that declares it rather than the one being hovered.
+@(test)
+test_lsp_hover_shows_a_sibling_files_declaration :: proc(t: ^testing.T) {
+	dir := ns_setup(t, "cmd/lsp/testdata/scratch/hover_sibling")
+	defer os.remove_all("cmd/lsp/testdata/scratch/hover_sibling")
+	defer delete(dir)
+
+	sib := strings.concatenate({dir, "/sib.grammar"})
+	defer delete(sib)
+	if err := os.write_entire_file(sib, "helper = \"h\";\n"); err != nil {
+		testing.fail_now(t, "failed to write sibling grammar")
+	}
+
+	sib_uri := strings.concatenate({"file://", sib})
+	defer delete(sib_uri)
+	sib_open := doc_params(
+		sib_uri,
+		`,"languageId":"grammar","version":1,"text":"helper = \"h\";"}}`,
+	)
+	defer delete(sib_open)
+
+	main_uri := strings.concatenate({"file://", dir, "/main.grammar"})
+	defer delete(main_uri)
+	main_open := doc_params(
+		main_uri,
+		`,"languageId":"grammar","version":1,"text":"use = helper;"}}`,
+	)
+	defer delete(main_open)
+	use := doc_params(main_uri, `},"position":{"line":0,"character":7}}`)
+	defer delete(use)
+
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(`textDocument/didOpen`, sib_open),
+		make_notification(`textDocument/didOpen`, main_open),
+		make_request(`2`, `textDocument/hover`, use),
+		make_request(`3`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	hover := response_for(output, `2`)
+	testing.expectf(t, strings.contains(hover, "rule: helper"), "got %s", hover)
+	// The location names the file that declares it, which is not the one hovered.
+	testing.expectf(t, strings.contains(hover, "sib.grammar"), "got %s", hover)
+	testing.expectf(t, strings.contains(hover, `helper = \"h\";`), "got %s", hover)
 }

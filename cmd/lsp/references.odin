@@ -217,7 +217,9 @@ reference_target :: proc(
 ANY_ARITY :: -1
 
 // hit_arity_of_decl reports the arity of the declaration whose own name sits at hit, so
-// that renaming or highlighting a declaration knows which overload of the name it is.
+// that a feature working from a declaration knows which overload of the name it is. A
+// name in a body resolves by the arity of its use, but a name that *is* a declaration
+// resolves to itself.
 hit_arity_of_decl :: proc(file: ^ast.File, hit: Hit) -> int {
 	for decl in file.decls {
 		rule, is_rule := decl.(ast.Rule)
