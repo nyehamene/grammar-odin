@@ -801,17 +801,205 @@ test_lsp_signature_help :: proc(t: ^testing.T) {
 
 	output := send_request(stdin)
 	log.debugf("output:\n%v", output)
-	testing.expect(t, strings.contains(output, `"id": 2`))
 	testing.expect(t, strings.contains(output, `"kind":"markdown"`))
-	testing.expect(t, strings.contains(output, `"label":"greet(name, title)"`))
-	testing.expect(t, strings.contains(output, `"label":"name"`))
-	testing.expect(t, strings.contains(output, `"label":"title"`))
 	testing.expect(t, strings.contains(output, "**type:** proc, 2 parameters, returns a production"))
-	testing.expect(t, strings.contains(output, `"id": 3`))
-	testing.expect(t, strings.contains(output, `"activeParameter":1`))
-	testing.expect(t, strings.contains(output, `"id": 4`))
-	testing.expect(t, strings.contains(output, `"label":"greeting"`))
-	testing.expect(t, strings.contains(output, "**type:** production, returns a production"))
+
+	// Every assertion below is scoped to a single response line. Asserting against the
+	// whole stream cannot tell a right answer from a right answer to some other request,
+	// which is what let a call's signature leak onto positions that hold no call.
+	on_callee := response_for(output, `2`)
+	testing.expect(t, strings.contains(on_callee, `"label":"greet(name, title)"`))
+	testing.expect(t, strings.contains(on_callee, `"label":"name"`))
+	testing.expect(t, strings.contains(on_callee, `"label":"title"`))
+
+	second_arg := response_for(output, `3`)
+	testing.expect(t, strings.contains(second_arg, `"activeParameter":1`))
+
+	// The call sits on the last line here, so this position precedes it. Asserting that
+	// the answer does not name the call's callee is the point of the request.
+	on_rule := response_for(output, `4`)
+	testing.expect(t, strings.contains(on_rule, `"label":"greeting"`))
+	testing.expect(t, strings.contains(on_rule, "**type:** production, returns a production"))
+	testing.expect(
+		t,
+		!strings.contains(on_rule, `"label":"greet(`),
+		"a position outside the call must not be described as one of its arguments",
+	)
+}
+
+@(test)
+test_lsp_signature_help_after_call :: proc(t: ^testing.T) {
+	// A grammar whose first call is followed by more text. A call's span used to run to
+	// the end of the file, so every position from the first call onwards was described
+	// by it, and the first call here has one argument, which read as the arity-1 proc.
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(
+			`textDocument/didOpen`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar","languageId":"grammar","version":1,"text":"Source = { decl };\n\ndecl = let\n     | var\n     | const\n     ;\n\nlet   = <def \"let\">;\nvar   = <def \"var\">;\nconst = <def \"const\">;\n\ndef     k = <def k expr>;\ndef   k e = <def k ident e>;\ndef k i e = k i \"=\" e \";\"\n          | k i \";\"\n          ;\n\nident = __ident__;\nexpr  = __expr__;"}}`,
+		),
+		// Inside `<def k expr>` (line 11), on the callee.
+		make_request(
+			`2`,
+			`textDocument/signatureHelp`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar"},"position":{"line":11,"character":15}}`,
+		),
+		// On the rule name `ident` (line 17), well past the last call.
+		make_request(
+			`3`,
+			`textDocument/signatureHelp`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar"},"position":{"line":17,"character":1}}`,
+		),
+		// On the external value `__ident__` (line 17).
+		make_request(
+			`4`,
+			`textDocument/signatureHelp`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar"},"position":{"line":17,"character":10}}`,
+		),
+		// On the declaration `def   k e` (line 12), which is a proc of arity two.
+		make_request(
+			`5`,
+			`textDocument/signatureHelp`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar"},"position":{"line":12,"character":1}}`,
+		),
+		make_request(`6`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	log.debugf("output:\n%v", output)
+
+	// The call passes two arguments, so the second overload is the active one.
+	on_call := response_for(output, `2`)
+	testing.expect(t, strings.contains(on_call, `"activeSignature":1`))
+	testing.expect(t, strings.contains(on_call, `"label":"def(k, e)"`))
+
+	// All three overloads are offered, ordered by arity so the list does not depend on
+	// the order the file declares them in.
+	arity_1 := strings.index(on_call, `"label":"def(k)"`)
+	arity_2 := strings.index(on_call, `"label":"def(k, e)"`)
+	arity_3 := strings.index(on_call, `"label":"def(k, i, e)"`)
+	testing.expect(t, arity_1 >= 0)
+	testing.expect(t, arity_2 >= 0)
+	testing.expect(t, arity_3 >= 0)
+	testing.expect(t, arity_1 < arity_2, "overloads must be offered in ascending arity")
+	testing.expect(t, arity_2 < arity_3, "overloads must be offered in ascending arity")
+
+	// Neither of these positions is inside a call, so neither may name one.
+	on_rule := response_for(output, `3`)
+	testing.expect(t, strings.contains(on_rule, `"label":"ident"`))
+	testing.expect(t, strings.contains(on_rule, "**type:** production, returns a production"))
+	testing.expect(t, !strings.contains(on_rule, "def"), "a rule name past a call must not report a call")
+
+	on_external := response_for(output, `4`)
+	testing.expect(t, strings.contains(on_external, "**type:** external value"))
+	testing.expect(t, !strings.contains(on_external, "def"), "an external value must not report a call")
+
+	// A proc's own declaration resolves at the arity it is declared at.
+	on_declaration := response_for(output, `5`)
+	testing.expect(t, strings.contains(on_declaration, `"activeSignature":1`))
+	testing.expect(t, strings.contains(on_declaration, `"label":"def(k, e)"`))
+}
+
+@(test)
+test_lsp_signature_help_call_extent :: proc(t: ^testing.T) {
+	// The three shapes a call's extent has to get right: a `>` inside a quoted argument
+	// does not close the call, and the innermost call of a nested one is the one under
+	// the cursor. `def` is declared at arities five, one and two so that ordering the
+	// overloads by arity is observable.
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(
+			`textDocument/didOpen`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar","languageId":"grammar","version":1,"text":"def k a b c d e = <def k>;\ndef k = <f \"a>b\">;\ndef k a = <f <g k a>>;\n\nf x = x;\ng x y = x y;"}}`,
+		),
+		// On `def` in `<def k>` (line 0): a one-argument call to `def`.
+		make_request(
+			`2`,
+			`textDocument/signatureHelp`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar"},"position":{"line":0,"character":20}}`,
+		),
+		// On `f` in `<f <g k a>>` (line 2), the outer call.
+		make_request(
+			`3`,
+			`textDocument/signatureHelp`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar"},"position":{"line":2,"character":11}}`,
+		),
+		// On `g` in the same call (line 2), the inner one.
+		make_request(
+			`4`,
+			`textDocument/signatureHelp`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar"},"position":{"line":2,"character":14}}`,
+		),
+		// On the `>` that really closes `<f "a>b">` (line 1).
+		make_request(
+			`5`,
+			`textDocument/signatureHelp`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar"},"position":{"line":1,"character":16}}`,
+		),
+		make_request(`6`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	log.debugf("output:\n%v", output)
+
+	// `def` is declared at arities five, one and two in that order, so an ascending list
+	// puts the arity-one overload first and marks it active.
+	on_call := response_for(output, `2`)
+	testing.expect(t, strings.contains(on_call, `"activeSignature":0`))
+	testing.expect(t, strings.contains(on_call, `"label":"def(k)"`))
+
+	on_outer := response_for(output, `3`)
+	testing.expect(t, strings.contains(on_outer, `"label":"f(x)"`))
+	testing.expect(t, !strings.contains(on_outer, `"label":"g(`), "the outer call wins at its own callee")
+
+	on_inner := response_for(output, `4`)
+	testing.expect(t, strings.contains(on_inner, `"label":"g(x, y)"`))
+	testing.expect(t, !strings.contains(on_inner, `"label":"f(`), "the inner call wins at its own callee")
+
+	// The `>` inside the quoted argument must not be read as the end of the call.
+	on_closing_angle := response_for(output, `5`)
+	testing.expect(t, strings.contains(on_closing_angle, `"label":"f(x)"`))
+	testing.expect(t, !strings.contains(on_closing_angle, "def"))
+}
+
+@(test)
+test_lsp_signature_help_nearest_overload :: proc(t: ^testing.T) {
+	// The call passes an arity no overload of `def` declares, which the checker reports.
+	// The nearest declared arity is then the active one, and the distances are 1, 2 and
+	// 3 so that the first signature is the closest.
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(
+			`textDocument/didOpen`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar","languageId":"grammar","version":1,"text":"def k = k;\ndef k a b c = k a b c;\ndef k a b c d e = k a b c d e;\na = \"a\";\nmain = <def k a>;"}}`,
+		),
+		// On `def` in `<def k a>` (line 4): two arguments, and no proc of two.
+		make_request(
+			`2`,
+			`textDocument/signatureHelp`,
+			`{"textDocument":{"uri":"file:///tmp/test.grammar"},"position":{"line":4,"character":9}}`,
+		),
+		make_request(`3`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	log.debugf("output:\n%v", output)
+
+	on_call := response_for(output, `2`)
+	testing.expect(t, strings.contains(on_call, `"label":"def(k)"`))
+	testing.expect(t, strings.contains(on_call, `"activeSignature":0`))
 }
 
 @(test)

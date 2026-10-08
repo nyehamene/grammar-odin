@@ -2,6 +2,7 @@ package lsp
 
 import "core:encoding/json"
 import "core:fmt"
+import "core:sort"
 import "core:strings"
 
 import "../../ast"
@@ -107,7 +108,9 @@ signature_help_for :: proc(
 	hit := find_hit(&fi.file, offset)
 	#partial switch hit.kind {
 	case .Ident, .Rule_Name:
-		return value_signature(cu, fi, hit.ident.name, 0)
+		// A rule declaration is a use of arity zero, but a proc declaration is a use of
+		// its own arity, which is what tells the overloads of a name apart.
+		return value_signature(cu, fi, hit.ident.name, hit.arity)
 	case .Call_Name:
 		return value_signature(cu, fi, hit.ident.name, hit.arity)
 	case .Param:
@@ -142,7 +145,9 @@ value_signature :: proc(
 	bool,
 ) {
 	if arity > 0 {
-		return proc_signatures(cu, fi, name)
+		help, found := proc_signatures(cu, fi, name)
+		if found do help.active_signature = active_signature(help, arity)
+		return help, found
 	}
 	if ref, found := check.Resolve_Rule(cu, fi, name); found {
 		return signature_for_ref(cu, fi, name, ref), true
@@ -170,13 +175,26 @@ proc_signatures :: proc(
 	}
 	if len(declared) == 0 do return {}, false
 
+	// The order is copied before it is sorted: declared belongs to the compilation unit
+	// and is shared with the checker, which reaches its procs by declaration order.
+	refs := make([]check.Rule_Ref, len(declared), context.temp_allocator)
+	copy(refs[:], declared)
+	sort.quick_sort_proc(refs[:], cmp_arity_ascending)
+
 	// A slice cannot be grown after it is built, so the list is sized for the procs
 	// and filled in place.
-	sigs := make([]Signature_Information, len(declared), context.temp_allocator)
-	for ref, i in declared {
+	sigs := make([]Signature_Information, len(refs), context.temp_allocator)
+	for ref, i in refs {
 		sigs[i] = proc_information(cu, fi, name, ref, overloads)
 	}
 	return Signature_Help{signatures = sigs, active_signature = 0, active_parameter = 0}, true
+}
+
+// cmp_arity_ascending orders two rule refs by the arity of the declaration they name.
+cmp_arity_ascending :: proc(a, b: check.Rule_Ref) -> int {
+	if a.arity < b.arity do return -1
+	if a.arity > b.arity do return 1
+	return 0
 }
 
 // proc_information renders one proc as a signature: `name(p1, p2, ...)` with every
@@ -223,6 +241,7 @@ proc_information :: proc(
 active_signature :: proc(help: Signature_Help, want: int) -> int {
 	nearest := 0
 	nearest_gap := 0
+	unset := true
 	for sig, i in help.signatures {
 		arity, is_proc := signature_arity(sig)
 		if !is_proc do continue
@@ -230,9 +249,12 @@ active_signature :: proc(help: Signature_Help, want: int) -> int {
 
 		gap := arity - want
 		if gap < 0 do gap = -gap
-		if nearest == 0 || gap < nearest_gap {
+		// unset tracks whether any arity was seen at all, because index 0 is as good an
+		// answer as any other and cannot double as the marker for "not found".
+		if unset || gap < nearest_gap {
 			nearest = i
 			nearest_gap = gap
+			unset = false
 		}
 	}
 	return nearest
@@ -553,7 +575,10 @@ productions_containing_call :: proc(productions: []ast.Production, src: string, 
 // at start, accounting for nested calls and quoted literals.
 call_end :: proc(src: string, start: int) -> int {
 	depth := 1
-	i := start
+	// depth already counts the '<' at start, so the scan begins just past it. Starting
+	// at start counts that bracket twice and no call ever closes, which would give
+	// every call a span running to the end of the file.
+	i := start + 1
 	for i < len(src) {
 		switch src[i] {
 		case '<':
