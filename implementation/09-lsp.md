@@ -62,11 +62,12 @@ help offers every proc of a name and marks the one the arguments pick.
     - [x] **Fix**: The frame use-after-free fix moved into `Frame_destroy` (recreates the headers map after freeing the arena).
 
 - [x] **7. `textDocument/completion`** (implemented in `cmd/lsp/completion.odin`)
-    - [x] **Types**: `Completion_Item`, `Completion_Item_Kind`, `Completion_List` added in `cmd/lsp/completion.odin`.
+    - [x] **Types**: `Completion_Item`, `Completion_Item_Kind`, `Completion_List` added in `cmd/lsp/completion.odin`. An item also carries the `textEdit` to apply and the `insertTextFormat` saying how to read it, since the label is not what goes in the document.
     - [x] **Handler**: `handle_completion` implemented in `cmd/lsp/completion.odin`.
     - [x] **Logic**: `completion_prefix` extracts the identifier being typed (and an optional `binding.` receiver); suggestions are the shared namespace rules, file-local imports, and the exported members of an imported namespace. A local or private rule of another namespace is not offered, since the checker would reject a use of it.
+    - [x] **Insertion**: a label is not what belongs in the document. A proc's label carries its parameter list, so that the procs of one name are told apart in the list, and `foo(x)` is not grammar, so what a completion inserts is carried separately in a `textEdit` over the typed prefix. A rule is completed by its name, and a proc by a call naming it: `<def ${1:x}>` outside a call, and `def ${1:x}` inside one, where the angle brackets are already typed. Whether the arguments carry tab stops depends on the client having asked for snippets in `initialize`, since one that cannot read a snippet would insert the `${1:x}` as text.
     - [x] **Dispatcher**: `textDocument/completion` is wired in `cmd/lsp/server.odin`.
-    - [x] **Test**: `test_lsp_completion` and `test_lsp_completion_member_offers_only_exported_rules` in `cmd/lsp/lsp_test.odin`.
+    - [x] **Test**: `test_lsp_completion`, `test_lsp_completion_member_offers_only_exported_rules`, `test_lsp_completion_proc_inserts_a_call`, `test_lsp_completion_proc_without_snippet_support` and `test_lsp_completion_proc_tab_stop_per_argument` in `cmd/lsp/lsp_test.odin`.
 
 - [x] **8. `textDocument/diagnostic` (Pull Diagnostics)** (implemented in `cmd/lsp/diagnostic.odin`)
     - [x] **Types**: `Diagnostic`, `Publish_Diagnostics_Params`, `Pull_Diagnostic_Result` in `cmd/lsp/diagnostic.odin`.

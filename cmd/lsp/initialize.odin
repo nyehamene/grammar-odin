@@ -77,6 +77,8 @@ server_info := Server_Info {
 handle_initialize :: proc(srv: ^Server, id: Request_Id, req: json.Object) -> (ok: bool) {
 	params := json_object(req, "params") or_return
 
+	srv.snippet_support = client_supports_snippets(params)
+
 	if client, ok := get_client_info(params); ok {
 		if client_supports_semantic_tokens(srv, params) {
 			debugf(
@@ -150,6 +152,18 @@ get_client_info :: proc(params: json.Object) -> (c: Client_Info, ok: bool) {
 		c.version = string(version)
 	}
 	return c, true
+}
+
+// client_supports_snippets reports whether the client asked for snippet completions.
+// It is recorded rather than logged, because it decides the format of what a proc is
+// completed as, and that has to hold for every later completion request.
+client_supports_snippets :: proc(params: json.Object) -> (ok: bool) {
+	capabilities := json_object(params, "capabilities") or_return
+	text_document := json_object(capabilities, "textDocument") or_return
+	completion := json_object(text_document, "completion") or_return
+	completion_item := json_object(completion, "completionItem") or_return
+	supported, found := json_bool(completion_item, "snippetSupport")
+	return found && bool(supported)
 }
 
 client_supports_semantic_tokens :: proc(srv: ^Server, params: json.Object) -> (ok: bool) {

@@ -16,6 +16,10 @@ Range :: struct {
 	end:   Position,
 }
 
+// Text_Edit is declared in rename.odin. A completion uses it to say exactly which
+// typed characters are replaced, rather than leaving the client to guess the word under
+// the cursor by its own rules.
+
 // position_at_offset returns the zero-based LSP position of offset within src.
 position_at_offset :: proc(src: string, offset: int) -> Position {
 	off := clamp(offset, 0, len(src))

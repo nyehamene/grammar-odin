@@ -21,6 +21,10 @@ Server :: struct {
 	shutdown_requested:     bool,
 	initialize_result:      string,
 	root_paths:             [dynamic]string,
+	// snippet_support records whether the client asked for snippet completions, which
+	// decides whether a proc is completed with tab stops between its arguments or as
+	// plain text. A client that never said so does not get them.
+	snippet_support: bool,
 
 
 	// testing

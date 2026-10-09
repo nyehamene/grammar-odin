@@ -575,6 +575,147 @@ test_lsp_completion :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(output, `"kind":3`))
 	testing.expect(t, strings.contains(output, `"isIncomplete":false`))
 	testing.expect(t, !strings.contains(output, `"label":"expr"`))
+
+	// A rule is completed by its name, since a name is how a rule is written in a body.
+	// The label is unchanged; only what the editor inserts is new, and it must replace
+	// exactly the `te` typed so far and nothing around it.
+	term := response_for(output, `2`)
+	testing.expect(t, strings.contains(term, `"newText":"term"`))
+	// Plain text, and no tab stops: a rule has no arguments to jump between.
+	testing.expect(t, strings.contains(term, `"insertTextFormat":1`))
+	testing.expect(t, !strings.contains(term, "$"))
+	testing.expect(
+		t,
+		strings.contains(term, `"range":{"start":{"line":2,"character":10},"end":{"line":2,"character":11}}`),
+		"the edit must span the typed prefix and nothing else",
+	)
+}
+
+// A proc's label is `def(x)`, which is not grammar, so accepting the completion used to
+// write it into the document. What belongs there is the call that names the proc.
+@(test)
+test_lsp_completion_proc_inserts_a_call :: proc(t: ^testing.T) {
+	// `main = <de>;` puts the cursor inside a call whose angle brackets are already
+	// typed, and `expr = de` puts it outside one, so the two get different text.
+	text := "def x = x;\nmain = <de>;\nexpr = de\n"
+	uri := "file:///tmp/test.grammar"
+	text_params := doc_text_params(text)
+	defer delete(text_params)
+	open := doc_params(uri, text_params)
+	defer delete(open)
+	inside_pos := doc_params(uri, `},"position":{"line":1,"character":9}}`)
+	defer delete(inside_pos)
+	outside_pos := doc_params(uri, `},"position":{"line":2,"character":9}}`)
+	defer delete(outside_pos)
+
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{"textDocument":{"completion":{"completionItem":{"snippetSupport":true}}}}}`,
+		),
+		make_notification(`textDocument/didOpen`, open),
+		// Inside the call on line 1, just after `<d`.
+		make_request(`2`, `textDocument/completion`, inside_pos),
+		// Outside any call, on line 2, just after `d`.
+		make_request(`3`, `textDocument/completion`, outside_pos),
+		make_request(`4`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	log.debugf("output:\n%v", output)
+
+	// The label keeps the parameter list, which is what tells the procs of one name
+	// apart in the list. Only the inserted text is a call.
+	inside := response_for(output, `2`)
+	testing.expect(t, strings.contains(inside, `"label":"def(x)"`))
+	// Inside a call the `<` is already typed, so inserting it again would nest one call
+	// inside another.
+	testing.expect(t, strings.contains(inside, `"newText":"def ${1:x}"`))
+	testing.expect(t, strings.contains(inside, `"insertTextFormat":2`))
+	testing.expect(
+		t,
+		strings.contains(inside, `"range":{"start":{"line":1,"character":8},"end":{"line":1,"character":9}}`),
+		"the edit must span the `d` typed so far and not the `<` before it",
+	)
+
+	outside := response_for(output, `3`)
+	testing.expect(t, strings.contains(outside, `"label":"def(x)"`))
+	// Outside a call the brackets are the completion's to write.
+	testing.expect(t, strings.contains(outside, `"newText":"<def ${1:x}>"`))
+	testing.expect(t, strings.contains(outside, `"insertTextFormat":2`))
+	testing.expect(
+		t,
+		strings.contains(outside, `"range":{"start":{"line":2,"character":7},"end":{"line":2,"character":9}}`),
+		"the edit must span the `de` typed so far",
+	)
+}
+
+// A client that did not ask for snippets does not get them. A `${1:x}` it cannot read
+// would be inserted as literal text, so the same call is offered as plain text instead.
+@(test)
+test_lsp_completion_proc_without_snippet_support :: proc(t: ^testing.T) {
+	text := "def x = x;\nexpr = de\n"
+	uri := "file:///tmp/test.grammar"
+	text_params := doc_text_params(text)
+	defer delete(text_params)
+	open := doc_params(uri, text_params)
+	defer delete(open)
+	at := doc_params(uri, `},"position":{"line":1,"character":9}}`)
+	defer delete(at)
+
+	stdin := create_stream_reader(
+		make_request(`1`, `initialize`, `{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`),
+		make_notification(`textDocument/didOpen`, open),
+		make_request(`2`, `textDocument/completion`, at),
+		make_request(`3`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	log.debugf("output:\n%v", output)
+
+	outside := response_for(output, `2`)
+	testing.expect(t, strings.contains(outside, `"newText":"<def x>"`))
+	// No tab stops, and a format saying so, since a `${1:x}` this client cannot read
+	// would land in the document as literal text.
+	testing.expect(t, !strings.contains(outside, "${"))
+	testing.expect(t, strings.contains(outside, `"insertTextFormat":1`))
+}
+
+// A proc of more than one parameter gets a tab stop per argument, since filling them in
+// is the point of completing a call.
+@(test)
+test_lsp_completion_proc_tab_stop_per_argument :: proc(t: ^testing.T) {
+	text := "def k ident expr = k ident expr;\nexpr = de\n"
+	uri := "file:///tmp/test.grammar"
+	text_params := doc_text_params(text)
+	defer delete(text_params)
+	open := doc_params(uri, text_params)
+	defer delete(open)
+	at := doc_params(uri, `},"position":{"line":1,"character":9}}`)
+	defer delete(at)
+
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{"textDocument":{"completion":{"completionItem":{"snippetSupport":true}}}}}`,
+		),
+		make_notification(`textDocument/didOpen`, open),
+		make_request(`2`, `textDocument/completion`, at),
+		make_request(`3`, `shutdown`, `null`),
+	)
+
+	output := send_request(stdin)
+	log.debugf("output:\n%v", output)
+
+	multi := response_for(output, `2`)
+	testing.expect(t, strings.contains(multi, `"label":"def(k, ident, expr)"`))
+	testing.expect(
+		t,
+		strings.contains(multi, `"newText":"<def ${1:k} ${2:ident} ${3:expr}>"`),
+		"each argument gets its own tab stop, in parameter order",
+	)
 }
 
 @(test)
@@ -1247,6 +1388,42 @@ test_lsp_document_link :: proc(t: ^testing.T) {
 // by the caller.
 doc_params :: proc(uri, rest: string) -> string {
 	return strings.concatenate({`{"textDocument":{"uri":"`, uri, `"`, rest})
+}
+
+// doc_text_params closes a didOpen whose text is source, written out one escape at a
+// time because tprintf reads a `{` as the start of a placeholder and would eat the
+// braces of the params around it.
+//
+// The result is owned by the caller, who must delete it, and the builder it comes from
+// is deliberately not destroyed: strings.to_string aliases the builder's buffer rather
+// than copying it, so destroying the builder here would free the buffer the caller is
+// about to read. The builder is a stack local, so only its buffer outlives this call,
+// and that buffer is what the caller's delete frees.
+doc_text_params :: proc(source: string) -> string {
+	sb := strings.builder_make(context.allocator)
+	// doc_params has already opened the outer object and the textDocument one, and
+	// closes neither, so the rest of the notification continues inside textDocument and
+	// the closing braces go at the end.
+	strings.write_string(
+		&sb,
+		`,"languageId":"grammar","version":1,"text":"`,
+	)
+	for ch, i in source {
+		switch ch {
+		case '\n':
+			strings.write_string(&sb, `\n`)
+		case '\t':
+			strings.write_string(&sb, `\t`)
+		case '"':
+			strings.write_string(&sb, `\"`)
+		case '\\':
+			strings.write_string(&sb, `\\`)
+		case:
+			strings.write_byte(&sb, source[i])
+		}
+	}
+	strings.write_string(&sb, `"}}`)
+	return strings.to_string(sb)
 }
 
 // response_for returns the single response line carrying the given request id,

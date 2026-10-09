@@ -43,6 +43,16 @@ Completion_Item :: struct {
 	// detail says what the item is when the label does not: a proc's arity, so that
 	// `foo`, `foo(x)` and `foo(x, y)` are three items rather than one.
 	detail: string `json:"detail,omitempty"`,
+	// text_edit is what the editor inserts, which is not the label. A proc's label
+	// carries its parameter list to tell the procs of one name apart in the list, and
+	// `foo(x)` is not grammar, so the label is not what belongs in the document. A
+	// rule is completed by its bare name and a proc by a call naming it.
+	text_edit: Text_Edit `json:"textEdit,omitempty"`,
+	// insert_text_format tells the client how to read new_text: 1 for plain text, 2 for a
+	// snippet whose ${n} tab stops become places it can jump between. It is always
+	// written out, because the spec has no zero and this Odin's `omitempty` does not drop
+	// a zero integer, so leaving it out is not something the tag can do.
+	insert_text_format: int `json:"insertTextFormat"`,
 }
 
 // completion_label is what a declaration is offered as: a rule by its name, and a
@@ -74,6 +84,63 @@ Completion_List :: struct {
 	items:         []Completion_Item,
 }
 
+// The LSP InsertTextFormat values, which say how a client should read what a completion
+// inserts: plain text, or a snippet whose tab stops it can jump between.
+PLAIN_TEXT_FORMAT :: 1
+SNIPPET_FORMAT    :: 2
+
+// completion_edit builds what accepting an item puts in the document, over the span the
+// prefix being typed occupies.
+//
+// A rule is completed by its name, which is how a rule is written in a body. A proc is
+// completed by a call naming it, since `foo(x)` is not grammar and a proc cannot stand
+// in a body on its own. Inside a call the angle brackets are already typed, so only the
+// callee and its arguments are written; outside one they are added. The tab stops mark
+// the argument positions when the client takes snippets, and are dropped when it does
+// not, since an unrecognised ${n} would be inserted as text.
+completion_edit :: proc(
+	srv: ^Server,
+	src: string,
+	prefix: string,
+	prefix_pos: int,
+	end_pos: int,
+	d: ast.Rule,
+	inside_call: bool,
+) -> (edit: Text_Edit, format: int) {
+	span := Range {
+		start = position_at_offset(src, prefix_pos),
+		end   = position_at_offset(src, end_pos),
+	}
+	if len(d.params) == 0 {
+		return Text_Edit{range = span, new_text = d.ident.name}, PLAIN_TEXT_FORMAT
+	}
+
+	sb := strings.builder_make(context.temp_allocator)
+	defer strings.builder_destroy(&sb)
+	if !inside_call do strings.write_string(&sb, "<")
+	strings.write_string(&sb, d.ident.name)
+	for p, i in d.params {
+		strings.write_string(&sb, " ")
+		if srv.snippet_support {
+			// The tab stop is written out by hand rather than formatted, because tprintf
+			// reads a `{` as the start of a placeholder and would eat this one's braces.
+			strings.write_string(&sb, "${")
+			strings.write_string(&sb, fmt.tprintf("%d", i + 1))
+			strings.write_string(&sb, ":")
+			strings.write_string(&sb, p.name)
+			strings.write_string(&sb, "}")
+		} else {
+			strings.write_string(&sb, p.name)
+		}
+	}
+	if !inside_call do strings.write_string(&sb, ">")
+
+	if srv.snippet_support {
+		return Text_Edit{range = span, new_text = strings.to_string(sb)}, SNIPPET_FORMAT
+	}
+	return Text_Edit{range = span, new_text = strings.to_string(sb)}, PLAIN_TEXT_FORMAT
+}
+
 // handle_completion implements textDocument/completion. It suggests the rules
 // of the current namespace, the file-local imports, and the members of an
 // imported namespace after `binding.`.
@@ -93,7 +160,7 @@ handle_completion :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok
 	character := json_int(pos, "character") or_return
 	offset := offset_at_position(doc.text, Position{line = int(line), character = int(character)})
 
-	prefix, member_object := completion_prefix(doc.text, offset)
+	prefix, prefix_pos, member_object := completion_prefix(doc.text, offset)
 
 	cu := index_documents(srv)
 	defer check.destroy_compilation_unit(&cu)
@@ -115,6 +182,10 @@ handle_completion :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok
 	items := make([dynamic]Completion_Item)
 	defer delete(items)
 
+	// A proc is completed as a call, and the angle brackets of that call are already
+	// typed when the cursor sits inside one, so the two cases insert different text.
+	inside_call := containing_call(&fi.file, doc.text, offset) != nil
+
 	if member_object != "" {
 		dir := fi.bindings[member_object]
 		if dir != "" {
@@ -129,12 +200,23 @@ handle_completion :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok
 							// be used there.
 							if !check.is_exported_rule(d.ident.name) do continue
 							if strings.has_prefix(d.ident.name, prefix) {
+								edit, format := completion_edit(
+									srv,
+									doc.text,
+									prefix,
+									prefix_pos,
+									offset,
+									d,
+									inside_call,
+								)
 								append(
 									&items,
 									Completion_Item {
 										label = completion_label(d),
 										kind = .Function,
 										detail = completion_detail(d),
+										text_edit = edit,
+										insert_text_format = format,
 									},
 								)
 							}
@@ -157,12 +239,23 @@ handle_completion :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok
 					// another.
 					label := completion_label(d)
 					if strings.has_prefix(d.ident.name, prefix) && !has_label(items[:], label) {
+						edit, format := completion_edit(
+							srv,
+							doc.text,
+							prefix,
+							prefix_pos,
+							offset,
+							d,
+							inside_call,
+						)
 						append(
 							&items,
 							Completion_Item {
 								label = label,
 								kind = .Function,
 								detail = completion_detail(d),
+								text_edit = edit,
+								insert_text_format = format,
 							},
 						)
 					}
@@ -172,7 +265,22 @@ handle_completion :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok
 					}
 					if strings.has_prefix(d.ident.name, prefix) &&
 					   !has_label(items[:], d.ident.name) {
-						append(&items, Completion_Item{label = d.ident.name, kind = .Module})
+						// An import binding is a name, not something to call, so it is
+						// completed by that name over the same span a rule's would be.
+						append(
+							&items,
+							Completion_Item {
+								label = d.ident.name,
+								kind = .Module,
+								text_edit = Text_Edit {
+									range = Range {
+										start = position_at_offset(doc.text, prefix_pos),
+										end   = position_at_offset(doc.text, offset),
+									},
+									new_text = d.ident.name,
+								},
+							},
+						)
 					}
 				case ast.Comment_Group:
 				}
@@ -196,14 +304,24 @@ handle_completion :: proc(srv: ^Server, id: Request_Id, obj: json.Object) -> (ok
 	return true
 }
 
-// completion_prefix returns the identifier being typed before the cursor and,
-// when the cursor follows `binding.`, the receiver binding name.
-completion_prefix :: proc(src: string, offset: int) -> (prefix: string, member_object: string) {
+// completion_prefix returns the identifier being typed before the cursor, where that
+// identifier begins, and, when the cursor follows `binding.`, the receiver binding name.
+// The start offset is what the completion edit spans: it replaces exactly the characters
+// typed so far and nothing around them.
+completion_prefix :: proc(
+	src: string,
+	offset: int,
+) -> (
+	prefix: string,
+	prefix_pos: int,
+	member_object: string,
+) {
 	i := offset
 	for i > 0 && is_ident_byte(src[i - 1]) {
 		i -= 1
 	}
 	prefix = src[i:offset]
+	prefix_pos = i
 	if i > 1 && src[i - 1] == '.' {
 		obj_end := i - 1
 		j := obj_end
@@ -212,7 +330,7 @@ completion_prefix :: proc(src: string, offset: int) -> (prefix: string, member_o
 		}
 		member_object = src[j:obj_end]
 	}
-	return prefix, member_object
+	return prefix, prefix_pos, member_object
 }
 
 // has_label reports whether items already contains a label.
