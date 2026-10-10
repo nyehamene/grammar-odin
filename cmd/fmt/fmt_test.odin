@@ -123,6 +123,59 @@ test_rule1_boundary_longer_than_separator_preserved :: proc(t: ^testing.T) {
 	check_format_sep(t, src, src, 1)
 }
 
+// Rule 1: a group is a run of declarations of one kind. A change of kind breaks
+// the alignment without a blank line, so the bindings, the rules and the procs
+// of a file each line their own `=` column up.
+@(test)
+test_rule1_groups_by_declaration_kind :: proc(t: ^testing.T) {
+	src :=
+		"b = @import(\"path\");\n" +
+		"bb = @import(\"path\");\n" +
+		"r = __r;\n" +
+		"rr = __r;\n" +
+		"rrr = __r;\n" +
+		"p a = a;\n" +
+		"p a b = a b;\n" +
+		"r1 = __r;\n" +
+		"rr1 = __r;\n" +
+		"rrr1 = __r;\n"
+	want :=
+		"b  = @import(\"path\");\n" +
+		"bb = @import(\"path\");\n" +
+		"r   = __r__;\n" +
+		"rr  = __r__;\n" +
+		"rrr = __r__;\n" +
+		"p   a = a;\n" +
+		"p a b = a b;\n" +
+		"r1   = __r__;\n" +
+		"rr1  = __r__;\n" +
+		"rrr1 = __r__;\n"
+	check_format(t, src, want)
+}
+
+// The kind break does not depend on the separator threshold: `-s 2` keeps
+// same-kind rules across one blank in a single group, but a binding still
+// starts its own group next to a rule.
+@(test)
+test_rule1_kind_break_independent_of_separator :: proc(t: ^testing.T) {
+	// At separator 2 the single blank is interior whitespace, but it cannot
+	// bridge a kind change: the binding and the rule stay separate.
+	check_format_sep(t, "b = @import(\"path\");\n\nr = __r;\n", "b = @import(\"path\");\n\nr = __r__;\n", 2)
+
+	// Same-kind rules across the same single blank do share a group.
+	check_format_sep(t, "a = \"a\";\n\nbb = \"bb\";\n", "a  = \"a\";\n\nbb = \"bb\";\n", 2)
+}
+
+// A comment line between two headers does not by itself end a group: two rules
+// around a comment still line up, while a binding on the far side of the
+// comment starts its own group.
+@(test)
+test_rule1_comment_between_headers_keeps_the_group :: proc(t: ^testing.T) {
+	src := "a = \"a\";\n// note\nbb = \"bb\";\nc = @import(\"c.grammar\");\n"
+	want := "a  = \"a\";\n// note\nbb = \"bb\";\nc = @import(\"c.grammar\");\n"
+	check_format(t, src, want)
+}
+
 // Blank lines are reproduced as written, including runs longer than the
 // separator threshold, so this source is already formatted.
 @(test)
@@ -265,10 +318,13 @@ test_golden_rule_newlines_conserved :: proc(t: ^testing.T) {
 	}
 }
 
+// A directive call and a member access stay tight: `@import(...)` is not spaced
+// like a group, and `a.b` is not spaced around its dot. `doc` and `longer` are
+// bindings and `base` is a rule, so rule 1 gives them separate groups.
 @(test)
 test_directive_call_and_member_stay_tight :: proc(t: ^testing.T) {
-	src := "doc = @import(\"document.grammar\");\nreq = @require(\"lib\");\nbase = a.b;\n"
-	want := "doc  = @import(\"document.grammar\");\nreq  = @require(\"lib\");\nbase = a.b;\n"
+	src := "doc = @import(\"document.grammar\");\nlonger = @require(\"lib\");\nbase = a.b;\n"
+	want := "doc    = @import(\"document.grammar\");\nlonger = @require(\"lib\");\nbase = a.b;\n"
 	check_format(t, src, want)
 }
 
@@ -516,8 +572,8 @@ test_rule9_nested_constructs :: proc(t: ^testing.T) {
 // *formatted* column, not the one the source wrote.
 @(test)
 test_rule9_opens_at_the_formatted_column :: proc(t: ^testing.T) {
-	src := "wide rule x = ( a\n   b );\nshort = ( c\n   d );\n"
-	want := "wide rule x = ( a\n                b );\nshort       = ( c\n                d );\n"
+	src := "widerule = ( a\n   b );\nshort = ( c\n   d );\n"
+	want := "widerule = ( a\n             b );\nshort    = ( c\n             d );\n"
 	check_format(t, src, want)
 }
 
@@ -555,6 +611,7 @@ test_idempotent :: proc(t: ^testing.T) {
 		"foo = a b `n=\"1\"`\n  | xxxxxx `n=\"2\"`\n  | x `n=\"3\"`\n  ;\n",
 		"foo = a\n  b `n=\"1\"`\n  | c `n=\"2\"`\n  ;\n",
 		"foo1 = ( a b\n  c );\nfoo2 = [ a b\n  | c ];\nfoo3 = { a b\n  c\n};\nfoo4 = <foo\nb\nc>;\n",
+		"b = @import(\"path\");\nbb = @import(\"path\");\nr = __r;\nrr = __r;\nrrr = __r;\np a = a;\np a b = a b;\nr1 = __r;\nrr1 = __r;\nrrr1 = __r;\n",
 	}
 	for src_ in inputs {
 		once := format_ok(t, src_)

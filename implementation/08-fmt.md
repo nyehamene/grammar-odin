@@ -15,24 +15,63 @@ exit code after formatting all the input files.
 
 ### Golden rule
 
-The formatter is only allowed to add newlines between groups (see rule 1).
-Any newlines existing in the source must be preserved, but trailing blank lines
-at the end of the file should collapse to 1. The number of newlines added to
-separate groups depends on the flag `--separator N` (see ../command/fmt.txt).
-Boundary runs (blank lines between groups) longer than the value given by
-`--separator` are preserved.
+The formatter is only allowed to add newlines between groups (see rule 1). A
+group is a run of declarations of one kind, ended by a change of declaration
+kind or by a run of at least `--separator` blank lines. Any newlines existing
+in the source must be preserved, but trailing blank lines at the end of the
+file should collapse to 1. The number of newlines added to separate groups
+depends on the flag `--separator N` (see ../command/fmt.txt). Boundary runs
+(blank lines between groups) longer than the value given by `--separator` are
+preserved.
 
 ### Other rules
 
-1. Rule Grouping: alignment of consecutive rules.
-  Rules are aligned so that the value separator `=` lands on the same column.
-  A group ends at a run of at least `--separator` blank lines (see
-  ../command/fmt.txt); a shorter run is interior whitespace inside the group
-  and does not break the alignment. A boundary run longer than `--separator` is
-  kept at its original length.
+1. Grouping: alignment of consecutive declarations of one kind.
+  A group is a run of declarations of the same kind — a binding, a rule or a
+  proc — aligned so that the value separator `=` lands on the same column. A
+  group ends where the kind of the declaration changes, or at a run of at
+  least `--separator` blank lines (see ../command/fmt.txt); a shorter run is
+  interior whitespace inside the group and does not break the alignment. A
+  boundary run longer than `--separator` is kept at its original length.
 
-  The same input formats differently depending on the threshold. Before, with
-  one blank line before `bar` and two before `b`:
+  A binding binds a name to a directive call, `name = @import("file");`; a
+  proc is a rule that declares parameters, `name param = ...;`; a rule is a
+  declaration that does neither. Declarations of different kinds never share
+  a column, so a file that mixes them without blank lines still lines each
+  kind up on its own. Below the two bindings share one column, the first and
+  the last three rules their own, and the two procs a third:
+
+  Before:
+  ```grammar
+  b = @import("path");
+  bb = @import("path");
+  r = __r__;
+  rr = __r__;
+  rrr = __r__;
+  p a = a;
+  p a b = a b;
+  r1 = __r__;
+  rr1 = __r__;
+  rrr1 = __r__;
+  ```
+
+  After:
+  ```grammar
+  b  = @import("path");
+  bb = @import("path");
+  r   = __r__;
+  rr  = __r__;
+  rrr = __r__;
+  p   a = a;
+  p a b = a b;
+  r1   = __r__;
+  rr1  = __r__;
+  rrr1 = __r__;
+  ```
+
+  A blank line works as before: the same input formats differently depending
+  on the threshold. Before, with one blank line before `bar` and two before
+  `b`:
 
   ```grammar
   a = "a";
@@ -158,9 +197,9 @@ xxx = "one"
 xx  = "two";
 ```
 
-The rules are grouped together until there is a blank line separating.
-The productions in the second rule is also aligned to match the group
-alignment before it spans multiple lines.
+The rules are grouped together until a blank line or a change of declaration
+kind separates them. The productions in the second rule is also aligned to
+match the group alignment before it spans multiple lines.
 
 5. Continuation Indent: alignment of unlabeled continuation lines.
   In a vertically arranged production, a line that does not begin with the
@@ -223,9 +262,10 @@ alignment before it spans multiple lines.
 
   `grammar expand` and `grammar normalize` write the rules of a file out under
   the same rule, so a file whose rules are not separated by blank lines comes out
-  of either the same. They part company where a file is: a group ends at a blank
-  line here (rule 1), while the writer is handed one rule at a time and has no
-  blank lines to see, so it lines every rule of a file up together.
+  of either the same. They part company where a file is: a group ends here at a
+  run of `--separator` blank lines or where the kind of the declaration changes
+  (rule 1), while the writer is handed one rule at a time and has no blank lines
+  to see, so it lines every rule of a file up together.
 
 7. Write a tag in one canonical spelling.
 

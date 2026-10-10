@@ -429,19 +429,22 @@ test_expand_select_reports_a_file_outside_the_input :: proc(t: ^testing.T) {
 }
 
 // The formatter and this writer line the left hand side of a rule up under the same
-// rule, so a file whose rules are not separated by blank lines comes out of either the
-// same. A file that is separated still differs: `fmt` ends an alignment group at a
-// blank line, while this writer is handed a rule at a time and has no blank lines to
-// see, so it lines every rule of the file up together.
+// rule, so a file of one kind whose rules are not separated by blank lines comes out
+// of either the same. A file that differs still parts ways: `fmt` ends an alignment
+// group at a blank line or where the kind of the declaration changes (rule 1), while
+// this writer is handed one rule at a time and has no blank lines to see, so it lines
+// every rule of the file up together.
 //
-// The fixture calls nothing, because `fmt` works on tokens and does not expand a call,
+// The fixtures call nothing, because `fmt` works on tokens and does not expand a call,
 // so only a file with no calls in it compares the layout of two identical trees.
 @(test)
 test_expand_agrees_with_the_formatter :: proc(t: ^testing.T) {
-	src := "item x = x;\nwide a b = a b;\nother = a;\n"
+	// All procs: `fmt` puts the whole file in one group, and this writer lines
+	// every rule of the file up, so both agree.
+	src := "item x = x;\nwide a b = a b;\nother z = a;\n"
 	// expand heads each file it writes, so its output carries a heading fmt's does not.
-	want := "== <stdin> ==\nitem   x = x;\nwide a b = a b;\nother    = a;\n"
-	body := "item   x = x;\nwide a b = a b;\nother    = a;\n"
+	want := "== <stdin> ==\nitem   x = x;\nwide a b = a b;\nother  z = a;\n"
+	body := "item   x = x;\nwide a b = a b;\nother  z = a;\n"
 
 	errbuf: bytes.Buffer
 	bytes.buffer_init(&errbuf, {})
@@ -455,4 +458,20 @@ test_expand_agrees_with_the_formatter :: proc(t: ^testing.T) {
 	defer destroy_result(&res)
 	testing.expectf(t, res.code == 0, "exit 0, got %d (stderr: %s)", res.code, res.stderr)
 	testing.expectf(t, res.stdout == want, "expanded %q, want %q", res.stdout, want)
+
+	// Mixed kinds part ways: the two procs share a group, the rule `other`
+	// starts its own, while this writer still lines every rule of the file up.
+	src_mixed := "item x = x;\nwide a b = a b;\nother = a;\n"
+	body_fmt := "item   x = x;\nwide a b = a b;\nother = a;\n"
+	body_xp := "item   x = x;\nwide a b = a b;\nother    = a;\n"
+
+	formatted_mixed, ok_mixed := fmt.Format_Text(src_mixed, "test.grammar", bytes.buffer_to_stream(&errbuf))
+	testing.expect(t, ok_mixed, "the mixed fixture should format")
+	defer delete(formatted_mixed)
+	testing.expectf(t, formatted_mixed == body_fmt, "formatted %q, want %q", formatted_mixed, body_fmt)
+
+	res_mixed := run_expand([]string{"--stdin"}, stdin_from(src_mixed))
+	defer destroy_result(&res_mixed)
+	testing.expectf(t, res_mixed.code == 0, "exit 0, got %d (stderr: %s)", res_mixed.code, res_mixed.stderr)
+	testing.expectf(t, res_mixed.stdout == "== <stdin> ==\nitem   x = x;\nwide a b = a b;\nother    = a;\n", "expanded %q, want %q", res_mixed.stdout, "== <stdin> ==\nitem   x = x;\nwide a b = a b;\nother    = a;\n")
 }

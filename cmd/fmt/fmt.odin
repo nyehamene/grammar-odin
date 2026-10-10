@@ -4,10 +4,11 @@
 // preserved: blank lines are emitted exactly as written, with the one exception
 // that a run of blank lines at the end of the file collapses to a single blank
 // line (the golden rule in implementation/08-fmt.md). A run of at least
-// `separator` blank lines ends an alignment group; a shorter run is interior
-// whitespace inside a group and does not break the alignment (rule 1). The
-// source is parsed only to validate it: on a lexical or syntax error the file is
-// left untouched and the errors are reported on stderr.
+// `separator` blank lines ends an alignment group, and so does a change in the
+// kind of the declaration (binding, rule or proc); a shorter blank run is
+// interior whitespace inside a group and does not break the alignment (rule 1).
+// The source is parsed only to validate it: on a lexical or syntax error the
+// file is left untouched and the errors are reported on stderr.
 package fmtcmd
 
 import "core:fmt"
@@ -368,11 +369,32 @@ newline_style :: proc(src: string) -> string {
 	return "\n"
 }
 
+// Decl_Kind classifies a declaration by kind: a binding binds a name to a
+// directive call such as @import, a proc is a rule that declares parameters,
+// and a rule is a declaration with neither. Rule 1 aligns one kind at a time.
+Decl_Kind :: enum {
+	Binding,
+	Rule,
+	Proc,
+}
+
+// decl_kind returns the kind of the declaration a header line declares. A
+// directive call right after the `=` makes it a binding; more than one ident
+// before the `=` makes it a proc, since the extra idents are the parameters it
+// declares.
+decl_kind :: proc(line: []token.Token) -> Decl_Kind {
+	eq := first_equal(line)
+	if eq + 1 < len(line) && line[eq + 1].kind == .At do return .Binding
+	if eq > 1 do return .Proc
+	return .Rule
+}
+
 // compute_align fills align with the alignment column of the group each line
 // belongs to, and header_lhs with the padded left hand side of every rule
-// header. A run of at least `separator` blank lines ends a group; a shorter run
-// is interior whitespace inside a group and does not end it. Blank lines get no
-// column.
+// header. A group is a run of declarations of one kind (rule 1): it ends where
+// the kind of the declaration changes or at a run of at least `separator`
+// blank lines, and a shorter run is interior whitespace inside a group and does
+// not end it. Blank lines get no column.
 compute_align :: proc(
 	kinds: []Line_Kind,
 	groups: [][dynamic]token.Token,
@@ -386,6 +408,8 @@ compute_align :: proc(
 	in_block := false
 	blank_run := 0
 	run_start := 0
+	last_kind: Decl_Kind
+	kind_valid := false
 	for i in 0 ..< n_lines {
 		if kinds[i] == .Blank {
 			if blank_run == 0 do run_start = i
@@ -401,6 +425,19 @@ compute_align :: proc(
 		if !in_block {
 			block_start = i
 			in_block = true
+			kind_valid = false
+		}
+		if kinds[i] == .Header {
+			k := decl_kind(groups[i][:])
+			// A declaration of another kind starts a new group, with no blank
+			// line needed, since declarations of different kinds never share a
+			// column (rule 1).
+			if kind_valid && k != last_kind {
+				close_group(kinds[:], groups[:], src, align[:], header_lhs[:], block_start, i)
+				block_start = i
+			}
+			last_kind = k
+			kind_valid = true
 		}
 	}
 	if in_block {
