@@ -318,9 +318,216 @@ test_comments_inside_rule_body :: proc(t: ^testing.T) {
 	check_format(t, src2, want2)
 
 	// A comment inside a grouping symbol or a call argument list is kept too.
+	// Rule 9 scopes the continuation indent to the construct, so the second
+	// lines sit two past the `(` and the `<`, not at the rule's alignment column.
 	src3 := "g = ( a // one\n   b );\nq = <f a // two\n   b>;\n"
-	want3 := "g = ( a // one\n    b );\nq = <f a // two\n    b>;\n"
+	want3 := "g = ( a // one\n      b );\nq = <f a // two\n      b>;\n"
 	check_format(t, src3, want3)
+}
+
+// Rule 9 scopes rules 4 and 5 inside a group, so a continuation of a group's body
+// indents two past its opening `(`, a `|` line aligns with the opening, and a lone
+// `)` lands on it. Matches the group examples of implementation/08-fmt.md.
+@(test)
+test_rule9_group :: proc(t: ^testing.T) {
+	src :=
+		"foo0 = ( a b c );\n" +
+		"\n" +
+		"foo1 = ( a b\n" +
+		"   c );\n" +
+		"\n" +
+		"foo2 = ( a b\n" +
+		"   c\n" +
+		"   );\n" +
+		"\n" +
+		"foo3 = ( a b\n" +
+		"   | c );\n" +
+		"\n" +
+		"foo4 = ( a b\n" +
+		"   | c\n" +
+		"   );\n"
+	want :=
+		"foo0 = ( a b c );\n" +
+		"\n" +
+		"foo1 = ( a b\n" +
+		"         c );\n" +
+		"\n" +
+		"foo2 = ( a b\n" +
+		"         c\n" +
+		"       );\n" +
+		"\n" +
+		"foo3 = ( a b\n" +
+		"       | c );\n" +
+		"\n" +
+		"foo4 = ( a b\n" +
+		"       | c\n" +
+		"       );\n"
+	check_format(t, src, want)
+}
+
+// The same layout applies inside an optional: continuation two past its opening
+// `[`, `|` and a lone `]` on it (rule 9).
+@(test)
+test_rule9_optional :: proc(t: ^testing.T) {
+	src :=
+		"foo0 = [ a b c ];\n" +
+		"\n" +
+		"foo1 = [ a b\n" +
+		"   c ];\n" +
+		"\n" +
+		"foo2 = [ a b\n" +
+		"   c\n" +
+		"   ];\n" +
+		"\n" +
+		"foo3 = [ a b\n" +
+		"   | c ];\n" +
+		"\n" +
+		"foo4 = [ a b\n" +
+		"   | c\n" +
+		"   ];\n"
+	want :=
+		"foo0 = [ a b c ];\n" +
+		"\n" +
+		"foo1 = [ a b\n" +
+		"         c ];\n" +
+		"\n" +
+		"foo2 = [ a b\n" +
+		"         c\n" +
+		"       ];\n" +
+		"\n" +
+		"foo3 = [ a b\n" +
+		"       | c ];\n" +
+		"\n" +
+		"foo4 = [ a b\n" +
+		"       | c\n" +
+		"       ];\n"
+	check_format(t, src, want)
+}
+
+// And inside a repetition: continuation two past its opening `{`, `|` and a lone
+// `}` on it (rule 9).
+@(test)
+test_rule9_repetition :: proc(t: ^testing.T) {
+	src :=
+		"foo0 = { a b c };\n" +
+		"\n" +
+		"foo1 = { a b\n" +
+		"   c };\n" +
+		"\n" +
+		"foo2 = { a b\n" +
+		"   c\n" +
+		"   };\n" +
+		"\n" +
+		"foo3 = { a b\n" +
+		"   | c };\n" +
+		"\n" +
+		"foo4 = { a b\n" +
+		"   | c\n" +
+		"   };\n"
+	want :=
+		"foo0 = { a b c };\n" +
+		"\n" +
+		"foo1 = { a b\n" +
+		"         c };\n" +
+		"\n" +
+		"foo2 = { a b\n" +
+		"         c\n" +
+		"       };\n" +
+		"\n" +
+		"foo3 = { a b\n" +
+		"       | c };\n" +
+		"\n" +
+		"foo4 = { a b\n" +
+		"       | c\n" +
+		"       };\n"
+	check_format(t, src, want)
+}
+
+// A call takes the same rules with no real `|`: its arguments continue two past
+// the `<`, whether or not the callee shares the line, and a lone `>` lands on the
+// `<`. Matches the call examples of implementation/08-fmt.md.
+@(test)
+test_rule9_call :: proc(t: ^testing.T) {
+	src :=
+		"foo0 = <foo b c>;\n" +
+		"\n" +
+		"foo1 = <foo b\n" +
+		"   c>;\n" +
+		"\n" +
+		"foo2 = <foo b\n" +
+		"   c\n" +
+		"   >;\n" +
+		"\n" +
+		"foo3 = <foo\n" +
+		"   b\n" +
+		"   c>;\n" +
+		"\n" +
+		"foo4 = <foo\n" +
+		"   b\n" +
+		"   c\n" +
+		"   >;\n"
+	want :=
+		"foo0 = <foo b c>;\n" +
+		"\n" +
+		"foo1 = <foo b\n" +
+		"         c>;\n" +
+		"\n" +
+		"foo2 = <foo b\n" +
+		"         c\n" +
+		"       >;\n" +
+		"\n" +
+		"foo3 = <foo\n" +
+		"         b\n" +
+		"         c>;\n" +
+		"\n" +
+		"foo4 = <foo\n" +
+		"         b\n" +
+		"         c\n" +
+		"       >;\n"
+	check_format(t, src, want)
+}
+
+// Rule 9 nests: the innermost open construct owns the column, so a call inside a
+// group indents from the call's `<` and a group's `|` from the group's `(`, while
+// a call opened on a continuation line indents from its own `<`.
+@(test)
+test_rule9_nested_constructs :: proc(t: ^testing.T) {
+	src :=
+		"wrap = ( <foo a\n" +
+		"b>\n" +
+		"| c );\n" +
+		"deep = a\n" +
+		"<bar x\n" +
+		"y>\n" +
+		"z;\n"
+	want :=
+		"wrap = ( <foo a\n" +
+		"           b>\n" +
+		"       | c );\n" +
+		"deep = a\n" +
+		"       <bar x\n" +
+		"         y>\n" +
+		"       z;\n"
+	check_format(t, src, want)
+}
+
+// Rule 6 pads the left hand side before rule 9 measures the opening delimiter, so
+// a construct opened in a group whose column another rule widened indents from the
+// *formatted* column, not the one the source wrote.
+@(test)
+test_rule9_opens_at_the_formatted_column :: proc(t: ^testing.T) {
+	src := "wide rule x = ( a\n   b );\nshort = ( c\n   d );\n"
+	want := "wide rule x = ( a\n                b );\nshort       = ( c\n                d );\n"
+	check_format(t, src, want)
+}
+
+// A trailing comment changes nothing: a `|` line inside a group and a lone closing
+// line still land on the construct's opening column (rules 4 and 9).
+@(test)
+test_rule9_comment_inside_a_construct :: proc(t: ^testing.T) {
+	src := "foo = ( a\n   | b // why\n   );\n"
+	want := "foo = ( a\n      | b // why\n      );\n"
+	check_format(t, src, want)
 }
 
 @(test)
@@ -347,6 +554,7 @@ test_idempotent :: proc(t: ^testing.T) {
 		"a = \"a\";\nfoo = a `name=\"a\"; other=\"b\"`;\nbar = a b `n = \"1\"`;\nbaz = ( a ) `n=\"2\"`;\n",
 		"foo = a b `n=\"1\"`\n  | xxxxxx `n=\"2\"`\n  | x `n=\"3\"`\n  ;\n",
 		"foo = a\n  b `n=\"1\"`\n  | c `n=\"2\"`\n  ;\n",
+		"foo1 = ( a b\n  c );\nfoo2 = [ a b\n  | c ];\nfoo3 = { a b\n  c\n};\nfoo4 = <foo\nb\nc>;\n",
 	}
 	for src_ in inputs {
 		once := format_ok(t, src_)

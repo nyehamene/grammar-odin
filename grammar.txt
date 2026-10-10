@@ -20,29 +20,28 @@ Rule              = ident { ident } "=" production ";";
 // semantic rule, not a syntactic one, so each kind is spelled exactly like any
 // other Rule here.
 
-production  = sequence | alternative;
-alternative = sequence { "|" production };
+production  = alternative [ tag ];
+alternative = sequence { "|" sequence };
+sequence    = basic { basic };
 // A tag annotates the sequence it closes rather than standing on its own, so
 // `a b c `t`` is a tagged `a b c` and not a tagged `c`. A production carries one
 // tag at most, since it is annotated once. Since a tag annotates a whole
 // production, a group, a repetition or an optional holds no tag of its own:
 // write `( a b ) `t`` rather than `( a b `t` )`.
-sequence    = basic { basic } [ tag ];
 basic       = group
             | repetition
             | optional
             | call
-            | term
+            | terminal
+            | non_terminal
             ;
 
-// basic, terminal, non_terminal and term should not
-// appear in the syntax tree.
+// basic, terminal, non_terminal should not appear in the syntax tree.
 group          = "(" production ")";
 repetition     = "{" production "}";
 optional       = "[" production "]";
-term           = terminal | non_teminal;
 non_terminal   = ident | member_access;
-terminal       = string | regexp ;
+terminal       = string | regexp | external_value ;
 
 // A call names a proc and passes it arguments. It resolves to the proc of that name
 // declared at the number of arguments it passes, so the procs of one name are told
@@ -57,7 +56,7 @@ terminal       = string | regexp ;
 // call to a name that is only a plain Rule is an error, since a Rule is not a proc.
 // A name in production position is a reference to the plain Rule of that name, and
 // a name declared only as procs is not a production.
-call           = "<" non_terminal { basic } ">";
+call           = "<" non_terminal basic { basic } ">";
 
 // member_access is left-associative
 member_access    = ident "." ident { "." ident };

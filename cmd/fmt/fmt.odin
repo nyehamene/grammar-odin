@@ -271,11 +271,20 @@ layout :: proc(src: string, tokens: []token.Token, separator: int) -> string {
 	defer for h in header_lhs do if len(h) > 0 do delete(h)
 	compute_align(kinds[:], groups[:], src, align[:], header_lhs[:], separator)
 
+	// indent[line] is the column the line's leading token is written at. At the rule
+	// level it is the alignment column for `|` and `;` and two past it for a
+	// continuation; inside a group, repetition, optional or call it is measured from
+	// the opening delimiter instead (rule 9). It is computed from align, and the tag
+	// columns are measured from it, so it sits between the two.
+	indent := make([dynamic]int, n_lines)
+	defer delete(indent)
+	compute_indents(kinds[:], groups[:], src, align[:], indent[:])
+
 	// tag_col[line] is the column the tag of that line starts in, or -1 when the
 	// line holds no tag or its rule has fewer than two tags to line up (rule 8).
 	tag_col := make([dynamic]int, n_lines)
 	defer delete(tag_col)
-	compute_tag_columns(kinds[:], groups[:], src, align[:], tag_col[:])
+	compute_tag_columns(kinds[:], groups[:], src, align[:], indent[:], tag_col[:])
 
 	nl := newline_style(src)
 	b := strings.builder_make()
@@ -305,6 +314,7 @@ layout :: proc(src: string, tokens: []token.Token, separator: int) -> string {
 			groups[i][:],
 			kinds[i],
 			align[i],
+			indent[i],
 			header_lhs[i],
 			tag_col[i],
 			i,
@@ -492,6 +502,134 @@ first_tag :: proc(line: []token.Token) -> int {
 	return -1
 }
 
+// Construct is one grouping symbol left open across a line break, remembered with
+// the column it is opened at once the line is rendered. Rule 9 lays the contents of
+// a group, repetition, optional or call out relative to that column, so a `|` line
+// and a lone closing delimiter land on it while a continuation lands two past it.
+Construct :: struct {
+	o:      int,
+	closer: token.Kind,
+}
+
+// compute_indents fills indent with the column each line's leading token is written
+// at (rule 9). The rule itself is the construct at the bottom of the stack, opened
+// at its alignment column, so the rule level is laid out by the same rule as a
+// group, repetition, optional or call: continuation lines two past the opening
+// column, and `|`, `;` and a lone closing delimiter on it.
+//
+// The column a construct opens at is where its delimiter lands once the line is
+// rendered, which is not where it was written in the source: rule 6 pads the left
+// hand side, so the delimiter of a rule header moves to the group's column. The
+// token scan measures that, one line at a time.
+compute_indents :: proc(
+	kinds: []Line_Kind,
+	groups: [][dynamic]token.Token,
+	src: string,
+	align: []int,
+	indent: []int,
+) {
+	stack := make([dynamic]Construct, 0, 8)
+	defer delete(stack)
+
+	for i in 0 ..< len(kinds) {
+		switch kinds[i] {
+		case .Blank, .Comment:
+			indent[i] = 0
+		case .Header:
+			// A header starts a rule, so nothing from the previous one is open.
+			resize(&stack, 0)
+			append(&stack, Construct{o = align[i], closer = .Semicolon})
+			indent[i] = 0
+			eq := first_equal(groups[i][:])
+			scan_constructs(groups[i][eq + 1:], align[i] + 2, src, &stack)
+		case .Pipe, .Body, .Lone_Semicolon:
+			top := align[i]
+			if len(stack) > 0 do top = stack[len(stack) - 1].o
+
+			line := groups[i][:]
+			on_open := kinds[i] == .Lone_Semicolon
+			if len(line) > 0 && (is_closer(line[0].kind) || line[0].kind == .Pipe) {
+				on_open = true
+			}
+			indent[i] = on_open ? top : top + 2
+			scan_constructs(line, indent[i], src, &stack)
+		}
+	}
+}
+
+// is_closer reports whether kind closes a group, repetition, optional or call.
+is_closer :: proc(kind: token.Kind) -> bool {
+	#partial switch kind {
+	case .RParen, .RBrack, .RBrace, .Gt:
+		return true
+	case:
+		return false
+	}
+}
+
+// scan_constructs walks one rendered line, pushing each grouping symbol it opens
+// and popping the innermost construct each closer ends, so compute_indents knows
+// the column every construct is opened at. The width of the tokens before a
+// delimiter follows render_tokens, so a tight `@import(...)` paren, the canonical
+// spelling of a tag and the trailing `__` of an external all measure the way
+// render_line writes them.
+scan_constructs :: proc(
+	line: []token.Token,
+	start_col: int,
+	src: string,
+	stack: ^[dynamic]Construct,
+) {
+	b := strings.builder_make()
+	defer strings.builder_destroy(&b)
+	tight: [dynamic]bool
+	defer delete(tight)
+
+	for tok, i in line {
+		paren_tight :=
+			tok.kind == .LParen && i >= 2 && line[i - 1].kind == .Ident && line[i - 2].kind == .At
+		if i > 0 && space_between(line[i - 1].kind, tok.kind, paren_tight, tight[:]) {
+			strings.write_string(&b, " ")
+		}
+		col := start_col + strings.builder_len(b)
+
+		#partial switch tok.kind {
+		case .LParen:
+			append(&tight, paren_tight)
+			if !paren_tight do append(stack, Construct{o = col, closer = .RParen})
+		case .RParen:
+			if len(tight) > 0 {
+				was_tight := tight[len(tight) - 1]
+				resize(&tight, len(tight) - 1)
+				if !was_tight do pop_construct(stack)
+			}
+		case .LBrack:
+			append(stack, Construct{o = col, closer = .RBrack})
+		case .LBrace:
+			append(stack, Construct{o = col, closer = .RBrace})
+		case .Lt:
+			append(stack, Construct{o = col, closer = .Gt})
+		case .RBrack, .RBrace, .Gt:
+			pop_construct(stack)
+		case:
+		}
+
+		if tok.kind == .Tag {
+			write_tag(&b, tok, src)
+			continue
+		}
+		lex := token.lexeme(tok, src)
+		strings.write_string(&b, lex)
+		if tok.kind == .External && !strings.has_suffix(lex, "__") {
+			strings.write_string(&b, "__")
+		}
+	}
+}
+
+// pop_construct drops the innermost open construct, if any.
+pop_construct :: proc(stack: ^[dynamic]Construct) {
+	if len(stack^) > 0 do resize(stack, len(stack^) - 1)
+}
+
 // compute_tag_columns fills tag_col with the column the tag of each line starts in.
 // Every tag of a rule shares one column, so that a production arranged over several
 // lines has its tags read down the page (rule 8).
@@ -509,6 +647,7 @@ compute_tag_columns :: proc(
 	groups: [][dynamic]token.Token,
 	src: string,
 	align: []int,
+	indent: []int,
 	tag_col: []int,
 ) {
 	for h in 0 ..< len(kinds) {
@@ -528,7 +667,7 @@ compute_tag_columns :: proc(
 		for i in h ..< end {
 			tag := first_tag(groups[i][:])
 			if tag < 0 do continue
-			widest = max(widest, tag_prefix_width(kinds[i], groups[i][:], tag, src, align[i]))
+			widest = max(widest, tag_prefix_width(kinds[i], groups[i][:], tag, src, indent[i], align[i]))
 		}
 		// One space past the widest line keeps the tag off whatever it follows.
 		for i in h ..< end {
@@ -560,18 +699,18 @@ tag_prefix_width :: proc(
 	line: []token.Token,
 	tag: int,
 	src: string,
-	col: int,
+	indent, align: int,
 ) -> int {
-	// A continuation line is written one column past the separator column (rule 5),
-	// and a header adds the `=` and the space after it.
-	head := col
+	// A header writes its `=` at the alignment column and its body a space past it;
+	// every other line starts at the column compute_indents laid it out at (rule 9).
+	head := indent
 	start := 0
 	switch kind {
 	case .Header:
-		head = col + 2
+		head = align + 2
 		start = first_equal(line) + 1
 	case .Body:
-		head = col + 2
+		head = indent
 	case .Pipe, .Lone_Semicolon, .Comment, .Blank:
 	}
 
@@ -584,11 +723,15 @@ tag_prefix_width :: proc(
 // copied verbatim; every other line is reconstructed from its tokens and
 // aligned to col. lhs is the padded left hand side compute_align prepared for a
 // rule header, and is empty for every other kind. tag_col is the column the line's
-// tag starts in, or -1 to leave the tag where the tokens put it (rule 8).
+// tag starts in, or -1 to leave the tag where the tokens put it (rule 8). indent
+// is the column the line's leading token is written at: the alignment column for a
+// `|`, a `;` or a lone closing delimiter, and two past it for a continuation
+// (rules 5 and 9).
 render_line :: proc(
 	line: []token.Token,
 	kind: Line_Kind,
 	col: int,
+	indent: int,
 	lhs: string,
 	tag_col: int,
 	i: int,
@@ -637,24 +780,25 @@ render_line :: proc(
 
 	case .Pipe:
 		if tag := first_tag(line); tag >= 0 && tag_col >= 0 {
-			return pad_and_render_with_tag(line, col, tag, tag_col, src)
+			return pad_and_render_with_tag(line, indent, tag, tag_col, src)
 		}
-		return pad_and_render(line, col, src)
+		return pad_and_render(line, indent, src)
 
 	case .Body:
-		// Rule 5: a continuation line carries no leading `|`, so it is indented
-		// one column past the separator column. That makes it read as a
+		// Rule 5: a continuation line carries no leading `|`, so it is written
+		// two past the line its constructs open at. That makes it read as a
 		// continuation of the alternative above it instead of as a sibling of the
-		// `|` lines.
+		// `|` lines. Rule 9 scopes the same layout inside a group, repetition,
+		// optional or call, so the column comes from compute_indents.
 		if tag := first_tag(line); tag >= 0 && tag_col >= 0 {
-			return pad_and_render_with_tag(line, col + 2, tag, tag_col, src)
+			return pad_and_render_with_tag(line, indent, tag, tag_col, src)
 		}
-		return pad_and_render(line, col + 2, src)
+		return pad_and_render(line, indent, src)
 
 	case .Lone_Semicolon:
-		// The terminator lands on the alignment column and anything trailing it,
-		// a comment in practice, renders after it.
-		return pad_and_render(line, col, src)
+		// The terminator lands on the column `|` and `=` land on, and anything
+		// trailing it, a comment in practice, renders after it.
+		return pad_and_render(line, indent, src)
 
 	case .Blank:
 		return ""

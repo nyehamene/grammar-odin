@@ -284,6 +284,91 @@ alignment before it spans multiple lines.
    A tag on a continuation line (see rule 5) takes part as well, since a tag closes
    the production of the line it is written on.
 
+9. Align group, optional, repetition, and proc call spanning multiple lines should follow (apply) rule 4 and 5
+   scoped within group, optional, repetition, or proc call respectively.
+
+  Group
+  Ex:
+  ```
+  foo0 = ( a b c );
+
+  foo1 = ( a b
+           c ); // continuation
+
+  foo2 = ( a b
+           c
+         ); // continuation with closing on a separate line
+
+  foo3 = ( a b
+         | c ); // alternative align to the opening
+
+  foo4 = ( a b
+         | c
+         ); // alternative with closing on a separete line
+  ```
+
+  Optional
+  Ex:
+  ```
+  foo0 = [ a b c ];
+
+  foo1 = [ a b
+           c ];
+
+  foo2 = [ a b
+           c
+         ];
+
+  foo3 = [ a b
+         | c ];
+
+  foo4 = [ a b
+         | c
+         ];
+  ```
+
+  Repetition
+  Ex:
+  ```
+  foo0 = { a b c };
+
+  foo1 = { a b
+           c };
+
+  foo2 = { a b
+           c
+         };
+
+  foo3 = { a b
+         | c };
+
+  foo4 = { a b
+         | c
+         };
+  ```
+
+  Call
+  Ex:
+  ```
+  foo0 = <foo b c>;
+
+  foo1 = <foo b
+           c>; // continuation
+
+  foo2 = <foo b
+           c
+         >; // continuation with closing on a separate line
+
+  foo1 = <foo
+           b
+           c>;
+
+  foo1 = <foo
+           b
+           c
+         >;
+  ```
+
 ## Example
 
 Formatting the following text:
