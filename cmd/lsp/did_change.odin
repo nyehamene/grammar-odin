@@ -3,7 +3,9 @@ package lsp
 import "core:encoding/json"
 
 // handle_did_change implements textDocument/didChange for full document sync:
-// the last content change carries the entire new document text.
+// the last content change carries the entire new document text. Diagnostics
+// are re-published for the whole namespace the document lives in, since a
+// change can affect the files around it.
 handle_did_change :: proc(srv: ^Server, obj: json.Object) -> (ok: bool) {
 	params := json_object(obj, "params") or_return
 	text_doc := json_object(params, "textDocument") or_return
@@ -30,6 +32,6 @@ handle_did_change :: proc(srv: ^Server, obj: json.Object) -> (ok: bool) {
 	doc.text = clone_string(&srv.arena, text)
 	doc.version = int(version)
 
-	public_diagnostics(srv, doc.uri)
+	publish_diagnostics_for_document(srv, doc.uri)
 	return true
 }

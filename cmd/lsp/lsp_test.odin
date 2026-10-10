@@ -193,6 +193,152 @@ test_lsp_did_change_updates_diagnostics :: proc(t: ^testing.T) {
 	testing.expect(t, strings.contains(output, `"diagnostics":[]`))
 }
 
+// Changing a document re-publishes the diagnostics of its whole namespace, so
+// a sibling file that is never opened still gets its errors updated alongside
+// the changed file's.
+@(test)
+test_lsp_did_change_publishes_namespace_diagnostics :: proc(t: ^testing.T) {
+	dir := ns_setup(t, "cmd/lsp/testdata/scratch/did_change_ns")
+	defer os.remove_all("cmd/lsp/testdata/scratch/did_change_ns")
+	defer delete(dir)
+
+	// A sibling file that is never opened but lives on disk.
+	sib := strings.concatenate({dir, "/sib.grammar"})
+	defer delete(sib)
+	if err := os.write_entire_file(sib, "bad = missing_rule;\n"); err != nil {
+		testing.fail_now(t, "failed to write sibling grammar")
+	}
+
+	main_uri := strings.concatenate({"file://", dir, "/main.grammar"})
+	defer delete(main_uri)
+	open_params := strings.concatenate({
+		`{"textDocument":{"uri":"`,
+		main_uri,
+		`","languageId":"grammar","version":1,"text":"a = \"x\";"}}`,
+	})
+	defer delete(open_params)
+	change_params := strings.concatenate({
+		`{"textDocument":{"uri":"`,
+		main_uri,
+		`","version":2},"contentChanges":[{"text":"a = missing_other;"}]}`,
+	})
+	defer delete(change_params)
+
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(`textDocument/didOpen`, open_params),
+		make_notification(`textDocument/didChange`, change_params),
+		make_request(`2`, `shutdown`, `null`),
+	)
+	output := send_request(stdin)
+
+	sib_uri := strings.concatenate({"file://", dir, "/sib.grammar"})
+	defer delete(sib_uri)
+
+	// The whole namespace is published twice, once for didOpen and once after
+	// didChange, and each publish covers main plus the on-disk sibling.
+	testing.expectf(
+		t,
+		count_publishes_for(output, main_uri) == 2,
+		"the changed file must be republished after a change, got %d",
+		count_publishes_for(output, main_uri),
+	)
+	testing.expectf(
+		t,
+		count_publishes_for(output, sib_uri) == 2,
+		"the sibling must be republished after a change, got %d",
+		count_publishes_for(output, sib_uri),
+	)
+	testing.expectf(
+		t,
+		strings.count(output, "undefined identifier: missing_rule") == 2,
+		"the sibling's error must be re-pushed after a change, got %d",
+		strings.count(output, "undefined identifier: missing_rule"),
+	)
+	testing.expectf(
+		t,
+		strings.count(output, "undefined identifier: missing_other") == 1,
+		"the change must add an error to main, got %d",
+		strings.count(output, "undefined identifier: missing_other"),
+	)
+}
+
+// Closing a document re-publishes the namespace without its in-memory text, so
+// a namespace-wide error it introduced (a redeclared rule) disappears from the
+// files that remain, and a closed file that was in memory only is left with
+// empty diagnostics.
+@(test)
+test_lsp_did_close_recomputes_namespace_diagnostics :: proc(t: ^testing.T) {
+	dir := ns_setup(t, "cmd/lsp/testdata/scratch/did_close_ns")
+	defer os.remove_all("cmd/lsp/testdata/scratch/did_close_ns")
+	defer delete(dir)
+
+	// b lives on disk and declares Thing; a is opened from memory only, so its
+	// declaration disappears when a is closed.
+	b_path := strings.concatenate({dir, "/b.grammar"})
+	defer delete(b_path)
+	if err := os.write_entire_file(b_path, "Thing = \"b\";\n"); err != nil {
+		testing.fail_now(t, "failed to write b grammar")
+	}
+
+	a_uri := strings.concatenate({"file://", dir, "/a.grammar"})
+	defer delete(a_uri)
+	b_uri := strings.concatenate({"file://", dir, "/b.grammar"})
+	defer delete(b_uri)
+	open_a := strings.concatenate({
+		`{"textDocument":{"uri":"`,
+		a_uri,
+		`","languageId":"grammar","version":1,"text":"Thing = \"a\";"}}`,
+	})
+	defer delete(open_a)
+	close_a := strings.concatenate({`{"textDocument":{"uri":"`, a_uri, `"}}`})
+	defer delete(close_a)
+
+	stdin := create_stream_reader(
+		make_request(
+			`1`,
+			`initialize`,
+			`{"clientInfo":{"name": "test", "version": "0.1"},"capabilities":{}}`,
+		),
+		make_notification(`textDocument/didOpen`, open_a),
+		make_notification(`textDocument/didClose`, close_a),
+		make_request(`2`, `shutdown`, `null`),
+	)
+	output := send_request(stdin)
+
+	// The redeclare is reported by the didOpen publish only, and the checker
+	// names the second declaration of a pair, so it lands on b alone.
+	testing.expectf(
+		t,
+		strings.count(output, "redeclared") == 1,
+		"the redeclare must be reported on b when a opens, got %d",
+		strings.count(output, "redeclared"),
+	)
+	// a is published on open and released on close, and its last publish is
+	// empty, since it is not on disk.
+	last_a := last_publish_for(output, a_uri)
+	testing.expect(t, last_a != "", "a must be published on open and released on close")
+	testing.expectf(
+		t,
+		strings.contains(last_a, `"diagnostics":[]`),
+		"a's close must clear its diagnostics: %s",
+		last_a,
+	)
+	// b is republished once a stops declaring Thing, so its redeclare clears.
+	last_b := last_publish_for(output, b_uri)
+	testing.expect(t, last_b != "", "b must be republished when a closes")
+	testing.expectf(
+		t,
+		strings.contains(last_b, `"diagnostics":[]`),
+		"b must be clean once a closes: %s",
+		last_b,
+	)
+}
+
 @(test)
 test_lsp_hover :: proc(t: ^testing.T) {
 	stdin := create_stream_reader(
@@ -1441,6 +1587,37 @@ response_for :: proc(output, id: string) -> string {
 		}
 	}
 	return ""
+}
+
+// last_publish_for returns the line of the last textDocument/publishDiagnostics
+// notification whose params name uri, or "" when there is none. The result
+// aliases `output` and must not be deleted.
+last_publish_for :: proc(output, uri: string) -> string {
+	lines := strings.split_lines(output)
+	defer delete(lines)
+	last := ""
+	for line in lines {
+		if strings.contains(line, `"method":"textDocument/publishDiagnostics"`) && strings.contains(line, uri) {
+			last = line
+		}
+	}
+	return last
+}
+
+// count_publishes_for returns how many textDocument/publishDiagnostics
+// notifications name uri in output. The request echo the server logs for every
+// incoming message can also carry the uri, so counting whole lines is not
+// enough; only lines that announce a publishDiagnostics notification count.
+count_publishes_for :: proc(output, uri: string) -> int {
+	lines := strings.split_lines(output)
+	defer delete(lines)
+	count := 0
+	for line in lines {
+		if strings.contains(line, `"method":"textDocument/publishDiagnostics"`) && strings.contains(line, uri) {
+			count += 1
+		}
+	}
+	return count
 }
 
 // make_request builds a single framed JSON-RPC request message.

@@ -76,6 +76,13 @@ help offers every proc of a name and marks the one the arguments pick.
     - [x] **Dispatcher**: `textDocument/diagnostic` is wired in `cmd/lsp/server.odin`.
     - [x] **Test**: `test_lsp_pull_diagnostic` and `test_lsp_did_open_publishes_diagnostics` in `cmd/lsp/lsp_test.odin`.
 
+Push diagnostics (`textDocument/publishDiagnostics`) are published per namespace:
+opening, changing or closing a document re-runs the checker over its directory
+tree and pushes one notification per file, so cross-file errors such as a rule
+redeclared in the namespace appear on the affected files and clear as soon as
+the edit that fixed them lands. Files outside the namespace root, such as
+imported namespaces, are not republished.
+
 - [x] **9. `textDocument/documentHighlight`** (implemented in `cmd/lsp/document_highlight.odin`)
     - [x] **Types**: `Document_Highlight` and `Document_Highlight_Kind` added in `cmd/lsp/document_highlight.odin`.
     - [x] **Handler**: `handle_document_highlight` implemented in `cmd/lsp/document_highlight.odin`.

@@ -2,9 +2,6 @@ package lsp
 
 import "core:encoding/json"
 import "core:mem/virtual"
-import "core:os"
-import "core:path/filepath"
-import "core:strings"
 
 handle_did_open :: proc(srv: ^Server, obj: json.Object) -> (ok: bool) {
 	params := json_object(obj, "params") or_return
@@ -32,19 +29,6 @@ handle_did_open :: proc(srv: ^Server, obj: json.Object) -> (ok: bool) {
 	// Publish diagnostics for the whole namespace the file lives in: every
 	// grammar file in its directory tree is loaded (reading from disk those
 	// that are not open) and each one's diagnostics are pushed to the client.
-	abs, abs_ok := uri_to_path(uri)
-	if !abs_ok {
-		public_diagnostics(srv, uri)
-		return true
-	}
-	defer delete(abs)
-
-	ns_dir := strings.clone(filepath.dir(abs))
-	defer delete(ns_dir)
-	if os.is_directory(ns_dir) {
-		publish_namespace_diagnostics(srv, ns_dir)
-	} else {
-		public_diagnostics(srv, uri)
-	}
+	publish_diagnostics_for_document(srv, uri)
 	return true
 }

@@ -1,6 +1,8 @@
 package lsp
 
 import "core:encoding/json"
+import "core:os"
+import "core:path/filepath"
 import "core:strings"
 
 import "../check"
@@ -27,12 +29,34 @@ Pull_Diagnostic_Result :: struct {
 	items: []Diagnostic,
 }
 
-// public_diagnostics computes the diagnostics for uri and pushes them to the
-// client with textDocument/publishDiagnostics.
-public_diagnostics :: proc(srv: ^Server, uri: string) {
+// publish_document_diagnostics computes the diagnostics for uri and pushes
+// them to the client with textDocument/publishDiagnostics.
+publish_document_diagnostics :: proc(srv: ^Server, uri: string) {
 	diags := diagnostics_for(srv, uri)
 	defer delete(diags)
 	publish_diagnostics(srv, uri, diags)
+}
+
+// publish_diagnostics_for_document publishes the diagnostics of the whole
+// namespace the document lives in, or of the document alone when its directory
+// cannot be resolved, as for a scratch document. The namespace path is what
+// opening, changing and closing a document share, so the three of them publish
+// the same way.
+publish_diagnostics_for_document :: proc(srv: ^Server, uri: string) {
+	abs, abs_ok := uri_to_path(uri)
+	if !abs_ok {
+		publish_document_diagnostics(srv, uri)
+		return
+	}
+	defer delete(abs)
+
+	ns_dir := strings.clone(filepath.dir(abs))
+	defer delete(ns_dir)
+	if os.is_directory(ns_dir) {
+		publish_namespace_diagnostics(srv, ns_dir)
+	} else {
+		publish_document_diagnostics(srv, uri)
+	}
 }
 
 // publish_namespace_diagnostics computes diagnostics for every grammar file in
